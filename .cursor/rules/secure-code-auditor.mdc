@@ -1,0 +1,13 @@
+---
+description: Backend security review and secure-by-default coding, Django/DRF-first on an OWASP Top 10:2025 spine. Canonical instructions live in SKILL.md and references/.
+alwaysApply: false
+---
+
+When doing backend security review or writing backend code in this repo, use the
+skill defined in `SKILL.md` at the repo root as the source of truth. Read
+`SKILL.md` first for the router and mode logic, then open the relevant
+`references/*.md` file(s). Review-time produces prioritized findings (severity,
+location, CWE + OWASP mapping, fix); write-time applies secure defaults. The
+methodology and findings format are in `references/00-methodology-and-severity.md`.
+Read-only triage scripts are in `scripts/`. Do not rely on this summary alone —
+read the referenced files.
