@@ -1,7 +1,5 @@
 # secure-code-auditor
 
-**Version 1.0.0**
-
 A Claude Agent Skill for backend security work. It reviews existing code for
 vulnerabilities and applies secure defaults while new code is written. The
 deep specialty is Django and Django REST Framework; underneath that sits a
@@ -43,24 +41,76 @@ Version baseline is kept current (Django 6.0.x / 5.2 LTS; DRF 3.17.x; SimpleJWT
 
 ## Install
 
-Copy the skill folder to where your agent looks for skills.
+The repository is a plain-Markdown Agent Skill. The canonical instructions live
+in the root `SKILL.md`, which routes to the files under `references/`. Claude
+reads the skill directly. Cursor and OpenAI Codex CLI reuse the same canonical
+content through their native discovery mechanisms, while Gemini CLI reads a
+`GEMINI.md` context file. Nothing needs to be built; there are no dependencies
+beyond `git`.
 
-Project-scoped (shared with a repo via git):
+### Claude
 
+One project:
+
+```bash
+git clone https://github.com/n-shadloo/secure-code-auditor.git \
+  .claude/skills/secure-code-auditor
 ```
-mkdir -p .claude/skills
-cp -r secure-code-auditor .claude/skills/
+
+All your projects:
+
+```bash
+git clone https://github.com/n-shadloo/secure-code-auditor.git \
+  ~/.claude/skills/secure-code-auditor
 ```
 
-Personal (available everywhere):
+For claude.ai or the API, upload the folder as a custom skill in Settings.
 
-```
-mkdir -p ~/.claude/skills
-cp -r secure-code-auditor ~/.claude/skills/
+### Codex CLI
+
+Codex CLI discovers Agent Skills from the `.agents/skills/` directory and uses
+the bundled pointer skill to load the canonical `SKILL.md`.
+
+One project:
+
+```bash
+git clone https://github.com/n-shadloo/secure-code-auditor.git \
+  .agents/skills/secure-code-auditor
 ```
 
-The skill loads on demand; `SKILL.md` routes to the reference files so only the
-relevant material is pulled in for a given question.
+All your projects:
+
+```bash
+git clone https://github.com/n-shadloo/secure-code-auditor.git \
+  ~/.agents/skills/secure-code-auditor
+```
+
+`AGENTS.md` provides project-wide context, while the pointer skill forwards to
+the canonical instructions in the repository root.
+
+### Cursor
+
+Cursor natively supports Agent Skills, so the same repository works:
+
+```bash
+git clone https://github.com/n-shadloo/secure-code-auditor.git \
+  .cursor/skills/secure-code-auditor
+```
+
+The included `.cursor/rules/secure-code-auditor.mdc` file is optional
+reinforcement that points back to the canonical `SKILL.md`.
+
+### Gemini CLI
+
+Gemini CLI doesn't read Agent Skills directly; it reads `GEMINI.md`.
+
+- **Per project:** copy `GEMINI.md` into the repository root.
+- **All projects:** copy it to `~/.gemini/GEMINI.md`.
+
+`GEMINI.md` points Gemini to the canonical `SKILL.md` and `references/`
+instead of duplicating the content.
+
+The only requirement is `git` and a Git repository to run in.
 
 ## Use
 

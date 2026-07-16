@@ -17,7 +17,7 @@ license: MIT
 allowed-tools: Read, Grep, Glob, Bash
 metadata:
   author: n-shadloo
-  version: 1.0.0
+  version: 1.1.0
 ---
 
 # secure-code-auditor
@@ -27,6 +27,8 @@ Django/DRF as the deep specialty and a general OWASP layer that applies to any
 stack. Scope is the backend: server-side code, data handling, configuration,
 and the deployment/runtime the backend owns. It does not cover browser/frontend
 concerns except where the server controls output (encoding, headers, cookies).
+Its canonical content is reused by other agents (Codex, Cursor, Gemini CLI) via
+`AGENTS.md`, with Claude as the primary integration.
 
 ## How the reference material is organized
 
