@@ -1,0 +1,115 @@
+# secure-code-auditor
+
+**Version 1.0.0**
+
+A Claude Agent Skill for backend security work. It reviews existing code for
+vulnerabilities and applies secure defaults while new code is written. The
+deep specialty is Django and Django REST Framework; underneath that sits a
+general OWASP layer that applies to any backend stack, so the same skill is
+useful whether or not you're on Django.
+
+## Why this exists
+
+Backend security review is repetitive and easy to do inconsistently. The high-
+risk areas — access control, injection, auth and tokens, serializer exposure,
+secrets, deployment settings — are well understood, but they're spread across a
+lot of documentation and they change (Django ships security releases regularly).
+This skill packages that knowledge so an agent applies it the same way every
+time, and points a reviewer straight at the parts that matter.
+
+It's organized on the OWASP Top 10 (2025) as a spine. Each category has two
+layers: a short, stack-agnostic explanation of the vulnerability and its defense,
+then a deep Django/DRF section with the actual settings, code, and gotchas.
+
+## What it covers
+
+- Access control: object- and function-level authorization, IDOR/BOLA, SSRF,
+  open redirect, multi-tenancy, admin exposure.
+- Injection: SQL/ORM (including the recent column-alias class), command,
+  template, and header injection; server-side output handling.
+- Auth: sessions, JWT/SimpleJWT, brute-force lockout, MFA, password reset,
+  account enumeration, allauth/dj-rest-auth.
+- API/DRF: serializer over-exposure and mass assignment, pagination/filter
+  leakage, throttling, default permission classes, CSRF interaction, payments.
+- Configuration and crypto: the `SECURE_*`/`SESSION_*`/`CSRF_*` matrix, CORS,
+  password hashing, secrets, signing.
+- Integrity: insecure deserialization, Celery serializers, webhook verification.
+- Logging, error handling, and the deployment/runtime layer the backend owns
+  (TLS, headers, reverse-proxy trust, Gunicorn/systemd, caching, brokers).
+- Supply chain: pinning, hashing, scanning, EOL frameworks.
+
+Version baseline is kept current (Django 6.0.x / 5.2 LTS; DRF 3.17.x; SimpleJWT
+5.5.x, as of mid-2026), and it flags projects on end-of-life Django.
+
+## Install
+
+Copy the skill folder to where your agent looks for skills.
+
+Project-scoped (shared with a repo via git):
+
+```
+mkdir -p .claude/skills
+cp -r secure-code-auditor .claude/skills/
+```
+
+Personal (available everywhere):
+
+```
+mkdir -p ~/.claude/skills
+cp -r secure-code-auditor ~/.claude/skills/
+```
+
+The skill loads on demand; `SKILL.md` routes to the reference files so only the
+relevant material is pulled in for a given question.
+
+## Use
+
+Two modes, chosen from context.
+
+Review an existing codebase — ask for a security review, or point it at code:
+
+```
+Review this Django app for security issues before we ship.
+```
+
+You'll get findings ordered by severity, each with a location, a CWE and OWASP
+mapping, the concrete problem, the impact, and a fix. For fast triage there are
+two read-only helper scripts (no network access, they don't run your project):
+
+```
+python scripts/settings_scan.py config/settings/production.py
+python scripts/dangerous_patterns.py .
+```
+
+Write new code — it applies secure defaults as it goes (parameterized queries,
+scoped querysets, explicit serializer fields, correct cookie flags, secrets from
+the environment) and notes the security-relevant choices it made.
+
+## Example finding
+
+```
+### [High] Object endpoint returns any user's invoice (IDOR)
+- Location: billing/views.py:42
+- Category: Broken Object Level Authorization | CWE-639 | OWASP A01:2025, API1:2023
+- Confidence: High
+- Problem: InvoiceDetail uses Invoice.objects.all() and looks up by pk from the
+  URL with permission_classes = [IsAuthenticated]. Authentication is checked but
+  ownership is not, so any logged-in user can read /invoices/<id>/ for any id.
+- Impact: Authenticated horizontal privilege escalation; read access to other
+  accounts' billing records by incrementing the id.
+- Fix: scope the queryset to the requester.
+
+    def get_queryset(self):
+        return Invoice.objects.filter(account=self.request.user.account)
+```
+
+## Notes
+
+The scripts need only the Python standard library (3.9+). Findings from the
+scripts are indicators to verify, not confirmed vulnerabilities. Security is not
+a checklist you finish; treat this as a strong, current baseline, not a guarantee.
+The skill version is recorded in SKILL.md frontmatter (`metadata.version`); releases are tagged in git.
+
+## License
+
+MIT. See `LICENSE`.
