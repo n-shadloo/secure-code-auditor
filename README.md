@@ -160,6 +160,40 @@ scripts are indicators to verify, not confirmed vulnerabilities. Security is not
 a checklist you finish; treat this as a strong, current baseline, not a guarantee.
 The skill version is recorded in SKILL.md frontmatter (`metadata.version`); releases are tagged in git.
 
+## Layout
+
+```text
+secure-code-auditor/
+├── SKILL.md                            # canonical skill and router
+├── AGENTS.md                           # always-on project context
+├── GEMINI.md                           # Gemini CLI context
+├── .cursor/
+│   └── rules/
+│       └── secure-code-auditor.mdc     # Cursor reinforcement rule
+├── references/
+│   ├── 00-methodology-and-severity.md  # methodology and findings format
+│   ├── a01-broken-access-control.md
+│   ├── a02-security-misconfiguration.md
+│   ├── a03-software-supply-chain.md
+│   ├── a04-cryptographic-failures.md
+│   ├── a05-injection.md
+│   ├── a06-insecure-design.md
+│   ├── a07-authentication-failures.md
+│   ├── a08-integrity-and-deserialization.md
+│   ├── a09-logging-and-alerting.md
+│   ├── a10-exceptional-conditions.md
+│   ├── api-drf-specific.md
+│   ├── deployment-and-runtime.md
+│   └── security-hardening-libraries.md
+├── scripts/
+│   ├── dangerous_patterns.py           # read-only project scanner
+│   ├── settings_scan.py                # read-only Django settings scanner
+│   └── README.md
+├── README.md
+├── LICENSE
+└── .gitignore
+```
+
 ## License
 
 MIT. See `LICENSE`.
