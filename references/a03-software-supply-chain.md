@@ -10,6 +10,7 @@ frameworks, and the integrity of versioned schema/data migrations.
 - [Pin and verify](#pin-and-verify)
 - [Scan continuously](#scan-continuously)
 - [Trust and provenance](#trust-and-provenance)
+- [Third-party dependency vetting](#third-party-dependency-vetting)
 - [Migration and data-integrity safety](#migration-and-data-integrity-safety)
 - [Review checklist](#review-checklist)
 
@@ -24,7 +25,7 @@ is code you never chose directly.
 
 ## Run a supported Django
 
-As of 16 Jul 2026 the supported lines are **Django 6.0.7** and **5.2.16 LTS**.
+As of 17 Jul 2026 the supported lines are **Django 6.0.7** and **5.2.16 LTS**.
 **Django 4.2 is end-of-life** (final release 4.2.30 on 7 Apr 2026); 5.1 is EOL
 too. Running an unsupported release means security fixes stop reaching you —
 flag unsupported lines and supported lines below the current security patch
@@ -46,8 +47,11 @@ pip install --require-hashes -r requirements.txt
 
 ## Scan continuously
 
-- `pip-audit` (PyPA) checks installed/declared packages against the advisory
-  databases. `safety` is an alternative/second opinion.
+- `pip-audit` (PyPA) checks installed/declared packages against advisory
+  databases. `pip-audit==2.10.1` passes the current package gate. Treat results
+  as known-advisory input, not proof that a dependency is maintained or safe;
+  do not add a second scanner without separately vetting its license, data flow,
+  advisory source, maintenance, and operating model.
 - Enable automated update PRs (Dependabot / Renovate) and treat security updates
   as expedited.
 - Generate an SBOM (CycloneDX or SPDX) for the deployed image if you need to
@@ -66,6 +70,55 @@ pip-audit -r requirements.txt
 - This applies to **Claude Skills too**: a skill can direct an agent to run code
   or move data. Only install skills from sources you trust, and read the bundled
   files.
+
+## Third-party dependency vetting
+
+### Principle layer
+
+Every dependency adds code, maintainers, release infrastructure, transitive
+dependencies, licenses, and defaults to the trust boundary. Do not choose a
+security package from popularity, a stale tutorial, or a scanner suggestion
+alone. First ask whether the framework, standard library, platform, or a small
+reviewable local implementation already provides the control.
+
+Before newly recommending or adding a package, record all of the following:
+
+1. the exact security job it performs and why built-in facilities are
+   insufficient;
+2. maintenance health, including the latest release and recent project activity;
+3. known advisories and the minimum safe version;
+4. supported Python, framework, and runtime versions;
+5. license and operational/transitive-dependency cost;
+6. security-sensitive defaults that must be changed; and
+7. the exit plan if the package becomes incompatible or abandoned.
+
+A missing field is a finding, not permission to assume safety. Classify the
+result as **recommend**, **conditional**, **existing-install audit only**, or
+**reject for new use**. Pin a compatible version or bounded range, preserve hash
+verification where the project uses it, and document why an exception is safe.
+Advisory scanners find known records; they do not prove maintenance, correct
+configuration, provenance, compatibility, or absence of design flaws.
+
+### Django and DRF implementation layer
+
+- Prefer current Django/DRF features before adding middleware or auth packages.
+- Compare every candidate's declared Django/Python classifiers with the actual
+  project baseline; do not infer Django 6 support from Django 5.2 support.
+- Read release notes and security advisories across the installed version range,
+  including transitive protocol libraries such as `oauthlib`.
+- Verify secure defaults in code or official settings documentation. Pay special
+  attention to automatic account linking, redirect matching, PKCE/nonce checks,
+  token persistence, proxy-derived client IPs, and fail-open behavior.
+- Use `python -m pip_audit` (currently vetted at `2.10.1`) as one CI/review input.
+  Correlate results with reachability and vendor fixes; never silently ignore a
+  vulnerability because a scanner lacks a fix.
+- Keep `references/security-hardening-libraries.md` as the dated decision index.
+  Re-vet a package when upgrading Django/Python, after a relevant advisory, or
+  when its maintenance/compatibility signals change.
+
+**Review evidence:** name the package and installed version, disposition, minimum
+safe version, compatibility result, advisory result, defaults reviewed, and the
+file/setting that proves the project's actual configuration.
 
 ## Migration and data-integrity safety
 
@@ -247,7 +300,10 @@ Test:
 - [ ] Django/DRF/runtime on supported, patched versions (no EOL 4.2/5.1, no
       unmaintained deps).
 - [ ] Dependencies pinned; a lockfile exists; hashes verified on install.
-- [ ] `pip-audit`/`safety` run in CI; automated update PRs enabled.
+- [ ] `pip-audit` runs in CI as an advisory input; automated update PRs enabled.
 - [ ] Dependencies come from trusted indexes; no stray VCS/wheel installs.
+- [ ] every security dependency has a recorded need, maintenance/advisory check,
+      minimum safe version, compatibility, license, secure-default review, and
+      disposition; scanners are not treated as proof of safety;
 - [ ] Migrations use historical models, explicit validation and DB aliases,
       preserve fail-closed mixed-version access, and contain no secrets.
