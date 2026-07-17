@@ -31,17 +31,15 @@ brute forcing or denial-of-service attacks" — IP origins can be spoofed, and i
 uses non-atomic cache operations. Also, throttles run *after* authentication, so
 they don't protect the auth step itself.
 
-Layer defenses accordingly:
-
-- **Login / credential endpoints:** account lockout / attempt tracking with
-  `django-axes` (see the auth file), plus a per-account and per-IP limit.
-- **Other sensitive flows:** an application limiter (e.g. `django-ratelimit`) or
-  an atomic Redis counter for anything security-relevant.
-- **Edge:** rate limiting and bot controls at Nginx/Cloudflare handle volumetric
-  abuse before it reaches the app (see deployment).
-- DRF throttles (`AnonRateThrottle`, `UserRateThrottle`, `ScopedRateThrottle`)
-  are fine for basic fair-use quotas — just don't treat them as your brute-force
-  defense.
+Package choices do not replace layered design. `django-axes==8.3.1` passes the
+maintained-package gate for login-attempt monitoring and lockout on Django 6.0,
+provided proxy trust and client-IP extraction are correct; use account plus
+network/device signals and avoid attacker-triggered permanent denial of service.
+`django-ratelimit==4.1.0` and `django-defender==0.9.8` do not pass the 17 Jul 2026
+maintenance gate for new use. For general endpoints and business flows, combine
+maintained edge/platform limits with application-level, account/tenant-aware
+quotas and transactional invariants. Fail closed on sensitive flows, but define
+degraded behavior so a cache outage does not silently remove protection.
 
 ## Business-logic abuse
 

@@ -110,6 +110,12 @@ request-influenced data as high-severity leads.
   data injected into `<script>`; emit JSON to templates with
   `json_script` rather than interpolating it.
 
+When a product genuinely requires user-authored rich HTML, use an explicit
+allowlist sanitizer and still apply output-context encoding. `nh3==0.3.6` passes
+the maintained-package gate as of 17 Jul 2026; centralize its tag/attribute/URL-
+scheme policy, test bypass payloads, and sanitize again when policy changes.
+Plain-text or structured-markup designs remain safer than accepting HTML.
+
 ## Header and email injection
 
 - Build emails with Django's mail classes; never interpolate user data into
@@ -122,9 +128,14 @@ request-influenced data as high-severity leads.
 
 ## XML / deserialization pointers
 
-Parsing untrusted XML with the stdlib is XXE/entity-expansion-prone; use
-`defusedxml`. Untrusted `pickle`/`yaml.load` is remote code execution — that's
-covered in A08 (Integrity and Deserialization); cross-check there.
+Disable XML when the application does not need it. When it is required, use a
+maintained format-specific parser configured to reject DTDs, external entities,
+network access, and unbounded entity expansion; enforce input and expansion
+limits before parsing. Do not newly recommend `defusedxml` solely from historical
+guidance: its latest release and maintenance signals do not pass the dated
+dependency gate. Existing installations need an explicit maintenance and runtime
+compatibility review. Untrusted `pickle`/`yaml.load` is remote code execution —
+that is covered in A08 (Integrity and Deserialization); cross-check there.
 
 ## Review checklist
 
@@ -135,4 +146,6 @@ covered in A08 (Integrity and Deserialization); cross-check there.
 - [ ] No `shell=True`, `os.system`, `eval`, or `exec` on request data.
 - [ ] Autoescaping intact; `mark_safe`/`|safe`/Jinja2 autoescape verified; no
       template built from user input.
-- [ ] Email/response headers not built from raw user input; XML via `defusedxml`.
+- [ ] unneeded XML is disabled; required XML uses a maintained parser with DTD,
+      external-entity, network, and expansion controls; deserialization is
+      cross-checked against A08;

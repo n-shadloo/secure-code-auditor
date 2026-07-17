@@ -42,6 +42,11 @@ PASSWORD_HASHERS = [
 - Never store passwords with `md5`/`sha1`/`sha256` directly or with any
   reversible scheme.
 
+**Package decision (17 Jul 2026):** `argon2-cffi==25.1.0` passes the maintained-
+package gate. Put Django's Argon2 hasher first, keep the framework's fallback
+hashers so older hashes can upgrade on login, and benchmark memory/time cost on
+production-shaped workers. See `security-hardening-libraries.md`.
+
 ## Password validators
 
 Configure `AUTH_PASSWORD_VALIDATORS` (length, common-password, numeric,

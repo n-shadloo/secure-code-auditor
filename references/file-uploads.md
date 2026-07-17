@@ -59,56 +59,34 @@ handlers but do not make the content safe. With `FileUploadParser`, both the URL
 filename and `Content-Disposition` filename remain attacker-controlled.
 
 Process large uploads through `UploadedFile.chunks()` rather than an unbounded
-`read()`. A small prefix may be read for signature detection, provided the file
-position is reset before later parsing or storage. For accepted document and
-image types, use a maintained detector such as `python-magic` or `filetype`,
-then open the complete file with the format's parser. Re-encoding an image or
-document into a canonical form is stronger than merely accepting a magic-byte
-match.
+`read()`. A bounded prefix may support signature detection, provided the file
+position is reset before later parsing or storage. Validate with multiple
+independent signals and a maintained format-specific parser, then decode the
+complete bounded file; canonical re-encoding is stronger than a magic-byte match.
+Do not newly recommend `python-magic` or `filetype`: their release/maintenance
+signals do not pass the 17 Jul 2026 dependency gate. Existing use must be re-vetted.
 
 ## Type and content validation
 
-Use independent checks and fail closed. This example is an ingestion gate, not
-a complete malware scanner:
+Use independent checks and fail closed. A safe ingestion gate should:
 
-```python
-from pathlib import Path
+1. enforce request, file, decompressed, pixel/page/object-count, and tenant quota
+   limits before expensive parsing;
+2. normalize and allowlist the declared extension and media type, but never trust
+   browser-supplied `Content-Type` or a filename as proof;
+3. compare a bounded signature/prefix with the expected family and reject
+   mismatches or polyglot/ambiguous content;
+4. decode the complete bounded object with a maintained parser for the allowed
+   format, with external resources, macros, scripts, DTDs, and network access off;
+5. canonicalize or re-encode where practical and discard attacker metadata;
+6. quarantine and scan asynchronously when the threat model requires malware/CDR,
+   exposing nothing until the verdict is complete; and
+7. reset streams deliberately and test truncated, oversized, decompression-bomb,
+   malformed, parser-differential, and active-content samples.
 
-import magic
-from django.core.exceptions import ValidationError
-
-MAX_FILE_BYTES = 10 * 1024 * 1024
-ALLOWED_TYPES = {
-    "application/pdf": {".pdf"},
-    "image/jpeg": {".jpg", ".jpeg"},
-    "image/png": {".png"},
-}
-
-
-def validate_upload(upload):
-    if upload.size is None or upload.size > MAX_FILE_BYTES:
-        raise ValidationError("File is too large.")
-
-    suffix = Path(upload.name).suffix.lower()
-    prefix = upload.read(8192)
-    upload.seek(0)
-    detected_type = magic.from_buffer(prefix, mime=True)
-
-    allowed_suffixes = ALLOWED_TYPES.get(detected_type)
-    if allowed_suffixes is None or suffix not in allowed_suffixes:
-        raise ValidationError("File type is not allowed.")
-
-    # The declared type is only a consistency signal; normalize documented
-    # aliases before comparing in applications that need to accept them.
-    if upload.content_type and upload.content_type != detected_type:
-        raise ValidationError("File metadata does not match its content.")
-```
-
-After this gate, parse the complete PDF or image with a format-aware library,
-enforce feature-specific rules, and reject malformed or trailing active content.
-Do not claim that magic-byte detection proves a file harmless. Antivirus or
-content-disarm scanning may be an additional control for the threat model, but
-it does not replace allowlisting, parser limits, inert storage, or authorization.
+No single detector proves a file safe. Select a maintained parser for each format
+the product actually accepts and run it through the A03 package gate; otherwise
+remove that format from the allowlist.
 
 ## Filenames and storage keys
 
@@ -151,6 +129,12 @@ does not make it a safe storage path.
 - Keep permissions non-executable and credentials least-privileged. The upload
   worker may write quarantine; the serving tier should not be able to modify
   application code.
+
+- Use Django's Storage API with an official, maintained provider SDK or a freshly
+  vetted backend. Do not newly recommend `django-storages==1.14.6` for the Django 6
+  baseline: its advertised compatibility and maintenance signals do not pass the
+  current gate. Existing deployments need a compatibility and credential/URL-
+  signing review before framework upgrades.
 
 See `deployment-and-runtime.md` for edge and serving configuration. Serving an
 upload outside the web root is useful only if the separate serving path is also

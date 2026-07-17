@@ -111,9 +111,12 @@ Grant write access only to the paths the app genuinely needs.
 
 - Enforce TLS on the DB connection; don't expose the DB port publicly; firewall
   it to the app hosts.
-- Load secrets from the environment or a secrets manager; keep `.env` out of the
-  image and out of VCS (`django-environ`/`python-decouple`). No secrets baked into
-  Docker layers.
+- Load secrets with `os.environ` from an injected environment or through the
+  official, maintained SDK for the deployment's secrets manager; keep `.env` out
+  of the repository and production artifact. Do not add a generic helper merely
+  to parse environment variables. `python-decouple` does not pass the current
+  maintenance gate; existing use should be re-vetted. Validate required settings
+  and types at startup and fail closed without printing secret values.
 
 ## Caching security
 

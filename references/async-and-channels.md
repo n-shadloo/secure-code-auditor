@@ -53,6 +53,11 @@ serializer, and renderer pipeline into a native async pipeline merely because
 the deployment uses ASGI. Keep ordinary DRF views synchronous unless the project
 has deliberately selected and audited an async integration.
 
+**Package decision (17 Jul 2026):** Channels `4.3.2` passes the maintained-
+package gate, is maintained by the Django project, and supports Django 6.0.
+Installing it does not supply origin validation, per-message authorization,
+backpressure, quotas, or disconnect cleanup; retain every control below.
+
 Channels has its own connection scope and consumer lifecycle. HTTP middleware
 and DRF permission classes do not automatically authorize WebSocket messages.
 Route consumers through explicit origin and authentication middleware, then
