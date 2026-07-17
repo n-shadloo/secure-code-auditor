@@ -1,8 +1,9 @@
 # A01:2025 — Broken Access Control
 
 Covers object-level and function-level authorization, IDOR/BOLA, SSRF (folded
-into A01 in 2025), open redirect, multi-tenancy isolation, and admin exposure.
-Maps to OWASP API1:2023 (BOLA) and API5:2023 (BFLA).
+into A01 in 2025), open redirect, multi-tenancy isolation, admin exposure, and
+cache-mediated authorization leaks. Maps to OWASP API1:2023 (BOLA) and
+API5:2023 (BFLA).
 
 ## Contents
 - [Principle](#principle)
@@ -10,6 +11,7 @@ Maps to OWASP API1:2023 (BOLA) and API5:2023 (BFLA).
 - [IDOR / BOLA](#idor--bola)
 - [Function-level authorization](#function-level-authorization)
 - [Multi-tenancy and data isolation](#multi-tenancy-and-data-isolation)
+- [Caching and authorization](#caching-and-authorization)
 - [SSRF](#ssrf)
 - [Open redirect](#open-redirect)
 - [Admin exposure](#admin-exposure)
@@ -110,6 +112,137 @@ Indicators to investigate (each is a lead, confirm reachability):
 - Watch aggregates, `values()`, exports, and admin: isolation bugs hide in
   reporting and CSV endpoints as often as in CRUD.
 
+## Caching and authorization
+
+Cache leaks map primarily to CWE-524 (Use of Cache Containing Sensitive
+Information), CWE-488 (Exposure of Data Element to Wrong Session), and CWE-862
+(Missing Authorization).
+
+### Principle layer
+
+A cache is a second data-serving path. If its key omits any attribute that
+changes what a principal may see, one principal can receive another's result
+without the underlying authorization code running. The invariant is: **a cached
+representation may be reused only when every requester represented by that key
+is authorized to receive the same bytes under the same current policy.**
+
+For sensitive or personalized output, the safest shared-cache policy is not to
+cache it. Where caching is justified:
+
+- authorize before reading or populating the cache;
+- include every visibility dimension in the key: tenant, principal or audience,
+  object, locale/format where relevant, and an authorization-policy/version
+  component;
+- invalidate or version entries when ownership, role, membership, visibility,
+  or revocation state changes;
+- keep public, tenant-wide, role-wide, and user-private namespaces separate; and
+- apply the same rules to framework caches, reverse proxies, CDNs, browser
+  caches, fragments, computed objects, and background-generated exports.
+
+`Vary` is key metadata, not an authorization decision. It is useful only if the
+named request headers fully capture the response audience and every caching
+layer honors it.
+
+### Django & DRF implementation layer
+
+Do not put `cache_page` or Django's site cache around an authenticated or
+personalized view by default:
+
+```python
+# Wrong: the URL is shared while the response varies by request.user.
+@login_required
+@cache_page(300)
+def dashboard(request):
+    return render(request, "dashboard.html", build_dashboard(request.user))
+```
+
+Prefer no caching for sensitive pages and state that policy explicitly:
+
+```python
+from django.contrib.auth.decorators import login_required
+from django.views.decorators.cache import never_cache
+
+
+@never_cache
+@login_required
+def dashboard(request):
+    return render(request, "dashboard.html", build_dashboard(request.user))
+```
+
+If a measured hot path genuinely needs application caching, authorize and scope
+the data first, then use a low-level key whose audience is explicit:
+
+```python
+from django.core.cache import cache
+from django.shortcuts import get_object_or_404
+
+
+def account_summary(request, account_id):
+    account = get_object_or_404(
+        Account.objects.visible_to(request.user),
+        pk=account_id,
+    )
+    key = (
+        f"account-summary:v3:tenant:{account.tenant_id}:"
+        f"viewer:{request.user.pk}:account:{account.pk}:"
+        f"policy:{account.authorization_version}"
+    )
+    summary = cache.get(key)
+    if summary is None:
+        summary = build_account_summary(account, request.user)
+        cache.set(key, summary, timeout=60)
+    return summary
+```
+
+`authorization_version` is an application-owned counter or immutable policy
+version updated whenever access to that audience changes; it is not a Django
+built-in. If a cache key can be observed by other tenants or operators who
+should not see identifiers, derive an opaque keyed digest rather than placing
+emails, tokens, or other sensitive values in the key.
+
+When a response really is safe for a defined audience:
+
+- use `vary_on_cookie` for session-cookie variation and
+  `vary_on_headers("Authorization")` for authorization-header variation;
+- preserve, append, and test `Vary` through Django, DRF, Nginx, and any CDN
+  rather than overwriting it in later middleware;
+- set `Cache-Control: private` or `no-store` for private responses and verify
+  every intermediary honors it; and
+- never assume DRF authentication or permission classes are re-run on a cache
+  hit outside the view.
+
+Keep Django at 6.0.7 or 5.2.16 or later in the supported line. The 2026 cache
+security fixes covered `Authorization` variation, malformed or mixed-case cache
+directives, `Vary` parsing, and responses that set cookies. Patching is
+necessary, but it cannot repair an application key that omits tenant, user, or
+permission state.
+
+See `deployment-and-runtime.md` for proxy/CDN/cache exposure and infrastructure
+configuration.
+
+### Cache review checklist
+
+#### Stack-neutral
+
+- [ ] Every cached sensitive result has an explicit audience, and the key
+      captures all authorization and representation dimensions for that audience.
+- [ ] Authorization occurs before cache read/population; role, tenant,
+      ownership, and revocation changes invalidate or version affected entries.
+- [ ] Public, tenant, role, and user namespaces cannot collide; keys contain no
+      raw secrets or unnecessary personal data.
+- [ ] Application, proxy, CDN, fragment, browser, export, and object caches obey
+      the same privacy policy.
+
+#### Django & DRF
+
+- [ ] `cache_page`, cache middleware, and DRF response caching are absent from
+      authenticated views unless audience-safe behavior is demonstrated.
+- [ ] `Vary: Cookie` / `Vary: Authorization`, `private` / `no-store`, decorator
+      order, and all intermediary behavior are tested with two different users
+      and tenants.
+- [ ] Django is on a supported patch containing the 2026 cache fixes; patching
+      is not treated as a substitute for scoped keys and invalidation.
+
 ## SSRF
 
 Any server-side fetch of a client-influenced URL (webhooks, link previews,
@@ -153,5 +286,7 @@ bootstrap OAuth token theft.
 - [ ] Default permission class is restrictive; every public view is deliberate.
 - [ ] Ownership/tenant comes from `request.user`, never the request body.
 - [ ] Admin/staff actions use a role check, not bare `IsAuthenticated`.
+- [ ] Authenticated/personalized responses are not shared-cached; any private
+      cache key and invalidation cover every authorization dimension.
 - [ ] Every server-side URL fetch is allowlisted and blocks internal ranges.
 - [ ] Redirect targets validated with `url_has_allowed_host_and_scheme`.
