@@ -14,8 +14,10 @@ in `SKILL.md` frontmatter (`metadata.version`).
 Reviews backend code for security issues and applies secure defaults while
 writing code. Organized on the OWASP Top 10:2025 spine, with stack-agnostic
 principle layers and deep Django/DRF implementation layers across category and
-cross-cutting references, including uploads, async/Channels, caching,
-notification abuse, lifecycle hooks, and migrations.
+cross-cutting references. Coverage includes OAuth2/OIDC and social-login trust
+boundaries, API-key lifecycle and scoping, third-party dependency vetting and
+maintained-package decisions, uploads, async/Channels, caching, migrations,
+signals, email/notification abuse, and deployment/runtime hardening.
 
 ## Two modes
 - Review-time: audit existing code, produce prioritized findings (severity,

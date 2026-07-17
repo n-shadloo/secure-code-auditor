@@ -1,5 +1,5 @@
 ---
-description: Backend security review and secure-by-default coding, Django/DRF-first on an OWASP Top 10:2025 spine. Canonical instructions live in SKILL.md and references/.
+description: Backend security review and secure-by-default coding, Django/DRF-first on an OWASP Top 10:2025 spine, including OAuth2/OIDC, social login, API keys, and dependency vetting. Canonical instructions live in SKILL.md and references/.
 alwaysApply: false
 ---
 
@@ -9,5 +9,11 @@ skill defined in `SKILL.md` at the repo root as the source of truth. Read
 `references/*.md` file(s). Review-time produces prioritized findings (severity,
 location, CWE + OWASP mapping, fix); write-time applies secure defaults. The
 methodology and findings format are in `references/00-methodology-and-severity.md`.
+
+Treat OAuth2/OIDC and social login, API-key lifecycle/scoping, and third-party
+security-library vetting as first-class review triggers. Use A07 for auth/API
+keys, A03 for the dependency gate, and the security-hardening library index for
+dated package dispositions.
+
 Read-only triage scripts are in `scripts/`. Do not rely on this summary alone —
 read the referenced files.

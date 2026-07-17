@@ -27,8 +27,8 @@ then a deep Django/DRF section with the actual settings, code, and gotchas.
   SVG, image/archive bombs, size/count limits, quotas, private downloads.
 - Injection: SQL/ORM (including the recent column-alias class), command,
   template, and header injection; server-side output handling.
-- Auth: sessions, JWT/SimpleJWT, brute-force lockout, MFA, password reset,
-  account enumeration, allauth/dj-rest-auth.
+- Authentication: sessions, JWT, OAuth2/OIDC and social login, API keys,
+  brute-force resistance, MFA, password reset, and enumeration resistance.
 - API/DRF: serializer over-exposure and mass assignment, pagination/filter
   leakage, throttling, default permission classes, CSRF interaction, payments.
 - Async/ASGI and Channels: safe ORM boundaries, request-context isolation,
@@ -43,11 +43,15 @@ then a deep Django/DRF section with the actual settings, code, and gotchas.
   post-commit side effects, error handling, and alerting.
 - Deployment/runtime: TLS, headers, reverse-proxy trust, Gunicorn/systemd,
   origin-isolated media, caching, and brokers.
-- Supply chain: pinning, hashing, scanning, EOL frameworks.
+- Supply chain: third-party dependency vetting, maintained-package gates,
+  pinning, hashing, advisory scanning, SBOMs, and EOL frameworks.
 
 Version baseline is kept current (Django 6.0.7 / 5.2.16 LTS; DRF 3.17.1;
-SimpleJWT 5.5.1; Channels 4.3.2, as of 16 Jul 2026), and it flags projects on
-end-of-life Django.
+Channels 4.3.2; django-allauth 65.18.0; dj-rest-auth 7.2.0;
+django-oauth-toolkit 3.3.0; social-auth-app-django 6.0.0, as of 17 Jul 2026).
+Compatibility is checked per package: SimpleJWT 5.5.1 and several optional
+auth/CSP helpers remain conditional on Django 5.2, and projects on end-of-life
+Django are flagged.
 
 ## Install
 
