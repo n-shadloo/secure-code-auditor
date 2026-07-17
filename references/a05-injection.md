@@ -117,6 +117,8 @@ request-influenced data as high-severity leads.
 - Don't reflect unvalidated input into response headers (`Location`, custom
   headers). Django validates header values, but user-derived redirect targets
   still need the open-redirect check from A01.
+- For reset, magic-link, invite/share, mailbox-flooding, and preview-fetch abuse,
+  see the email and notification design controls in A06.
 
 ## XML / deserialization pointers
 

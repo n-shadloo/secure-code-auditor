@@ -30,9 +30,9 @@ and revoke active sessions.
   (`django.contrib.auth.login` cycles the key — don't bypass it with a custom
   login that reuses the session).
 - Consider `SESSION_EXPIRE_AT_BROWSER_CLOSE` and a sensible `SESSION_COOKIE_AGE`
-  for sensitive apps. Note the 2026 session-fixation CVE tied to caching public
-  pages while `SESSION_SAVE_EVERY_REQUEST` is on — see caching in the deployment
-  file.
+  for sensitive apps. Treat any cached response that creates or changes a
+  session cookie as sensitive; keep Django patched and see A01 for
+  cache-authorization rules and the deployment file for cache infrastructure.
 
 ## JWT with SimpleJWT
 

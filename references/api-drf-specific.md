@@ -3,9 +3,10 @@
 Cross-cutting DRF material that spans several OWASP categories: serializer
 exposure/mass assignment, pagination/filter leakage, throttling, default
 auth/permission classes, CSRF interaction, and payment endpoints. Read alongside
-A01 (authz), A02 (config/CORS), A06/A07 (rate limiting/auth). Maps to OWASP API
-Security Top 10:2023 broadly (API1 BOLA, API3 BOPLA, API4 resource consumption,
-API8 misconfiguration).
+A01 (authz), A02 (config/CORS), A06/A07 (rate limiting/auth),
+`file-uploads.md`, and `async-and-channels.md` when those surfaces apply. Maps
+to OWASP API Security Top 10:2023 broadly (API1 BOLA, API3 BOPLA, API4 resource
+consumption, API8 misconfiguration).
 
 ## Contents
 - [Serializer exposure and mass assignment (API3)](#serializer-exposure-and-mass-assignment-api3)
@@ -96,7 +97,8 @@ misconfiguration.
 DRF throttles provide basic fair-use quotas and are **not** a brute-force or DoS
 defense (see A06). Use them for quotas; use `django-axes` + edge limits for abuse
 protection. Configure real limits where resource consumption matters (expensive
-queries, exports, file processing).
+queries, exports, file processing). Upload endpoints also need hard edge,
+per-file, aggregate, parser, and storage-quota controls from `file-uploads.md`.
 
 ## Inventory and versioning (API9)
 

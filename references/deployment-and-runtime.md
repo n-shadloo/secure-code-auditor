@@ -96,14 +96,16 @@ Grant write access only to the paths the app genuinely needs.
 
 ## Static and media
 
-- Serve user-uploaded media so it can never be executed: store outside the web
-  root or on object storage/CDN, and don't let the server interpret uploaded
-  files as code. Validate uploads (extension + content-type + magic bytes),
-  sanitize filenames, and set restrictive permissions (`FILE_UPLOAD_PERMISSIONS = 0o644`).
-- Serve static via Nginx or WhiteNoise; keep `MEDIA_ROOT` and any private files
-  off directly browsable paths. Enforce upload size at both Nginx
-  (`client_max_body_size`) and Django (A06) — the app-level limit alone has been
-  bypassable.
+- Keep user uploads outside application/static roots or in object storage, with
+  no execute behavior and no write path into deployed code. Public user content
+  should use an isolated origin; private media must not have a permanent,
+  directly browsable URL. Full validation, SVG/image/archive handling, generated
+  names, and download authorization are in `file-uploads.md`.
+- Serve static via Nginx or WhiteNoise. Put a hard request-body limit at Nginx
+  (`client_max_body_size`) or the gateway, then apply endpoint-specific file,
+  count, processing, and quota limits in the application (A06 and
+  `file-uploads.md`). Django's upload memory settings are not hard file-size
+  caps.
 
 ## Database and secrets
 
@@ -115,13 +117,17 @@ Grant write access only to the paths the app genuinely needs.
 
 ## Caching security
 
-- Never cache authenticated/personalized responses in a shared cache. Django's
-  2026 cache CVEs are concrete precedents: responses setting `Set-Cookie` or
-  bearing an `Authorization` header, or with mishandled `Vary`, were stored in the
-  shared cache — leaking one user's data to another. Audit `cache_page` /
-  `UpdateCacheMiddleware` on any view that varies by user.
-- Vary cached responses correctly; keep Django patched for the cache fixes; don't
-  cache `private`/`no-store` responses.
+- Treat reverse proxies, CDNs, Django's site/per-view cache, and shared Redis or
+  Memcached as data-serving infrastructure. Keep cache services authenticated,
+  private, least-privileged, and separated by environment; do not expose cache
+  ports publicly.
+- Never shared-cache authenticated or personalized responses by default. Audit
+  `cache_page`, `UpdateCacheMiddleware`, proxy/CDN rules, `Vary`, `Set-Cookie`,
+  and `Cache-Control` together, and test with two users and two tenants.
+- Keep Django at 6.0.7 or 5.2.16 or later in the supported line for the 2026
+  cache fixes. See A01 for audience-safe keys, authorization ordering,
+  invalidation, and private-response policy; infrastructure configuration cannot
+  repair a key that omits security context.
 
 ## Queue and broker exposure
 
@@ -136,7 +142,8 @@ Grant write access only to the paths the app genuinely needs.
       correct; `SECURE_PROXY_SSL_HEADER` not client-spoofable.
 - [ ] Security headers defined once; server/version banners hidden.
 - [ ] Gunicorn non-root on a local socket; systemd unit hardened.
-- [ ] Uploads validated and served inertly; size capped at edge and app.
+- [ ] Uploads use inert/origin-isolated serving; hard edge limits and
+      application file/count/processing/quotas are enforced.
 - [ ] DB over TLS and firewalled; secrets from env, not in image/VCS.
-- [ ] No shared-cache caching of authenticated responses; broker authenticated
-      and private.
+- [ ] No shared-cache caching of authenticated responses; cache and broker
+      services are authenticated, private, and environment-separated.

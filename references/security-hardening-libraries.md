@@ -23,8 +23,9 @@ add a library for something Django already does.
 
 Django and DRF cover more than people assume: password hashing, CSRF, sessions,
 clickjacking, security headers, signing, password validation, and (on 6.0+) CSP
-are all built in. Reach outward mainly for CORS, brute-force lockout, MFA, JWT,
-rich auth/registration, XML safety, and HTML sanitization.
+are all built in. Reach outward mainly for CORS, WebSocket/protocol routing,
+brute-force lockout, MFA, JWT, rich auth/registration, file-type detection, XML
+safety, and HTML sanitization.
 
 ## The table
 
@@ -39,6 +40,7 @@ rich auth/registration, XML safety, and HTML sanitization.
 | Content Security Policy | **`SECURE_CSP`** on Django **6.0+** | `django-csp` (only on pre-6.0); maintained |
 | Signing tokens/values | `django.core.signing`, `TimestampSigner` | — |
 | CORS | *(none built in)* | `django-cors-headers` **4.9.0**; maintained |
+| WebSockets / protocol routing | Django ASGI for HTTP | `channels` **4.3.2**; official Django project, maintained |
 | Brute-force lockout | *(none built in)* | `django-axes`; maintained |
 | Per-view rate limiting | DRF throttles for quotas only | `django-ratelimit` (app), edge limits (Nginx/Cloudflare); maintained |
 | MFA / 2FA | *(none built in)* | `django-otp` (TOTP), optionally `django-two-factor-auth`, or allauth MFA; maintained |
@@ -57,12 +59,18 @@ rich auth/registration, XML safety, and HTML sanitization.
   upgrades of existing hashes.
 - **CSP:** on Django 6.0+ use the built-in `SECURE_CSP`; only pull in
   `django-csp` on older projects.
+- **Channels:** use Django's native ASGI support for HTTP; add Channels when the
+  application needs WebSockets, long-lived consumers, or protocol routing, and
+  follow `async-and-channels.md` for origin, auth, ORM, and resource controls.
 - **JWT vs sessions/tokens:** for a first-party client, session auth or DRF's
   built-in token auth is often the safer default; choose SimpleJWT when you need
   stateless cross-service tokens, and harden it (A07).
 - **HTML sanitization:** if you must accept HTML, sanitize with `nh3`. Django's
   `strip_tags`/autoescaping are output-escaping helpers, not sanitizers, and
   `bleach` is no longer maintained — don't recommend it.
+- **File type detection:** `python-magic` or `filetype` provides only one signal;
+  combine it with extension/declared-type consistency, a complete parser, and
+  the storage/serving controls in `file-uploads.md`.
 - **XML:** never parse untrusted XML with the stdlib parser; use `defusedxml`
   (XXE/entity-expansion protection).
 - **Rate limiting:** for real abuse defense combine `django-axes` (auth lockout)
