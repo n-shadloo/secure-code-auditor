@@ -7,8 +7,10 @@ description: >-
   security is in scope — including any time the work touches authentication,
   login, sessions, JWT or tokens, permissions or access control, user-supplied
   input, the ORM or raw SQL, file uploads, serializers or API endpoints,
-  secrets or settings, payments, background tasks, caching, or deployment
-  configuration, even if the word "security" is never used. Runs in two modes:
+  secrets or settings, payments, email or notifications, background tasks,
+  caching, async/ASGI or WebSockets, signals or lifecycle hooks, migrations, or
+  deployment configuration, even if the word "security" is never used. Runs in
+  two modes:
   review-time (audit existing code and return prioritized, actionable findings
   with severity, location, and a concrete fix) and write-time (apply secure
   defaults and flag risky patterns while generating code). Django/DRF is the
@@ -17,7 +19,7 @@ license: MIT
 allowed-tools: Read, Grep, Glob, Bash
 metadata:
   author: n-shadloo
-  version: 1.1.0
+  version: 1.2.0
 ---
 
 # secure-code-auditor
@@ -32,8 +34,8 @@ Its canonical content is reused by other agents (Codex, Cursor, Gemini CLI) via
 
 ## How the reference material is organized
 
-Everything is arranged on the **OWASP Top 10:2025 spine**. Each category file
-has two layers:
+Everything is arranged on the **OWASP Top 10:2025 spine**. Category files and
+cross-cutting topic references have two layers:
 
 1. **Principle** — the vulnerability, why it matters, and the defense, stated
    stack-agnostically so it's useful in any backend language.
@@ -46,22 +48,27 @@ Load only the file(s) relevant to the concern in front of you.
 | Concern | Reference file |
 |---|---|
 | Method & severity model, report format, mode selection | `references/00-methodology-and-severity.md` |
-| Access control, IDOR/BOLA, object- & function-level authz, SSRF, open redirect, multi-tenancy, admin access | `references/a01-broken-access-control.md` |
+| Access control, IDOR/BOLA, object- & function-level authz, cache-mediated data leaks, SSRF, open redirect, multi-tenancy, admin access | `references/a01-broken-access-control.md` |
 | DEBUG/ALLOWED_HOSTS, SECURE_*/SESSION_*/CSRF_* matrix, CORS, headers, `check --deploy` | `references/a02-security-misconfiguration.md` |
-| Dependencies, pinning/hashing, `pip-audit`/`safety`, EOL frameworks, SBOM | `references/a03-software-supply-chain.md` |
+| Dependencies, pinning/hashing, `pip-audit`/`safety`, EOL frameworks, migrations/data integrity, SBOM | `references/a03-software-supply-chain.md` |
 | Password hashing, TLS-in-transit, data at rest, signing, reset tokens, secrets | `references/a04-cryptographic-failures.md` |
 | SQL/ORM injection, command injection, template injection, header/email injection, server-side output | `references/a05-injection.md` |
-| Rate limiting/anti-automation, business-logic abuse, missing limits, insecure defaults | `references/a06-insecure-design.md` |
+| Rate limiting/anti-automation, business-logic and email/notification abuse, missing limits, insecure defaults | `references/a06-insecure-design.md` |
 | Sessions, JWT/SimpleJWT, brute force, MFA, password reset, allauth/dj-rest-auth, enumeration | `references/a07-authentication-failures.md` |
 | Insecure deserialization (pickle/yaml), Celery serializer, signed data, CI/CD integrity | `references/a08-integrity-and-deserialization.md` |
-| Sensitive-data leakage in logs, audit logging, alerting, log injection | `references/a09-logging-and-alerting.md` |
+| Sensitive-data leakage in logs, audit logging, lifecycle hooks/signals, alerting, log injection | `references/a09-logging-and-alerting.md` |
 | DEBUG/error views, stack-trace leakage, fail-open checks, race conditions/TOCTOU | `references/a10-exceptional-conditions.md` |
 | Serializer over-exposure/mass assignment, pagination/filter leakage, throttling, default auth/permission classes, DRF+CSRF | `references/api-drf-specific.md` |
-| TLS/HSTS, Nginx, reverse-proxy & `X-Forwarded-*` trust, Gunicorn/systemd hardening, static/media, caching & queue exposure | `references/deployment-and-runtime.md` |
+| Async/ASGI boundaries, sync ORM access, task/request context, WebSocket/Channels origin, authentication, authorization, and limits | `references/async-and-channels.md` |
+| File uploads, type/content validation, safe names/storage/serving, SVG, image/archive bombs, size/count/quotas | `references/file-uploads.md` |
+| TLS/HSTS, Nginx, reverse-proxy & `X-Forwarded-*` trust, Gunicorn/systemd hardening, static/media, cache & queue exposure | `references/deployment-and-runtime.md` |
 | Which library (or built-in) to reach for, current & maintained as of Jul 2026, with a supply-chain warning | `references/security-hardening-libraries.md` |
 
 Cross-references between files are intentional: authz appears in A01 and again,
-API-shaped, in the DRF file; rate limiting spans A06, A07, and the DRF file.
+API-shaped, in the DRF file; rate limiting spans A06, A07, uploads, async
+connections, and the DRF file; deployment covers the infrastructure side of
+cache and media controls whose application rules live in A01 and the upload
+reference.
 
 ## Mode selection
 

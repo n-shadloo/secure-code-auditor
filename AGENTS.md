@@ -12,8 +12,10 @@ in `SKILL.md` frontmatter (`metadata.version`).
 
 ## What this skill does
 Reviews backend code for security issues and applies secure defaults while
-writing code. Organized on the OWASP Top 10:2025 spine, with a stack-agnostic
-principle layer and a deep Django/DRF implementation layer per category.
+writing code. Organized on the OWASP Top 10:2025 spine, with stack-agnostic
+principle layers and deep Django/DRF implementation layers across category and
+cross-cutting references, including uploads, async/Channels, caching,
+notification abuse, lifecycle hooks, and migrations.
 
 ## Two modes
 - Review-time: audit existing code, produce prioritized findings (severity,

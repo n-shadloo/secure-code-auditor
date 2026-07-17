@@ -21,23 +21,33 @@ then a deep Django/DRF section with the actual settings, code, and gotchas.
 
 ## What it covers
 
-- Access control: object- and function-level authorization, IDOR/BOLA, SSRF,
-  open redirect, multi-tenancy, admin exposure.
+- Access control: object- and function-level authorization, IDOR/BOLA,
+  cache-mediated data leaks, SSRF, open redirect, multi-tenancy, admin exposure.
+- File uploads: type/content validation, safe names and inert storage/serving,
+  SVG, image/archive bombs, size/count limits, quotas, private downloads.
 - Injection: SQL/ORM (including the recent column-alias class), command,
   template, and header injection; server-side output handling.
 - Auth: sessions, JWT/SimpleJWT, brute-force lockout, MFA, password reset,
   account enumeration, allauth/dj-rest-auth.
 - API/DRF: serializer over-exposure and mass assignment, pagination/filter
   leakage, throttling, default permission classes, CSRF interaction, payments.
+- Async/ASGI and Channels: safe ORM boundaries, request-context isolation,
+  origin checks, and per-connection authentication, authorization, and limits.
+- Abuse-resistant notifications: reset/magic-link, invite/share throttling,
+  idempotency, anti-enumeration, and SSRF-safe previews.
 - Configuration and crypto: the `SECURE_*`/`SESSION_*`/`CSRF_*` matrix, CORS,
   password hashing, secrets, signing.
-- Integrity: insecure deserialization, Celery serializers, webhook verification.
-- Logging, error handling, and the deployment/runtime layer the backend owns
-  (TLS, headers, reverse-proxy trust, Gunicorn/systemd, caching, brokers).
+- Integrity: insecure deserialization, Celery serializers, webhook verification,
+  and safe schema/data migrations.
+- Logging and lifecycle: secret-safe audit logs, complete lifecycle coverage,
+  post-commit side effects, error handling, and alerting.
+- Deployment/runtime: TLS, headers, reverse-proxy trust, Gunicorn/systemd,
+  origin-isolated media, caching, and brokers.
 - Supply chain: pinning, hashing, scanning, EOL frameworks.
 
-Version baseline is kept current (Django 6.0.x / 5.2 LTS; DRF 3.17.x; SimpleJWT
-5.5.x, as of mid-2026), and it flags projects on end-of-life Django.
+Version baseline is kept current (Django 6.0.7 / 5.2.16 LTS; DRF 3.17.1;
+SimpleJWT 5.5.1; Channels 4.3.2, as of 16 Jul 2026), and it flags projects on
+end-of-life Django.
 
 ## Install
 
@@ -183,7 +193,9 @@ secure-code-auditor/
 │   ├── a09-logging-and-alerting.md
 │   ├── a10-exceptional-conditions.md
 │   ├── api-drf-specific.md
+│   ├── async-and-channels.md
 │   ├── deployment-and-runtime.md
+│   ├── file-uploads.md
 │   └── security-hardening-libraries.md
 ├── scripts/
 │   ├── dangerous_patterns.py           # read-only project scanner
