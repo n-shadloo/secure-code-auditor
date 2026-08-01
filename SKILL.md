@@ -3,25 +3,23 @@ name: secure-code-auditor
 description: >-
   Backend security auditor with deep Django and Django REST Framework coverage
   layered on a general OWASP Top 10 (2025) and API Security Top 10 (2023)
-  foundation. Use whenever backend code is being written or reviewed and
-  security is in scope — including any time the work touches authentication,
-  login, sessions, JWT, OAuth2/OIDC, social login, API keys or tokens,
-  permissions, roles or access control, object- and field-level authorization,
-  admin actions, impersonation or privileged access, user-supplied
-  input, the ORM or raw SQL, file uploads, serializers or API endpoints,
-  secrets or settings, payments, email or notifications, background tasks,
-  caching, async/ASGI or WebSockets, signals or lifecycle hooks, migrations, or
-  deployment configuration, even if the word "security" is never used. Runs in
-  two modes:
-  review-time (audit existing code and return prioritized, actionable findings
-  with severity, location, and a concrete fix) and write-time (apply secure
-  defaults and flag risky patterns while generating code). Django/DRF is the
-  primary target; the general layer makes it useful for any backend stack.
+  foundation. Use whenever backend code is written or reviewed and security is
+  in scope — including any time the work touches authentication, login,
+  sessions, JWT, OAuth2/OIDC, social login, API keys or tokens, permissions,
+  roles or access control, object- and field-level authorization, impersonation
+  or privileged access, user-supplied input, the ORM or raw SQL, file uploads,
+  serializers or API endpoints, secrets or settings, payments, email or
+  notifications, background tasks, caching, async/ASGI or WebSockets, signals
+  or lifecycle hooks, migrations, or deployment configuration, even if the word
+  "security" is never used. Runs in two modes: review-time (audit code and
+  return prioritized findings with severity, location, and a fix) and
+  write-time (secure defaults, risky patterns flagged). Django/DRF is the
+  primary target; the general layer suits any backend stack.
 license: MIT
 allowed-tools: Read, Grep, Glob, Bash
 metadata:
   author: n-shadloo
-  version: 1.4.0
+  version: 1.4.1
 ---
 
 # secure-code-auditor
