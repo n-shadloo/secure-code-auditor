@@ -6,7 +6,8 @@ description: >-
   foundation. Use whenever backend code is being written or reviewed and
   security is in scope — including any time the work touches authentication,
   login, sessions, JWT, OAuth2/OIDC, social login, API keys or tokens,
-  permissions or access control, user-supplied
+  permissions, roles or access control, object- and field-level authorization,
+  admin actions, impersonation or privileged access, user-supplied
   input, the ORM or raw SQL, file uploads, serializers or API endpoints,
   secrets or settings, payments, email or notifications, background tasks,
   caching, async/ASGI or WebSockets, signals or lifecycle hooks, migrations, or
@@ -20,7 +21,7 @@ license: MIT
 allowed-tools: Read, Grep, Glob, Bash
 metadata:
   author: n-shadloo
-  version: 1.3.0
+  version: 1.4.0
 ---
 
 # secure-code-auditor
@@ -59,17 +60,20 @@ Load only the file(s) relevant to the concern in front of you.
 | Insecure deserialization (pickle/yaml), Celery serializer, signed data, CI/CD integrity | `references/a08-integrity-and-deserialization.md` |
 | Sensitive-data leakage in logs, audit logging, lifecycle hooks/signals, alerting, log injection | `references/a09-logging-and-alerting.md` |
 | DEBUG/error views, stack-trace leakage, fail-open checks, race conditions/TOCTOU | `references/a10-exceptional-conditions.md` |
+| Privilege model (RBAC/ABAC/ReBAC), `ModelBackend`/DRF/admin permission behavior, default-deny + URLconf audit test, field-level authz (BOPLA), authz test design, permission decay | `references/authorization-architecture.md` |
+| Impersonation / "log in as user", django-hijack, break-glass & JIT elevation, operator audit identity | `references/privileged-access-and-impersonation.md` |
 | Serializer over-exposure/mass assignment, pagination/filter leakage, throttling, default auth/permission classes, DRF+CSRF | `references/api-drf-specific.md` |
 | Async/ASGI boundaries, sync ORM access, task/request context, WebSocket/Channels origin, authentication, authorization, and limits | `references/async-and-channels.md` |
 | File uploads, type/content validation, safe names/storage/serving, SVG, image/archive bombs, size/count/quotas | `references/file-uploads.md` |
 | TLS/HSTS, Nginx, reverse-proxy & `X-Forwarded-*` trust, Gunicorn/systemd hardening, static/media, cache & queue exposure | `references/deployment-and-runtime.md` |
 | Vetted security-library choices, compatibility, minimum-safe versions, conditional/existing-install-only/rejected candidates (current as of 17 Jul 2026) | `references/security-hardening-libraries.md` |
 
-Cross-references between files are intentional: authz appears in A01 and again,
-API-shaped, in the DRF file; rate limiting spans A06, A07, uploads, async
-connections, and the DRF file; deployment covers the infrastructure side of
-cache and media controls whose application rules live in A01 and the upload
-reference.
+Cross-references between files are intentional: authz appears in A01 as
+per-request failures, in the authorization-architecture file as the model that
+produces them, and again API-shaped in the DRF file; rate limiting spans A06,
+A07, uploads, async connections, and the DRF file; deployment covers the
+infrastructure side of cache and media controls whose application rules live in
+A01 and the upload reference.
 
 ## Mode selection
 

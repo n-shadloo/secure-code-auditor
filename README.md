@@ -23,6 +23,12 @@ then a deep Django/DRF section with the actual settings, code, and gotchas.
 
 - Access control: object- and function-level authorization, IDOR/BOLA,
   cache-mediated data leaks, SSRF, open redirect, multi-tenancy, admin exposure.
+- Authorization architecture: the privilege model (RBAC/ABAC/ReBAC), what
+  Django's permission layer actually does, the DRF and admin enforcement
+  surfaces, default-deny with a URLconf audit test, field-level authorization,
+  and authorization test design that isn't false confidence.
+- Privileged access: impersonation ("log in as user"), break-glass and
+  just-in-time elevation, and the operator audit identity both require.
 - File uploads: type/content validation, safe names and inert storage/serving,
   SVG, image/archive bombs, size/count limits, quotas, private downloads.
 - Injection: SQL/ORM (including the recent column-alias class), command,
@@ -51,7 +57,9 @@ Channels 4.3.2; django-allauth 65.18.0; dj-rest-auth 7.2.0;
 django-oauth-toolkit 3.3.0; social-auth-app-django 6.0.0, as of 17 Jul 2026).
 Compatibility is checked per package: SimpleJWT 5.5.1 and several optional
 auth/CSP helpers remain conditional on Django 5.2, and projects on end-of-life
-Django are flagged.
+Django are flagged. The authorization and impersonation packages
+(django-guardian 3.3.3, django-hijack 3.7.8, rules 3.5, and the external policy
+engines) were checked separately on 1 Aug 2026.
 
 ## Install
 
@@ -198,8 +206,10 @@ secure-code-auditor/
 │   ├── a10-exceptional-conditions.md
 │   ├── api-drf-specific.md
 │   ├── async-and-channels.md
+│   ├── authorization-architecture.md
 │   ├── deployment-and-runtime.md
 │   ├── file-uploads.md
+│   ├── privileged-access-and-impersonation.md
 │   └── security-hardening-libraries.md
 ├── scripts/
 │   ├── dangerous_patterns.py           # read-only project scanner
