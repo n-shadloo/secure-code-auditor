@@ -51,6 +51,14 @@ class UserSerializer(serializers.ModelSerializer):
   back. Be careful with `depth` and nested serializers exposing related data.
 - Never trust the client to omit dangerous fields; the serializer must exclude
   them.
+- Object permissions are **not** applied on create — `get_object()` never runs,
+  so `has_object_permission` cannot stop a client from creating a record against
+  another owner or tenant. Set those fields in `perform_create()` from
+  `request.user`, or validate them in the serializer.
+
+Where the writable set differs *by role*, allow-list writable fields per role
+rather than deny-listing them, and test `PATCH` separately from `PUT`; see
+`authorization-architecture.md` for the pattern and the full BOPLA surface.
 
 ## Pagination and filter leakage
 
@@ -79,6 +87,10 @@ REST_FRAMEWORK = {
 
 A default of `AllowAny` makes every un-annotated view public — a common
 misconfiguration.
+
+This setting covers DRF only, not plain Django views, the admin, or third-party
+URLs. To make deny-by-default enforceable across the whole project, pair it with
+a URLconf-enumerating audit test — see `authorization-architecture.md`.
 
 ## CSRF and SessionAuthentication
 
@@ -121,6 +133,8 @@ per-file, aggregate, parser, and storage-quota controls from `file-uploads.md`.
 
 - [ ] No `fields = "__all__"`; explicit fields; server-controlled fields
       read-only; passwords write-only.
+- [ ] Owner/tenant set server-side on create, since object permissions don't run
+      there; role-dependent writable fields allow-listed and `PATCH` tested.
 - [ ] Filters/pagination run on requester-scoped querysets; no filter/enumeration
       leakage.
 - [ ] `DEFAULT_PERMISSION_CLASSES` restrictive; no accidental `AllowAny`.

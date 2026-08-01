@@ -44,6 +44,10 @@ Two facts cause most bugs:
 - Built-in permission classes other than `DjangoObjectPermissions` don't
   implement `has_object_permission`, so `IsAuthenticated` alone authorizes the
   *view*, never the *object*.
+- Django's own `user.has_perm(perm, obj)` does not help: with the default
+  `ModelBackend` it returns `False` for every non-superuser, whatever
+  model-level permission they hold. It does not fall back to the model
+  permission — see `authorization-architecture.md`.
 
 The robust default is to **scope the queryset to the requester**, so isolation
 holds for both list and detail without depending on the object hook:
@@ -74,6 +78,12 @@ class IsOwner(BasePermission):
     def has_object_permission(self, request, view, obj):
         return obj.owner_id == request.user.id
 ```
+
+Note that `BasePermission.has_object_permission` returns `True` by default, so a
+custom class implementing only `has_permission` grants object access to everyone
+who clears the view check. `authorization-architecture.md` covers the full
+enforcement surface — which DRF paths call the object hook, the admin permission
+hooks, and the permission model behind them.
 
 ## IDOR / BOLA
 
@@ -111,6 +121,28 @@ Indicators to investigate (each is a lead, confirm reachability):
 - Never accept the tenant id from the body or a header the client can set.
 - Watch aggregates, `values()`, exports, and admin: isolation bugs hide in
   reporting and CSV endpoints as often as in CRUD.
+
+Tenant identity arrives from a subdomain, a URL path segment, a JWT claim, a
+session, or a header, and these are not equally trustworthy. A session-stored
+tenant is trustworthy; a JWT claim is trustworthy **only** if the token is
+verified server-side and the claim was bound at issuance. Subdomains, path
+segments, and client-supplied headers are attacker-controllable and must be
+validated against the authenticated user's tenant memberships before use, never
+trusted alone.
+
+The core failure mode is **tenant resolution and object authorization running as
+separate code paths**: the object is fetched by id, the tenant is resolved
+independently, and nothing asserts that the object belongs to the resolved
+tenant. That is cross-tenant IDOR even though both halves look correct. Bind
+them by scoping the query — `Model.objects.filter(tenant=request.tenant, pk=pk)`
+— rather than fetching and then comparing.
+
+Storing the "current tenant" in a thread-local or `contextvars` global is an
+anti-pattern for the same reason. Under async and with thread-pool reuse, a
+thread-local can leak a tenant across requests or tasks; `contextvars` is safer
+for async but still couples authorization to ambient state that background jobs,
+signal receivers, and consumers may inherit or lose silently. Explicit scoping
+is the deeper fix.
 
 ## Caching and authorization
 
@@ -279,12 +311,20 @@ bootstrap OAuth token theft.
   `is_superuser`.
 - Add MFA for admin (`django-otp`); see the auth and libraries files.
 
+This section covers *exposure*. The admin's permission hooks — `get_queryset()`
+scoping, bulk actions, custom `@admin.action` permissions, and what
+`readonly_fields` does and doesn't enforce — are in
+`authorization-architecture.md`. Impersonation ("log in as user") and
+break-glass elevation are in `privileged-access-and-impersonation.md`.
+
 ## Review checklist
 
 - [ ] Detail/update/destroy routes scope by requester (queryset or object perm).
 - [ ] List endpoints filter by identity; no cross-tenant leakage in lists/exports.
 - [ ] Default permission class is restrictive; every public view is deliberate.
 - [ ] Ownership/tenant comes from `request.user`, never the request body.
+- [ ] Tenant resolution and object lookup are one scoped query, not two
+      independent steps; no ambient thread-local/`contextvars` tenant.
 - [ ] Admin/staff actions use a role check, not bare `IsAuthenticated`.
 - [ ] Authenticated/personalized responses are not shared-cached; any private
       cache key and invalidation cover every authorization dimension.

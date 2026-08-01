@@ -47,6 +47,31 @@ Advisory scanning alone is not vetting.
 | `python-decouple==3.8` | **Reject as a new recommendation.** Stale release signal. Use `os.environ` or the official maintained secrets-manager SDK and validate settings at startup. |
 | Generic “security bundle” packages | **Do not recommend by category alone.** Prefer Django/DRF built-ins and add a narrowly justified dependency only after the A03 gate. |
 
+## Authorization, object permissions, and impersonation
+
+Versions and classifiers in this section were checked against PyPI on
+**1 Aug 2026**; the rest of this file carries the 17 Jul 2026 baseline above.
+Read with `authorization-architecture.md` and
+`privileged-access-and-impersonation.md`.
+
+Before adding any of these, note that the default recommendation for object
+authorization is **queryset scoping**, which needs no dependency at all. Reach
+for a package when per-object grants are genuinely data, or when the same
+per-object rule is being hand-written across more than a handful of views.
+
+| Concern | Choice and version | Disposition and review notes |
+|---|---|---|
+| Object permissions (ACL rows) | `django-guardian==3.3.3` (22 Jul 2026) | **Conditional on a Django 6.0 baseline; recommend on 5.2.** BSD-2-Clause; Python >=3.10; actively released (3.3.0–3.3.3 all in 2026), but classifiers still stop at Django 5.2 — do not infer 6.0 support. Requires adding `guardian.backends.ObjectPermissionBackend` to `AUTHENTICATION_BACKENDS`; without it `has_perm(perm, obj)` stays a no-op. Review anonymous-user handling (guardian creates a real anonymous user row), `get_objects_for_user()` query cost, and generic- vs direct-FK permission models on hot paths. |
+| Guardian + DRF filtering | `djangorestframework-guardian==0.4.0` (1 Jul 2025) | **Conditional.** BSD-3-Clause; Python >=3.10; classifiers stop at Django 5.2 and the release is over a year old. Provides `ObjectPermissionsFilter`. The `-guardian2` fork (0.7.0, Oct 2024, classifiers to 5.1) is staler — prefer this one or drop the filter and scope the queryset directly. |
+| Predicate rules (no DB) | `rules==3.5` (2 Sep 2024) — distributed as `rules`, usually written django-rules | **Conditional; verify in CI.** MIT; in-process predicate functions with no tables and no runtime dependencies, so the exit plan is trivial. But the release is ~2 years old and it declares no Django version classifiers — confirm it against the project's actual Django before relying on it, and prefer queryset scoping where that suffices. |
+| Impersonation | `django-hijack==3.7.8` (19 Apr 2026) | **Recommend.** MIT; Python >=3.10; Django 6.0 classifier present; v3 is a security-focused rewrite. Keep `superusers_only` and POST+CSRF; leave `HIJACK_ALLOW_GET_REQUESTS` off. It does not time-box, re-authenticate, or scope down the session — add those yourself. |
+| ReBAC engine (external) | `openfga-sdk==0.10.4` (29 Jun 2026) | **Conditional, and only past the ReBAC threshold.** Apache-2.0; Python >=3.10; CNCF-incubating server, self-hostable. Still a 0.x SDK, and you take on a stateful service plus its datastore. Run a current server version and re-run the A03 gate at adoption. |
+| ReBAC engine (external) | `authzed==1.25.0` (14 Jul 2026) — SpiceDB client | **Conditional, and only past the ReBAC threshold.** Apache-2.0; Python >=3.10; actively released. Same operational cost as OpenFGA: a separate gRPC service and datastore. |
+| In-process policy engine | `casbin==1.43.0` (10 May 2025) | **Conditional.** Apache-2.0; in-process, no separate service; model+policy files cover RBAC/ABAC-style rules. Release is over a year old and `requires_python` is unmaintained (`>=3.3`) — verify against the project's Python. Policy files become a second authorization source of truth; keep them reviewable. |
+| Role helper | `django-role-permissions==3.2.0` (9 Jun 2023) | **Reject for new use.** Over three years old with no Django version classifiers; Django 6.0 compatibility unverified. Use Django groups/permissions plus the privilege model in `authorization-architecture.md`. |
+| Policy library | `oso==0.27.3` (13 Jan 2024) | **Reject for new use.** The open-source library was deprecated on 18 Dec 2023 in favour of the hosted Oso Cloud; `django-oso` is part of the same deprecated line. Existing installs should plan migration. |
+| General policy engine | OPA / Rego | **Reject as an app-level authz choice for a Django backend unless already run org-wide.** Apache-2.0, CNCF-graduated, but there is no first-class Python embedding — you run a sidecar queried over REST or compile policy to WASM. That is real latency, failure-mode, and operational cost for in-process decisions. |
+
 ## Use in a review
 
 - Report the installed version and actual configuration, not merely the package name.
