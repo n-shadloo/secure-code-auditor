@@ -112,7 +112,40 @@ superuser (see below). Pick one enforcement path and apply it consistently:
 - **django-rules** — predicate functions, when the rule is computable.
 
 Only the second and third make `user.has_perm(perm, obj)` meaningful, and only
-after their backend is added to `AUTHENTICATION_BACKENDS`.
+after their backend is added to `AUTHENTICATION_BACKENDS`. Their minimal
+wiring, for the cases where queryset scoping genuinely does not fit:
+
+```python
+# django-guardian: the grant is a row.
+AUTHENTICATION_BACKENDS = [
+    "django.contrib.auth.backends.ModelBackend",
+    "guardian.backends.ObjectPermissionBackend",
+]
+
+from guardian.shortcuts import assign_perm
+
+assign_perm("documents.change_document", user, document)
+```
+
+```python
+# django-rules: the grant is a predicate.
+AUTHENTICATION_BACKENDS = [
+    "rules.permissions.ObjectPermissionBackend",
+    "django.contrib.auth.backends.ModelBackend",
+]
+
+@rules.predicate
+def is_document_owner(user, document):
+    # rules pads a missing object with None; without this guard a
+    # model-level has_perm() raises AttributeError instead of denying.
+    return document is not None and document.owner_id == user.id
+
+rules.add_perm("documents.change_document", is_document_owner)
+```
+
+Keep `ModelBackend` in the list either way: neither object backend answers a
+model-level check, so they add object decisions rather than replacing the
+model-level ones.
 
 ### Superuser short-circuits everything
 
