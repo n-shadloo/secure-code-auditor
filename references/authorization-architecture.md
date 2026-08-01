@@ -165,19 +165,28 @@ cached user object across awaits or connections; see `async-and-channels.md`.
 Both check **model-level** permissions only. The mixin's `has_permission()` has
 no object parameter, so there is no supported way to pass one.
 
-The failure behavior is the more common bug: with `raise_exception = False`
-(the default), an unauthorized user is **redirected to the login URL** rather
-than shown a 403. That breaks API clients, and for an authenticated-but-
-unauthorized user it can confirm that a resource exists.
+Their failure behavior differs, and the difference is the more common bug.
+`AccessMixin.handle_no_permission()` raises `PermissionDenied` when
+`self.raise_exception or self.request.user.is_authenticated`, so the **mixin**
+already returns 403 to an authenticated-but-unauthorized user; only anonymous
+users get the login redirect. The **decorator** has no such clause — its
+`check_perms()` returns `False` unless `raise_exception=True`, and
+`user_passes_test()` then redirects unconditionally, sending an authenticated
+user to a login page they are already past. That is the classic redirect loop,
+and it breaks API clients.
 
 ```python
 class InvoiceUpdateView(PermissionRequiredMixin, UpdateView):
     permission_required = "billing.change_invoice"
-    raise_exception = True  # 403, not a login redirect
+    raise_exception = True  # 403 for anonymous requests too, not a redirect
 
     def get_queryset(self):
         return Invoice.objects.filter(account=self.request.user.account)
 ```
+
+Set `raise_exception=True` on both, for different reasons: on the decorator it
+is what produces a 403 at all, and on the mixin it removes the remaining
+redirect for anonymous requests.
 
 The queryset supplies the object-level decision; the mixin never does. On
 Django 5.1+, `LoginRequiredMiddleware` makes authentication a project-wide
@@ -386,7 +395,10 @@ class InvoiceSerializer(serializers.ModelSerializer):
 
     def get_fields(self):
         fields = super().get_fields()
-        writable = self.WRITABLE_BY_ROLE[self.context["request"].user.role]
+        # No request in context, or an unknown role, means nothing is writable.
+        user = getattr(self.context.get("request"), "user", None)
+        role = getattr(user, "role", None)
+        writable = self.WRITABLE_BY_ROLE.get(role, set())
         for name, field in fields.items():
             if name not in writable:
                 field.read_only = True
@@ -452,8 +464,11 @@ meaningful privilege tiers: it means no one can answer who holds what.
       installed; one object-authorization path is chosen and applied.
 - [ ] Permission changes re-fetch the user; no long-lived cached user object in
       tasks, commands, or consumers.
-- [ ] `PermissionRequiredMixin` uses `raise_exception=True` (or
-      `LoginRequiredMiddleware`); object scoping comes from the queryset.
+- [ ] The `permission_required` decorator sets `raise_exception=True`; without
+      it an authenticated-but-unauthorized user is redirected to login.
+      `PermissionRequiredMixin` already 403s that user and needs it (or
+      `LoginRequiredMiddleware`) only for anonymous requests; object scoping
+      comes from the queryset.
 - [ ] Custom DRF permissions implement `has_object_permission` explicitly; list
       and create paths are secured by queryset and `perform_create`.
 - [ ] `DjangoObjectPermissions` 404 behavior is preserved, not "fixed" to 403.

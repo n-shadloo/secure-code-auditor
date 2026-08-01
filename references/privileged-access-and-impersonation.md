@@ -129,7 +129,7 @@ def record_hijack_started(sender, hijacker, hijacked, request, **kwargs):
         operator_role=hijacker.groups.values_list("name", flat=True).first(),
         target=hijacked,
         event="started",
-        reason=request.POST["reason"],  # required, validated, stored raw
+        reason=request.POST.get("reason", ""),  # validated, stored raw
         request_id=getattr(request, "id", ""),
     )
 
@@ -143,6 +143,13 @@ def record_hijack_ended(sender, hijacker, hijacked, request, **kwargs):
         request_id=getattr(request, "id", ""),
     )
 ```
+
+Stock hijack posts only `user_pk` and `next`, so a reason field exists only if
+you override its form and `AcquireUserView`; and because `hijack_started` is
+sent with `Signal.send()`, an exception in any receiver propagates out of the
+view and breaks the acquire request *after* `login()` has already switched the
+session — so the audit write belongs in a receiver that cannot raise on missing
+or malformed input.
 
 Because `hijack_ended` only fires on an explicit release, expiry must be
 enforced independently — store the start time in the session and reject or
