@@ -53,6 +53,17 @@ Model.objects.filter(name=name)  # prefer the ORM
   binds them safely).
 - `.extra()` is legacy and easy to misuse; prefer expressions
   (`Func`, `Value`, `annotate`) which parameterize.
+- A raw path is a **double** escape hatch. Besides injection, it bypasses the
+  tenant-scoping manager and any row-level-security context the ORM path would
+  have carried, so a perfectly parameterized raw query can still return another
+  tenant's rows. Audit every hit for isolation as well as injection — see
+  `data-layer-and-database.md`, "Raw SQL as an isolation bypass".
+
+Injection is not SQL-only. A document store takes its query as a structured
+object, so a JSON body value that arrives as a dict rather than a scalar becomes
+a query *operator* — no string concatenation and nothing for escaping to fix.
+Validate shape, not only characters (`data-layer-and-database.md`, "NoSQL and
+key-value injection").
 
 ## The dictionary-expansion column-alias class
 
@@ -145,7 +156,10 @@ that is covered in A08 (Integrity and Deserialization); cross-check there.
 ## Review checklist
 
 - [ ] No string-formatted SQL in `.raw()`/`extra()`/`RawSQL`/`cursor.execute`;
-      parameters used throughout.
+      parameters used throughout, and every raw path is checked for tenant or
+      row-level-security bypass as well as for injection.
+- [ ] Document-store queries validate the *shape* of input, so a client cannot
+      substitute an operator object where a scalar was expected.
 - [ ] No client-controlled column names/aliases/keys into
       `order_by/annotate/aggregate/values/filter(**...)`.
 - [ ] No `shell=True`, `os.system`, `eval`, or `exec` on request data.

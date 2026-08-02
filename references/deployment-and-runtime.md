@@ -110,7 +110,10 @@ Grant write access only to the paths the app genuinely needs.
 ## Database and secrets
 
 - Enforce TLS on the DB connection; don't expose the DB port publicly; firewall
-  it to the app hosts.
+  it to the app hosts. "Enforced" means *verified* — `sslmode=verify-full` with
+  a pinned root certificate, not `require`. The application-side data layer —
+  migration versus runtime roles, row-level security, pool sizing, statement
+  timeouts — is in `data-layer-and-database.md`.
 - Load secrets with `os.environ` from an injected environment or through the
   official, maintained SDK for the deployment's secrets manager; keep `.env` out
   of the repository and production artifact. Do not add a generic helper merely
@@ -137,6 +140,13 @@ Grant write access only to the paths the app genuinely needs.
 - Redis/RabbitMQ brokers must be authenticated and firewalled, never
   internet-reachable. A public broker plus a pickle serializer is critical RCE
   (A08). Don't put secrets in task args/results (A09).
+- Treat a reachable, unauthenticated Redis as Critical on its own, not merely as
+  a broker-hygiene issue. CVE-2025-49844 is a use-after-free in the embedded Lua
+  interpreter that lets a caller able to run a script escape the sandbox and
+  execute code, and CVE-2022-0543 was an equivalent sandbox escape introduced by
+  Debian/Ubuntu packaging. Patch, require authentication, and keep the instance
+  off any routable network. Application-side use of Redis and other key-value
+  stores is in `data-layer-and-database.md`.
 
 ## Review checklist
 
@@ -147,6 +157,7 @@ Grant write access only to the paths the app genuinely needs.
 - [ ] Gunicorn non-root on a local socket; systemd unit hardened.
 - [ ] Uploads use inert/origin-isolated serving; hard edge limits and
       application file/count/processing/quotas are enforced.
-- [ ] DB over TLS and firewalled; secrets from env, not in image/VCS.
+- [ ] DB over TLS with certificate verification, and firewalled; secrets from
+      env, not in image/VCS.
 - [ ] No shared-cache caching of authenticated responses; cache and broker
       services are authenticated, private, and environment-separated.

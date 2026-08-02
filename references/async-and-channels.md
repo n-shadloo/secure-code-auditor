@@ -75,7 +75,10 @@ perform object and action authorization in the consumer.
 - Do not pass a cursor, connection, unevaluated queryset, model manager bound to
   mutable request state, or other thread-affine object across the boundary.
 - Set `CONN_MAX_AGE = 0` for async-mode database access and use database/backend
-  pooling designed for the deployment when pooling is needed.
+  pooling designed for the deployment when pooling is needed. Django's own
+  native pooling requires the same setting and raises `ImproperlyConfigured`
+  alongside persistent connections, so the two rules agree rather than conflict;
+  pool sizing and statement timeouts are in `data-layer-and-database.md`.
 - Never set `DJANGO_ALLOW_ASYNC_UNSAFE` in a server, worker, notebook handling
   concurrent work, or test configuration that is meant to model production. It
   only disables `SynchronousOnlyOperation`; it does not add isolation.
@@ -278,7 +281,8 @@ data.
       thread-sensitive `sync_to_async` are used correctly; no DB handles cross
       the boundary and async transactions stay inside one sync function.
 - [ ] `DJANGO_ALLOW_ASYNC_UNSAFE` is absent and `CONN_MAX_AGE` is disabled for
-      async DB access; standard DRF views are not assumed to be native async.
+      async DB access, with a size-capped pool doing the connection reuse;
+      standard DRF views are not assumed to be native async.
 - [ ] `AllowedHostsOriginValidator` or an explicit `OriginValidator` wraps
       browser WebSockets, and `AuthMiddlewareStack` is not mistaken for object
       authorization.

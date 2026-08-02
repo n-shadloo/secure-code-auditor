@@ -144,6 +144,14 @@ for async but still couples authorization to ambient state that background jobs,
 signal receivers, and consumers may inherit or lose silently. Explicit scoping
 is the deeper fix.
 
+Application-side scoping is opt-in, so its failure mode is the one query nobody
+remembered to scope. Where that residual risk is unacceptable, the tenant
+predicate can be pushed into the database itself — row-level security or a
+schema per tenant — which enforces it on paths the ORM never sees: raw SQL, a
+management command, a Celery task, an operator's psql session. It is a backstop
+behind scoped querysets rather than a replacement for them, and it carries its
+own failure modes around pooled connections. See `data-layer-and-database.md`.
+
 ## Caching and authorization
 
 Cache leaks map primarily to CWE-524 (Use of Cache Containing Sensitive
@@ -328,6 +336,8 @@ break-glass elevation are in `privileged-access-and-impersonation.md`.
 - [ ] Ownership/tenant comes from `request.user`, never the request body.
 - [ ] Tenant resolution and object lookup are one scoped query, not two
       independent steps; no ambient thread-local/`contextvars` tenant.
+- [ ] Any database-enforced isolation is a backstop behind scoped querysets and
+      its context cannot leak between pooled connections.
 - [ ] Admin/staff actions use a role check, not bare `IsAuthenticated`.
 - [ ] Authenticated/personalized responses are not shared-cached; any private
       cache key and invalidation cover every authorization dimension.

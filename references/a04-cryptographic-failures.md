@@ -65,12 +65,22 @@ credentials; see the auth file for lockout and breach handling.
 
 ## Data in transit and at rest
 
-- TLS everywhere (see deployment). Enforce SSL on the database connection too;
-  don't leave app↔DB traffic in plaintext on a shared network.
+- TLS everywhere (see deployment). The database connection must be *verified*,
+  not merely encrypted: on PostgreSQL that means `sslmode=verify-full` with a
+  pinned root certificate, since `require` encrypts and accepts whatever
+  answered. See `data-layer-and-database.md`, "Verified database connections".
 - Store only the sensitive data you need. **Never store raw card data** — use the
   gateway's tokenization/hosted flows (see A08 and the DRF file for payment
-  specifics). For fields that must be encrypted at rest, use a maintained
-  field-encryption library with keys held outside the DB.
+  specifics). For fields that must be encrypted at rest, note that the packaged
+  Django field-encryption libraries have all gone unmaintained — build on PyCA
+  `cryptography` with keys held outside the database, and add a keyed blind
+  index where the column must stay searchable. The mechanism, its cost, and what
+  a blind index leaks are in `data-layer-and-database.md`, "Field-level
+  encryption and searchable lookups".
+- Full-disk and cloud-volume encryption answer the stolen-disk threat and
+  nothing else. They do not protect a value from a compromised running database
+  or an over-privileged query path, so they do not satisfy a requirement that a
+  column be encrypted.
 
 ## Signing and tokens
 
@@ -90,6 +100,8 @@ credentials; see the auth file for lockout and breach handling.
 - [ ] `AUTH_PASSWORD_VALIDATORS` configured.
 - [ ] No secrets in source or VCS; loaded from env/secrets manager; rotation path
       exists.
-- [ ] TLS in transit including to the database; no raw card data stored.
+- [ ] TLS in transit, with the database connection *verified* rather than only
+      encrypted; no raw card data stored; disk encryption is not counted as
+      column encryption.
 - [ ] Signing/reset tokens use Django's primitives; secret comparisons are
       constant-time.

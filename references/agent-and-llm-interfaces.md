@@ -300,7 +300,13 @@ by the vendor server-side. The exfiltration path, not the injection, is where a
 backend has leverage.
 
 RAG and vector-store internals are out of scope; only the authorization
-boundary around retrieval is in scope. Maps to CWE-77; A01:2025; LLM01 Prompt
+boundary around retrieval is in scope. The general form of that boundary —
+authorization metadata written onto each indexed document, a mandatory
+server-derived filter at query time, and reindexing when permissions change —
+is in `authorization-architecture.md`, "Search indexes and denormalised
+copies". What is agent-specific here is that a tool republishing retrieval must
+also intersect the tool's scope with the invoking user's own permissions.
+Maps to CWE-77; A01:2025; LLM01 Prompt
 Injection; ASI06 Memory and Context Poisoning. Assign severity by what the
 injected instruction can reach — Critical when it can reach a privileged tool
 or an unrestricted egress path.

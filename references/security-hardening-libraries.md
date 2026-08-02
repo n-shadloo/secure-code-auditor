@@ -97,6 +97,24 @@ resource metadata, RFC 8707 audience-bound tokens, and the prohibition on token
 passthrough — are properties of the specification, not of any package. A
 package that implements transport does not implement those.
 
+## Data layer and database
+
+Versions in this section were checked on **2 Aug 2026**; the rest of this file
+carries the 17 Jul 2026 baseline above. Read with
+`data-layer-and-database.md`.
+
+Most of this domain is configuration rather than dependency: role separation,
+row-level security, connection verification, statement timeouts, and pool
+sizing are database and driver settings, and no package supplies them.
+
+| Concern | Choice and version | Disposition and review notes |
+|---|---|---|
+| Connection pooling | psycopg 3 with the `pool` extra | **Recommend the built-in.** Django 5.1+ accepts `OPTIONS={"pool": {...}}` on the PostgreSQL backend and Django 6.0 adds async-aware pooling. The option requires psycopg 3 — it is unavailable under psycopg2 — and requires `CONN_MAX_AGE = 0`, or Django raises `ImproperlyConfigured`. PgBouncer stays the choice where a process-external pool is wanted; use session mode when row-level-security context or `search_path` tenancy is in play. |
+| Field-encryption primitives | `cryptography==50.0.0` (31 Jul 2026) | **Recommend as the base, not as a field library.** PyCA-maintained, dual Apache-2.0/BSD, healthy cadence. Build encrypt/decrypt and HMAC blind-index helpers on it directly and keep keys outside the database and out of the DSN. |
+| Schema-per-tenant | `django-tenants` 3.10.x (Jun 2026) | **Conditional.** MIT; Production/Stable; declares Django 4.2/5.2/6.0 and Python 3.10–3.13; actively maintained. Adopt only where schema-per-tenant genuinely is the architecture: it requires session-mode pooling because `search_path` is session state, and migration time scales linearly with tenant count. It is not the default answer to multi-tenancy — scoped querysets plus a cross-tenant test suite are. |
+| MongoDB backend | `django-mongodb-backend`, 6.0.x line (Apr 2026) | **Conditional.** MongoDB-maintained, Apache-2.0, Production/Stable, Python 3.12+, version-matched to the Django line. Only where MongoDB is already in the stack. Ordinary ORM `filter()` compiles to an aggregation pipeline and is the safe path; `raw_aggregate()` is the injection-sensitive one and `raw()` is unsupported. |
+| Packaged field encryption | `django-encrypted-model-fields`, `django-cryptography` and its Django-5 forks, `django-pgcrypto-fields`, `django-searchable-encrypted-fields`, `django-fernet-fields` | **Reject for new use — the whole category.** None declares support for Django 5.2 or 6.0 and each has gone more than a year without a release; `django-cryptography` still imports `django.utils.baseconv`, which Django 5 removed. **Existing-install audit only** where one is already present, with a documented migration off it. Build on `cryptography` instead. |
+
 ## Use in a review
 
 - Report the installed version and actual configuration, not merely the package name.

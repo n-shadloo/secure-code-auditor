@@ -45,7 +45,10 @@ letting a swallowed exception decide security for you.
   operations (`F()` expressions), rather than read-modify-write in Python.
 - For endpoints that must not run twice (payments, provisioning), combine an
   idempotency key/unique constraint with `transaction.atomic()`. Consider
-  `ATOMIC_REQUESTS` for the app, understanding its performance trade-offs.
+  `ATOMIC_REQUESTS` for the app, understanding its trade-offs: it holds a
+  connection and an open transaction for the whole of every view, so exclude
+  long-running, streaming, and external-call views
+  (`data-layer-and-database.md`, "Connection exhaustion and query timeouts").
 
 ```python
 from django.db import transaction

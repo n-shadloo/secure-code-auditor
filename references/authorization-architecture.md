@@ -6,8 +6,10 @@ layer actually does, where DRF and the admin do and don't enforce object
 access, how to make deny-by-default enforceable, and how to test an
 authorization model so the suite is worth trusting. Read alongside
 `a01-broken-access-control.md` (per-request enforcement),
-`api-drf-specific.md` (serializer shape), and
-`privileged-access-and-impersonation.md` (operator privilege). Maps to OWASP
+`api-drf-specific.md` (serializer shape),
+`privileged-access-and-impersonation.md` (operator privilege), and
+`data-layer-and-database.md` (database-enforced isolation as a mechanism under
+this model). Maps to OWASP
 A01:2025 and API1/API3/API5:2023, ASVS v5.0.0 V8, and CWE-862, CWE-863,
 CWE-639, CWE-269, and CWE-284.
 
@@ -20,6 +22,7 @@ CWE-639, CWE-269, and CWE-284.
 - [Django admin: the permission surface](#django-admin-the-permission-surface)
 - [Default-deny architecture](#default-deny-architecture)
 - [Field-level authorization (BOPLA)](#field-level-authorization-bopla)
+- [Search indexes and denormalised copies](#search-indexes-and-denormalised-copies)
 - [Authorization test suites](#authorization-test-suites)
 - [Permission-model decay and access review](#permission-model-decay-and-access-review)
 - [Review checklist](#review-checklist)
@@ -441,6 +444,60 @@ class InvoiceSerializer(serializers.ModelSerializer):
 Setting `read_only` on the field instance covers declared and generated fields
 alike, and applies to `PUT` and `PATCH` equally.
 
+## Search indexes and denormalised copies
+
+A search index, a materialised report table, an analytics export, and a replica
+are the same shape of problem: a second copy of the data with **its own query
+path**, which does not pass through the queryset scoping, permission classes, or
+database policies that guard the source rows. Authorization was implemented once,
+at the table, and the copy silently reintroduces an unguarded door. Maps to
+CWE-639, CWE-284, and CWE-200; A01:2025 and API1:2023.
+
+The failure has two halves and a review has to test both:
+
+- **Missing predicate.** The copy is queried without re-applying the
+  authorization filter that governs the source rows, so any match is returned to
+  any caller who can reach the endpoint.
+- **Drift.** The copy is refreshed on *content* change but not on *permission*
+  change, so a document keeps being served after the grant that justified it was
+  revoked.
+
+The design that prevents it rather than patching it:
+
+1. **Every indexed document carries its authorization metadata** — tenant,
+   owner, visibility, ACL — as first-class fields, written at index time from
+   the same source of truth as the row.
+2. **Every query applies a server-derived filter** as a mandatory clause, built
+   in trusted backend code from the authenticated principal and never accepted
+   from the caller. One search-service choke point is far easier to audit than
+   per-view query construction, because a mandatory clause cannot be omitted by
+   forgetting it.
+3. **Reindex on authorization change**, not only on content change. Treat an ACL
+   or membership edit as an index-invalidating event and bound staleness with a
+   periodic reconcile.
+4. **Index-per-tenant** is stronger isolation and scales poorly. A shared index
+   with a mandatory tenant filter — engine-enforced document-level security
+   where the engine offers it, application-enforced where it does not — is the
+   usual acceptable middle, but only where the filter is genuinely
+   unbypassable.
+
+How to audit it: enumerate every site that builds a search query and confirm the
+principal-derived filter is added in trusted code; authenticate as tenant A and
+search a term that exists only in tenant B, asserting zero hits; revoke access to
+a document and re-run the search *before* any content edit, asserting it
+disappears; and confirm the indexing pipeline both writes the authorization
+metadata and fires on permission changes.
+
+The same reasoning covers a read that a decision depends on. Routing an
+authorization read — role, membership, revocation state — to a lagging replica
+authorizes what the primary has already denied; see
+`data-layer-and-database.md`, "Read replicas and stale authorization".
+
+Agent and tool surfaces reach retrieval through this same path.
+`agent-and-llm-interfaces.md` owns the agent-specific slice, where a tool that
+republishes retrieval must also intersect the tool's scope with the invoking
+user's own permissions.
+
 ## Authorization test suites
 
 A suite worth trusting asserts, for each protected resource, a **matrix** of
@@ -493,6 +550,9 @@ meaningful privilege tiers: it means no one can answer who holds what.
 - [ ] Unknown role, null tenant, new endpoint, and unmapped state all deny.
 - [ ] Function-, object-, and field-level decisions each exist where relevant.
 - [ ] Deactivation and revocation take effect promptly on every path.
+- [ ] Every denormalised copy — search index, report table, export, replica —
+      re-applies a server-derived authorization filter at its own query path and
+      is refreshed on permission change, not only on content change.
 
 ### Django & DRF
 

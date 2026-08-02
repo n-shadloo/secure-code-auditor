@@ -217,6 +217,10 @@ integrity are covered in A08; sensitive log handling is covered in A09.
   not describe either as a hard file-size rejection control.
 - `DATA_UPLOAD_MAX_NUMBER_FIELDS` and `DATA_UPLOAD_MAX_NUMBER_FILES` cap
   multipart complexity — don't raise them casually.
+- Database connections are an exhaustible resource with a hard server-side
+  ceiling. Cap them at a pool you control rather than at worker count, and set a
+  server-side statement timeout so one slow query cannot hold a connection
+  indefinitely (`data-layer-and-database.md`).
 - New features should default to the least-privileged, least-exposed setting;
   opening up is a deliberate act.
 
@@ -232,3 +236,5 @@ integrity are covered in A08; sensitive log handling is covered in A09.
       bounded by source, actor, tenant, destination, target, and global volume.
 - [ ] Upload/body/count/processing limits exist at edge and application layers;
       Django memory thresholds are not mistaken for hard upload caps.
+- [ ] Database connection concurrency is bounded by a pool and queries are
+      time-limited server-side, rather than left to worker count.
