@@ -7,8 +7,10 @@ the full description. Do not duplicate the content here — read the source file
 Coverage includes the authorization architecture and privilege model (object-,
 function-, and field-level authorization, default-deny, authorization test
 design), impersonation and break-glass privileged access, OAuth2/OIDC and social
-login, API-key lifecycle and scoping, and a dated maintained-package gate for
-third-party security dependencies.
+login, API-key lifecycle and scoping, agent- and LLM-facing interfaces (MCP
+tool surfaces, agent token audience validation, tool scope versus user
+permissions, model output and retrieved content as untrusted input), and a
+dated maintained-package gate for third-party security dependencies.
 
 Primary integration is Claude; this file exists so Gemini CLI uses the same
 single source of truth. Modes (review-time / write-time), the severity rubric,

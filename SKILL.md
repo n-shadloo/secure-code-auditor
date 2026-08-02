@@ -8,9 +8,11 @@ description: >-
   sessions, JWT, OAuth2/OIDC, social login, API keys or tokens, permissions,
   roles or access control, object- and field-level authorization, impersonation
   or privileged access, user-supplied input, the ORM or raw SQL, file uploads,
-  serializers or API endpoints, secrets or settings, payments, email or
-  notifications, background tasks, caching, async/ASGI or WebSockets, signals
-  or lifecycle hooks, migrations, or deployment configuration, even if the word
+  serializers or API endpoints, AI agents, MCP servers or tool surfaces,
+  LLM-generated or retrieved content reaching backend code, secrets or
+  settings, payments, email or notifications, background tasks, caching,
+  async/ASGI or WebSockets, signals or lifecycle hooks, migrations, or
+  deployment configuration, even if the word
   "security" is never used. Runs in two modes: review-time (audit code and
   return prioritized findings with severity, location, and a fix) and
   write-time (secure defaults, risky patterns flagged). Django/DRF is the
@@ -19,7 +21,7 @@ license: MIT
 allowed-tools: Read, Grep, Glob, Bash
 metadata:
   author: n-shadloo
-  version: 1.4.1
+  version: 1.5.0
 ---
 
 # secure-code-auditor
@@ -63,6 +65,7 @@ Load only the file(s) relevant to the concern in front of you.
 | Serializer over-exposure/mass assignment, pagination/filter leakage, throttling, default auth/permission classes, DRF+CSRF | `references/api-drf-specific.md` |
 | Async/ASGI boundaries, sync ORM access, task/request context, WebSocket/Channels origin, authentication, authorization, and limits | `references/async-and-channels.md` |
 | File uploads, type/content validation, safe names/storage/serving, SVG, image/archive bombs, size/count/quotas | `references/file-uploads.md` |
+| AI agents and MCP tool surfaces, DRF viewsets republished as tools, agent tokens and audience validation, tool scope vs user permissions, model output and retrieved content as untrusted input, prompt injection reaching a backend sink, per-agent cost/concurrency limits, tool-call confirmation and audit | `references/agent-and-llm-interfaces.md` |
 | TLS/HSTS, Nginx, reverse-proxy & `X-Forwarded-*` trust, Gunicorn/systemd hardening, static/media, cache & queue exposure | `references/deployment-and-runtime.md` |
 | Vetted security-library choices, compatibility, minimum-safe versions, conditional/existing-install-only/rejected candidates (current as of 17 Jul 2026) | `references/security-hardening-libraries.md` |
 
@@ -71,7 +74,10 @@ per-request failures, in the authorization-architecture file as the model that
 produces them, and again API-shaped in the DRF file; rate limiting spans A06,
 A07, uploads, async connections, and the DRF file; deployment covers the
 infrastructure side of cache and media controls whose application rules live in
-A01 and the upload reference.
+A01 and the upload reference. The agent reference owns the tool-call threat
+model and the MCP-specific controls, and defers to those files for the
+authorization mechanics, token rules, injection sinks, and audit machinery it
+reuses rather than restating them.
 
 ## Mode selection
 

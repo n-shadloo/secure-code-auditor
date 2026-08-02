@@ -1,5 +1,5 @@
 ---
-description: Backend security review and secure-by-default coding, Django/DRF-first on an OWASP Top 10:2025 spine, including authorization architecture and the privilege model, impersonation and privileged access, OAuth2/OIDC, social login, API keys, and dependency vetting. Canonical instructions live in SKILL.md and references/.
+description: Backend security review and secure-by-default coding, Django/DRF-first on an OWASP Top 10:2025 spine, including authorization architecture and the privilege model, impersonation and privileged access, OAuth2/OIDC, social login, API keys, agent and MCP tool surfaces, and dependency vetting. Canonical instructions live in SKILL.md and references/.
 alwaysApply: false
 ---
 
@@ -12,7 +12,9 @@ methodology and findings format are in `references/00-methodology-and-severity.m
 
 Treat the privilege model and object-/field-level authorization, impersonation
 and break-glass access, OAuth2/OIDC and social login, API-key lifecycle/scoping,
-and third-party security-library vetting as first-class review triggers. Use A01
+agent and MCP tool surfaces, and third-party security-library vetting as
+first-class review triggers. Use `agent-and-llm-interfaces.md` whenever a
+backend endpoint is exposed to an agent or an LLM-driven caller. Use A01
 for per-request access-control failures and `authorization-architecture.md` for
 the model behind them, `privileged-access-and-impersonation.md` for operator
 privilege, A07 for auth/API keys, A03 for the dependency gate, and the

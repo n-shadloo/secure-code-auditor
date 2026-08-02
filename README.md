@@ -39,6 +39,11 @@ then a deep Django/DRF section with the actual settings, code, and gotchas.
   leakage, throttling, default permission classes, CSRF interaction, payments.
 - Async/ASGI and Channels: safe ORM boundaries, request-context isolation,
   origin checks, and per-connection authentication, authorization, and limits.
+- Agent and LLM-facing interfaces: DRF viewsets republished as MCP tools and
+  the controls that silently drop, agent token audience validation and the
+  no-passthrough rule, tool scope intersected with the user's own permissions,
+  model output and retrieved content as untrusted input, per-agent cost and
+  concurrency limits, server-enforced confirmation, and tool-call audit.
 - Abuse-resistant notifications: reset/magic-link, invite/share throttling,
   idempotency, anti-enumeration, and SSRF-safe previews.
 - Configuration and crypto: the `SECURE_*`/`SESSION_*`/`CSRF_*` matrix, CORS,
@@ -59,7 +64,10 @@ Compatibility is checked per package: SimpleJWT 5.5.1 and several optional
 auth/CSP helpers remain conditional on Django 5.2, and projects on end-of-life
 Django are flagged. The authorization and impersonation packages
 (django-guardian 3.3.3, django-hijack 3.7.8, rules 3.5, and the external policy
-engines) were checked separately on 1 Aug 2026.
+engines) and the agent/MCP integration packages (django-mcp-server 0.5.7,
+django-rest-framework-mcp 0.1.0a4, and the admin- and shell-exposing
+candidates, none of which are recommended) were checked separately on
+1 Aug 2026.
 
 ## Install
 
@@ -204,6 +212,7 @@ secure-code-auditor/
 │   ├── a08-integrity-and-deserialization.md
 │   ├── a09-logging-and-alerting.md
 │   ├── a10-exceptional-conditions.md
+│   ├── agent-and-llm-interfaces.md
 │   ├── api-drf-specific.md
 │   ├── async-and-channels.md
 │   ├── authorization-architecture.md

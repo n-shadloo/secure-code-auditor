@@ -19,7 +19,10 @@ privilege model (object-, function-, and field-level authorization, default-deny
 authorization test design), impersonation and break-glass privileged access,
 OAuth2/OIDC and social-login trust boundaries, API-key lifecycle and scoping,
 third-party dependency vetting and maintained-package decisions, uploads,
-async/Channels, caching, migrations, signals, email/notification abuse, and
+async/Channels, caching, migrations, signals, email/notification abuse,
+agent- and LLM-facing interfaces (MCP tool surfaces, agent token audience
+validation, tool scope versus user permissions, model output and retrieved
+content as untrusted input, per-agent cost limits, and tool-call audit), and
 deployment/runtime hardening.
 
 ## Two modes
