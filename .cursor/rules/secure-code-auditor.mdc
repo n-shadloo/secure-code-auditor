@@ -1,5 +1,5 @@
 ---
-description: Backend security review and secure-by-default coding, Django/DRF-first on an OWASP Top 10:2025 spine, including authorization architecture and the privilege model, impersonation and privileged access, OAuth2/OIDC, social login, API keys, agent and MCP tool surfaces, and dependency vetting. Canonical instructions live in SKILL.md and references/.
+description: Backend security review and secure-by-default coding, Django/DRF-first on an OWASP Top 10:2025 spine, including authorization architecture and the privilege model, impersonation and privileged access, OAuth2/OIDC, social login, API keys, agent and MCP tool surfaces, the database and data layer as a security boundary, and dependency vetting. Canonical instructions live in SKILL.md and references/.
 alwaysApply: false
 ---
 
@@ -17,8 +17,11 @@ first-class review triggers. Use `agent-and-llm-interfaces.md` whenever a
 backend endpoint is exposed to an agent or an LLM-driven caller. Use A01
 for per-request access-control failures and `authorization-architecture.md` for
 the model behind them, `privileged-access-and-impersonation.md` for operator
-privilege, A07 for auth/API keys, A03 for the dependency gate, and the
-security-hardening library index for dated package dispositions.
+privilege, A07 for auth/API keys, A03 for the dependency gate,
+`data-layer-and-database.md` whenever database roles, row-level security, tenant
+context on pooled connections, encrypted columns, raw SQL, NoSQL queries, read
+replicas, or connection pooling are in view, and the security-hardening library
+index for dated package dispositions.
 
 Read-only triage scripts are in `scripts/`. Do not rely on this summary alone —
 read the referenced files.

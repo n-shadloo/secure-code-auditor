@@ -46,6 +46,11 @@ then a deep Django/DRF section with the actual settings, code, and gotchas.
   concurrency limits, server-enforced confirmation, and tool-call audit.
 - Abuse-resistant notifications: reset/magic-link, invite/share throttling,
   idempotency, anti-enumeration, and SSRF-safe previews.
+- Data layer and database: separate migration and runtime roles, row-level
+  security and tenant context that survives a connection pool, verified database
+  TLS, field-level encryption and blind-index lookups, raw-SQL isolation bypass,
+  NoSQL and Redis injection, read-replica staleness in authorization reads,
+  connection exhaustion, and where copies of production data may travel.
 - Configuration and crypto: the `SECURE_*`/`SESSION_*`/`CSRF_*` matrix, CORS,
   password hashing, secrets, signing.
 - Integrity: insecure deserialization, Celery serializers, webhook verification,
@@ -67,7 +72,10 @@ Django are flagged. The authorization and impersonation packages
 engines) and the agent/MCP integration packages (django-mcp-server 0.5.7,
 django-rest-framework-mcp 0.1.0a4, and the admin- and shell-exposing
 candidates, none of which are recommended) were checked separately on
-1 Aug 2026.
+1 Aug 2026. The data-layer packages (django-tenants, the official
+django-mongodb-backend, PyCA cryptography 50.0.0, and the packaged Django
+field-encryption libraries, every one of which is rejected as abandoned) were
+checked on 2 Aug 2026.
 
 ## Install
 
@@ -216,6 +224,7 @@ secure-code-auditor/
 │   ├── api-drf-specific.md
 │   ├── async-and-channels.md
 │   ├── authorization-architecture.md
+│   ├── data-layer-and-database.md
 │   ├── deployment-and-runtime.md
 │   ├── file-uploads.md
 │   ├── privileged-access-and-impersonation.md

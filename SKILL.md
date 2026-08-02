@@ -1,27 +1,25 @@
 ---
 name: secure-code-auditor
 description: >-
-  Backend security auditor with deep Django and Django REST Framework coverage
-  layered on a general OWASP Top 10 (2025) and API Security Top 10 (2023)
-  foundation. Use whenever backend code is written or reviewed and security is
-  in scope — including any time the work touches authentication, login,
-  sessions, JWT, OAuth2/OIDC, social login, API keys or tokens, permissions,
-  roles or access control, object- and field-level authorization, impersonation
-  or privileged access, user-supplied input, the ORM or raw SQL, file uploads,
-  serializers or API endpoints, AI agents, MCP servers or tool surfaces,
-  LLM-generated or retrieved content reaching backend code, secrets or
-  settings, payments, email or notifications, background tasks, caching,
-  async/ASGI or WebSockets, signals or lifecycle hooks, migrations, or
-  deployment configuration, even if the word
-  "security" is never used. Runs in two modes: review-time (audit code and
-  return prioritized findings with severity, location, and a fix) and
-  write-time (secure defaults, risky patterns flagged). Django/DRF is the
-  primary target; the general layer suits any backend stack.
+  Backend security auditor for Django and Django REST Framework on an OWASP
+  Top 10 (2025) and API Security Top 10 (2023) foundation. Use whenever backend
+  code is written or reviewed and touches authentication, sessions, JWT,
+  OAuth2/OIDC, social login, API keys, tokens, permissions, roles, access
+  control, object- and field-level authorization, impersonation, privileged
+  access, user-supplied input, the ORM, raw SQL, database roles, row-level
+  security, tenant isolation, connection pooling, encrypted columns, NoSQL,
+  Redis, search indexes, read replicas, backups, file uploads, serializers, API
+  endpoints, AI agents, MCP servers, tool surfaces, LLM output in backend code,
+  secrets, payments, notifications, background tasks, caching, async/ASGI,
+  WebSockets, signals, migrations, or deployment configuration, even if
+  "security" is never used. Review-time returns prioritized findings with
+  severity, location, and fix; write-time applies secure defaults. Django/DRF is
+  the primary target; the general layer suits any stack.
 license: MIT
 allowed-tools: Read, Grep, Glob, Bash
 metadata:
   author: n-shadloo
-  version: 1.5.0
+  version: 1.6.0
 ---
 
 # secure-code-auditor
@@ -60,12 +58,13 @@ Load only the file(s) relevant to the concern in front of you.
 | Insecure deserialization (pickle/yaml), Celery serializer, signed data, CI/CD integrity | `references/a08-integrity-and-deserialization.md` |
 | Sensitive-data leakage in logs, audit logging, lifecycle hooks/signals, alerting, log injection | `references/a09-logging-and-alerting.md` |
 | DEBUG/error views, stack-trace leakage, fail-open checks, race conditions/TOCTOU | `references/a10-exceptional-conditions.md` |
-| Privilege model (RBAC/ABAC/ReBAC), `ModelBackend`/DRF/admin permission behavior, default-deny + URLconf audit test, field-level authz (BOPLA), authz test design, permission decay | `references/authorization-architecture.md` |
+| Privilege model (RBAC/ABAC/ReBAC), `ModelBackend`/DRF/admin permission behavior, default-deny + URLconf audit test, field-level authz (BOPLA), search-index and denormalised-copy leakage, authz test design, permission decay | `references/authorization-architecture.md` |
 | Impersonation / "log in as user", django-hijack, break-glass & JIT elevation, operator audit identity | `references/privileged-access-and-impersonation.md` |
 | Serializer over-exposure/mass assignment, pagination/filter leakage, throttling, default auth/permission classes, DRF+CSRF | `references/api-drf-specific.md` |
 | Async/ASGI boundaries, sync ORM access, task/request context, WebSocket/Channels origin, authentication, authorization, and limits | `references/async-and-channels.md` |
 | File uploads, type/content validation, safe names/storage/serving, SVG, image/archive bombs, size/count/quotas | `references/file-uploads.md` |
 | AI agents and MCP tool surfaces, DRF viewsets republished as tools, agent tokens and audience validation, tool scope vs user permissions, model output and retrieved content as untrusted input, prompt injection reaching a backend sink, per-agent cost/concurrency limits, tool-call confirmation and audit | `references/agent-and-llm-interfaces.md` |
+| Database roles and privilege separation, row-level security, tenant context on pooled connections, verified DB TLS, field-level encryption and blind indexes, raw-SQL isolation bypass, NoSQL/Redis injection, read-replica staleness, connection exhaustion, backups and production-data copies | `references/data-layer-and-database.md` |
 | TLS/HSTS, Nginx, reverse-proxy & `X-Forwarded-*` trust, Gunicorn/systemd hardening, static/media, cache & queue exposure | `references/deployment-and-runtime.md` |
 | Vetted security-library choices, compatibility, minimum-safe versions, conditional/existing-install-only/rejected candidates (current as of 17 Jul 2026) | `references/security-hardening-libraries.md` |
 
@@ -77,7 +76,12 @@ infrastructure side of cache and media controls whose application rules live in
 A01 and the upload reference. The agent reference owns the tool-call threat
 model and the MCP-specific controls, and defers to those files for the
 authorization mechanics, token rules, injection sinks, and audit machinery it
-reuses rather than restating them.
+reuses rather than restating them. The data-layer reference owns the database as
+a boundary of its own — roles, row-level security, connection verification,
+encrypted columns, and pooling — and defers to A05 for injection mechanics, A04
+for the cryptographic principle, the authorization-architecture file for the
+tenant model those mechanisms enforce, and the deployment file for the network,
+cache, broker, and secrets operations around them.
 
 ## Mode selection
 

@@ -22,8 +22,11 @@ third-party dependency vetting and maintained-package decisions, uploads,
 async/Channels, caching, migrations, signals, email/notification abuse,
 agent- and LLM-facing interfaces (MCP tool surfaces, agent token audience
 validation, tool scope versus user permissions, model output and retrieved
-content as untrusted input, per-agent cost limits, and tool-call audit), and
-deployment/runtime hardening.
+content as untrusted input, per-agent cost limits, and tool-call audit), the
+database as a boundary of its own (migration versus runtime roles, row-level
+security and tenant context on pooled connections, verified database TLS,
+field-level encryption and blind indexes, NoSQL injection, connection
+exhaustion, and copies of production data), and deployment/runtime hardening.
 
 ## Two modes
 - Review-time: audit existing code, produce prioritized findings (severity,
