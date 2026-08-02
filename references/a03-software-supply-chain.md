@@ -70,6 +70,13 @@ pip-audit -r requirements.txt
 - This applies to **Claude Skills too**: a skill can direct an agent to run code
   or move data. Only install skills from sources you trust, and read the bundled
   files.
+- The same reasoning extends to components an agent discovers and loads at
+  **runtime**, where the trust decision happens at call time and no build-time
+  pinning, lockfile, or scanner reaches it. Pin the tools and servers a backend
+  will connect to, require signed provenance or an allowlist entry before use,
+  and treat a tool's own description as untrusted content rather than
+  configuration. See `agent-and-llm-interfaces.md`, "Runtime-discovered tools
+  and servers".
 
 ## Third-party dependency vetting
 
@@ -302,6 +309,8 @@ Test:
 - [ ] Dependencies pinned; a lockfile exists; hashes verified on install.
 - [ ] `pip-audit` runs in CI as an advisory input; automated update PRs enabled.
 - [ ] Dependencies come from trusted indexes; no stray VCS/wheel installs.
+- [ ] Components discovered and loaded at runtime are pinned or provenance-
+      checked at call time; tool descriptions are treated as untrusted input.
 - [ ] every security dependency has a recorded need, maintenance/advisory check,
       minimum safe version, compatibility, license, secure-default review, and
       disposition; scanners are not treated as proof of safety;

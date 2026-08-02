@@ -57,6 +57,11 @@ allauth's audit signals can help, but signals are not a complete audit boundary;
 see lifecycle hooks below. Keep logs long enough to investigate, and forward
 them somewhere monitored with alerts on spikes (failed logins, 403 storms).
 
+Where a backend exposes tools to an agent, each invocation and each denial is a
+security event of the same kind, with the redaction rules above applying to
+arguments and results; see `agent-and-llm-interfaces.md`, "Tool-call audit
+records".
+
 ## Lifecycle hooks and audit guarantees
 
 Maps primarily to CWE-778 (Insufficient Logging), CWE-223 (Omission of

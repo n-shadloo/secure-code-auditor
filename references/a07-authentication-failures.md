@@ -50,6 +50,16 @@ succeeded.
   long-lived claims stale.
 - Keep signing keys out of source, assign key IDs deliberately, rotate keys, and
   prevent a verifier from treating symmetric key material as an asymmetric key.
+- Revalidate on every request rather than caching a principal for the life of a
+  session, and reject a token whose `aud` does not name this service. An
+  audience check is what stops a token minted for another resource from being
+  replayed here.
+- **Never forward an inbound token to a downstream service.** The downstream
+  cannot tell that the caller is an intermediary, so it applies the token's full
+  authority to a request the intermediary shaped — a confused deputy (CWE-441).
+  Obtain a separately issued, downstream-scoped credential for the next hop.
+  See `agent-and-llm-interfaces.md`, "Inbound token validation and the
+  passthrough prohibition".
 - SimpleJWT `5.5.1` contains the fix for CVE-2024-22513 but advertises support only
   through Django 5.2. Treat it as conditional on a compatible project, not as a
   Django 6 default; re-check compatibility before adoption.
@@ -252,6 +262,8 @@ are in scope.
       re-authentication match the deployment architecture;
 - [ ] JWTs have fixed algorithms, issuer/audience/time validation, short lifetime,
       key rotation, and a revocation/staleness strategy; package compatibility is proven;
+- [ ] tokens are revalidated per request, audience is checked against this
+      service, and no inbound token is forwarded to a downstream hop;
 - [ ] credentials and tokens are absent from URLs, source, logs, traces, analytics,
       errors, and client-readable persistent storage unless explicitly justified;
 - [ ] login, reset, signup, invite, MFA, and linking resist enumeration, replay,

@@ -41,6 +41,15 @@ maintained edge/platform limits with application-level, account/tenant-aware
 quotas and transactional invariants. Fail closed on sensitive flows, but define
 degraded behavior so a cache outage does not silently remove protection.
 
+Request rate and cost are separate controls, and a machine caller defeats the
+first without breaching it. A retry loop or an automation running for hours
+stays inside any per-minute cap while exhausting a budget, and a limit keyed on
+IP is useless when a whole fleet shares one egress address. Where a flow spends
+money, tokens, or heavy database work per call, cap the resource itself and the
+concurrency, per principal identity, in addition to the request rate. See
+`agent-and-llm-interfaces.md`, "Cost and concurrency limits, not only request
+rate".
+
 ## Business-logic abuse
 
 Investigate flows where "valid" requests cause harm:
@@ -215,6 +224,8 @@ integrity are covered in A08; sensitive log handling is covered in A09.
 
 - [ ] Login and sensitive flows have real anti-automation (lockout + limits),
       not just DRF throttles.
+- [ ] Expensive flows cap cost and concurrency per principal identity, not only
+      requests per minute, and do not key the limit on IP for machine callers.
 - [ ] Money/quantity/discount resolved server-side; idempotency enforced.
 - [ ] Replayable/self-referable business flows are constrained.
 - [ ] Notification triggers are non-enumerating, authorized, idempotent, and

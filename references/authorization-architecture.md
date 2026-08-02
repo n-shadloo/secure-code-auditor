@@ -449,7 +449,10 @@ A suite worth trusting asserts, for each protected resource, a **matrix** of
 - cross-tenant object ids (expect 404 or 403, and assert which);
 - unauthenticated access to every protected route;
 - field-level read *and* write per role, with `PATCH` separate from `PUT`;
-- state after a denied write, not just the status code.
+- state after a denied write, not just the status code;
+- any path that republishes a view to an agent or tool surface as its own row,
+  since it may not run the same permission classes
+  (`agent-and-llm-interfaces.md`).
 
 A suite that gives false confidence:
 

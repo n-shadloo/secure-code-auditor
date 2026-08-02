@@ -5,8 +5,10 @@ and the audit guarantees both require. These features are built for support and
 incident response, and they define the blast radius of a compromised internal
 account — impersonation tooling turns one phished employee into access to every
 customer. Read alongside `authorization-architecture.md` (the privilege model),
-`a01-broken-access-control.md` (admin exposure), and
-`a09-logging-and-alerting.md` (audit durability). Maps to OWASP A01:2025 and
+`a01-broken-access-control.md` (admin exposure),
+`a09-logging-and-alerting.md` (audit durability), and
+`agent-and-llm-interfaces.md`, which applies the same invariant to a machine
+delegate acting on a user's behalf. Maps to OWASP A01:2025 and
 A09:2025, and to CWE-269 (Improper Privilege Management), CWE-250 (Execution
 with Unnecessary Privileges), CWE-266/CWE-268 (privilege escalation family —
 match the sub-ID to the specific finding), and CWE-778 (Insufficient Logging).

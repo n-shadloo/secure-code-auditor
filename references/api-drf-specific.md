@@ -112,6 +112,15 @@ protection. Configure real limits where resource consumption matters (expensive
 queries, exports, file processing). Upload endpoints also need hard edge,
 per-file, aggregate, parser, and storage-quota controls from `file-uploads.md`.
 
+A throttle caps requests, not what a request costs. Where a call spends money,
+model tokens, or heavy database work, add a per-identity cost and concurrency
+cap alongside it. `AnonRateThrottle` and any `SimpleRateThrottle` subclass that
+falls back to the client address also share one key across every caller behind
+a single egress address, which makes IP keying ineffective against a machine
+client; return an identity-derived cache key instead. See
+`agent-and-llm-interfaces.md`, "Cost and concurrency limits, not only request
+rate".
+
 ## Inventory and versioning (API9)
 
 - Retire or protect old API versions and debug/undocumented endpoints; "shadow"
@@ -139,6 +148,8 @@ per-file, aggregate, parser, and storage-quota controls from `file-uploads.md`.
       leakage.
 - [ ] `DEFAULT_PERMISSION_CLASSES` restrictive; no accidental `AllowAny`.
 - [ ] CSRF correct for the auth model; login views not CSRF-exempt by accident.
-- [ ] Throttles used as quotas only; real abuse defense elsewhere.
+- [ ] Throttles used as quotas only; real abuse defense elsewhere; machine
+      callers are keyed on identity, not IP, and costly calls are capped by cost
+      and concurrency as well as rate.
 - [ ] Payments resolve amounts server-side; webhooks verified/idempotent; no raw
       card storage.

@@ -23,6 +23,11 @@ APIs so input is always a value, never syntax. Where an API can't parameterize
 Validate input for shape, but never rely on validation *instead of*
 parameterization.
 
+Untrusted means untrusted regardless of origin. Text a model generated, or text
+a model retrieved from a document or web page, is the same input class as a
+request body once it reaches any sink below — see
+`agent-and-llm-interfaces.md`, "Model output as an injection source".
+
 ## SQL and the ORM
 
 Django's ORM parameterizes by default and is safe for normal queries. The risk
@@ -149,3 +154,5 @@ that is covered in A08 (Integrity and Deserialization); cross-check there.
 - [ ] unneeded XML is disabled; required XML uses a maintained parser with DTD,
       external-entity, network, and expansion controls; deserialization is
       cross-checked against A08;
+- [ ] model-generated or model-retrieved text reaching a query, shell, template,
+      path, URL, or deserializer is treated as untrusted input.

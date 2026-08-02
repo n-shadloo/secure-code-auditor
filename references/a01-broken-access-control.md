@@ -286,6 +286,9 @@ guard for developer-initiated requests.
   loopback, and private ranges — after DNS resolution, and re-check on redirects.
 - Disable or bound redirects; set timeouts; never reflect the raw response back
   to the user.
+- A URL assembled by a model, or lifted from content a model retrieved, is
+  client-influenced for this purpose; see `agent-and-llm-interfaces.md`,
+  "Model output as an injection source".
 
 ## Open redirect
 

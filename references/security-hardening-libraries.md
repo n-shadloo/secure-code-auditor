@@ -72,6 +72,31 @@ per-object rule is being hand-written across more than a handful of views.
 | Policy library | `oso==0.27.3` (13 Jan 2024) | **Reject for new use.** The open-source library was deprecated on 18 Dec 2023 in favour of the hosted Oso Cloud; `django-oso` is part of the same deprecated line. Existing installs should plan migration. |
 | General policy engine | OPA / Rego | **Reject as an app-level authz choice for a Django backend unless already run org-wide.** Apache-2.0, CNCF-graduated, but there is no first-class Python embedding — you run a sidecar queried over REST or compile policy to WASM. That is real latency, failure-mode, and operational cost for in-process decisions. |
 
+## Agent and MCP interfaces
+
+Versions and defaults in this section were checked on **1 Aug 2026**; the rest
+of this file carries the 17 Jul 2026 baseline above. Read with
+`agent-and-llm-interfaces.md`.
+
+**No package in this area clears the gate for a `recommend` tier.** The default
+construction is DRF's own authentication, permission, filter, pagination, and
+throttle classes plus a hand-written audience-validating authentication class,
+with `django-oauth-toolkit` above where the application is the authorization
+server. Every entry below is a disposition for something already installed.
+
+| Candidate | Disposition and review notes |
+|---|---|
+| `django-mcp-server==0.5.7` (10 Mar 2026) | **Existing-install audit only.** MIT; publishes DRF viewsets as MCP tools with `authentication_classes`, `permission_classes`, `filter_backends`, and `pagination_class` disabled by default. Every one must be explicitly re-enabled on every tool path; confirm `self.paginator` is not `None` on a list tool. Not a new recommendation. |
+| `django-rest-framework-mcp==0.1.0a4` (25 Nov 2025) | **Existing-install audit only.** MIT; alpha, so treat the API as unstable. Defaults are the safe ones — confirm `BYPASS_VIEWSET_AUTHENTICATION`, `BYPASS_VIEWSET_PERMISSIONS`, and `RETURN_200_FOR_ERRORS` are all off, since the last returns HTTP 200 on an auth or permission failure and blinds 4xx-rate alerting. |
+| `django-admin-mcp-api` / `django-admin-mcp` | **Reject for production.** Both expose the Django admin as a machine API. The admin was designed as a human interface behind staff/superuser privilege, so the blast radius is the whole model layer; non-browser session or long-lived bearer semantics make it worse. Audit-only where already installed. |
+| `mcp-django==0.13.0` | **Reject for production.** Offers management-command and stateful shell access, which is arbitrary code execution by design. Development tooling only; treat any production install as a Critical finding. |
+| `mcp` (Python SDK) | **Infrastructure, not a recommendation target.** A v2 line shipped 28 Jul 2026 alongside a draft stateless protocol revision, so a bare `pip install mcp` no longer resolves to the 1.x line. Pin the major version deliberately and re-vet before migrating; the 2025-11-25 specification revision remains the audit baseline. |
+
+The MCP authorization requirements themselves — OAuth 2.1, RFC 9728 protected-
+resource metadata, RFC 8707 audience-bound tokens, and the prohibition on token
+passthrough — are properties of the specification, not of any package. A
+package that implements transport does not implement those.
+
 ## Use in a review
 
 - Report the installed version and actual configuration, not merely the package name.
