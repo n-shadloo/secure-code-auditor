@@ -115,6 +115,36 @@ sizing are database and driver settings, and no package supplies them.
 | MongoDB backend | `django-mongodb-backend`, 6.0.x line (Apr 2026) | **Conditional.** MongoDB-maintained, Apache-2.0, Production/Stable, Python 3.12+, version-matched to the Django line. Only where MongoDB is already in the stack. Ordinary ORM `filter()` compiles to an aggregation pipeline and is the safe path; `raw_aggregate()` is the injection-sensitive one and `raw()` is unsupported. |
 | Packaged field encryption | `django-encrypted-model-fields`, `django-cryptography` and its Django-5 forks, `django-pgcrypto-fields`, `django-searchable-encrypted-fields`, `django-fernet-fields` | **Reject for new use — the whole category.** None declares support for Django 5.2 or 6.0 and each has gone more than a year without a release; `django-cryptography` still imports `django.utils.baseconv`, which Django 5 removed. **Existing-install audit only** where one is already present, with a documented migration off it. Build on `cryptography` instead. |
 
+## Data lifecycle and privacy
+
+Versions in this section were checked against PyPI and the projects' own
+repositories on **2 Aug 2026**; the rest of this file carries the 17 Jul 2026
+baseline above. Read with `data-lifecycle-and-privacy.md`.
+
+The dedicated privacy packages are the weakest category in this index: the
+best-known option is archived, the rest are years past their last release, and
+none of them closes the related-object leak that makes soft delete unsafe as a
+deletion control. Django's own partial `UniqueConstraint`, custom managers,
+`FieldFile.delete()`, a management command on a real schedule, and a local
+classification convention cover the area without a dependency.
+
+| Concern | Choice and version | Disposition and review notes |
+|---|---|---|
+| Retention scheduler | `django-celery-beat==2.9.0` | **Recommend as the retention runner.** BSD; Production/Stable; declares Django 5.2 and 6.0. Database-backed schedule with an admin surface and a recorded last-run time, which is what makes a retention policy verifiable. A systemd timer is an equally acceptable runner where Celery is not already deployed. |
+| Model history / audit trail | `django-simple-history==3.13.0` | **Recommend as audit tooling, and treat it as a personal-data store.** Django Commons; declares Django 5.2 and 6.0 and Python 3.10–3.14. Its historical tables retain every prior value of every field, including values a subject later asked to erase, so they belong in the retention policy and the erasure fan-out. |
+| Non-production synthetic data | `Faker==40.36.0` | **Recommend for generated values.** Actively released. Synthetic data is not anonymized production data; it removes re-identification risk only because it is not derived from anyone. |
+| Non-production masking (PostgreSQL) | `postgresql_anonymizer`, 3.x line | **Conditional, and vetted at the database layer rather than through the Python gate.** A PostgreSQL extension providing static masking, dynamic masking, and anonymized dumps with referential-integrity-preserving pseudonymization, which is the mechanism the lower-environment pipeline needs. Confirm the installed version against the project's own security announcements at adoption, and run a current 3.x release. |
+| Orphaned-file cleanup | `django-cleanup==9.0.0` | **Conditional.** MIT; Production/Stable; declares no Django version classifiers, so verify against the project's Django. It removes files on ordinary ORM deletes and replacements, but it is bound to model signals, so raw SQL, `_raw_delete()`, `TRUNCATE`, and database-level cascades bypass it. It is convenience, not the erasure guarantee — keep an explicit storage delete in the fan-out. |
+| Soft delete (undo semantics) | `django-soft-delete==1.0.23` | **Conditional; verify in CI.** MIT; released Feb 2026 and maintained, but it declares no Django version classifiers and its `requires_python` is unmaintained (`>=3.6`). It supplies filtered and unfiltered managers and nothing more: it does not close the forward-relation, `select_related`, admin, or raw-SQL leaks, so it is an undo feature, never a deletion or privacy control. |
+
+| Candidate | Disposition and safer direction |
+|---|---|
+| `django-safedelete==1.4.1` | **Existing-install audit only.** BSD-3-Clause but Beta status, last repository activity Mar 2025, no Django version classifiers, and cascade soft-delete raises against `PROTECT` relations. Where it is present, verify Django compatibility and audit the cascade behaviour; do not newly adopt it for a 6.0/5.2 baseline. |
+| `pganonymize==0.12.0` | **Existing-install audit only.** Standalone PostgreSQL CLI, last released 2024. Acceptable where already used for dump anonymization; prefer the maintained extension above for new work. |
+| `django-gdpr-assist` | **Reject.** The repository was archived read-only on 21 May 2025 and the package supports neither Django 5.2 nor 6.0. Its per-model privacy declaration is still a good pattern to reimplement locally in a few lines. |
+| `django-anon`, `django-GDPR` | **Reject.** No release since 2023, no declared support for a supported Django line, and field-level “anonymizers” built on plain hashes are pseudonymization, not anonymization. |
+| Single-maintainer retention packages | **Reject as a category.** A management command plus a scheduled task and a persisted run record is smaller, reviewable, and does not add an unmaintained dependency to the deletion path. |
+
 ## Use in a review
 
 - Report the installed version and actual configuration, not merely the package name.

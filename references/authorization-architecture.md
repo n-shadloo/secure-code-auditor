@@ -498,6 +498,13 @@ Agent and tool surfaces reach retrieval through this same path.
 republishes retrieval must also intersect the tool's scope with the invoking
 user's own permissions.
 
+This section owns who may read the copy. Whether the copy still exists after
+the source row was deleted is the orthogonal failure — the deletion event never
+fanned out to the index, the report table, or the cache — and it belongs to
+`data-lifecycle-and-privacy.md`, "Erasure as a fan-out with a completion
+ledger". Both halves apply to the same object, and a review that tests only the
+filter will pass a system that still serves erased records.
+
 ## Authorization test suites
 
 A suite worth trusting asserts, for each protected resource, a **matrix** of

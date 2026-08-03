@@ -489,7 +489,10 @@ offline copies against ransomware, restore testing, and storage access control.
 
 Restores deserve their own line: a restore re-materializes rows that erasure or
 revocation had removed, so any deletion guarantee has to account for what is in
-the backups and for how long.
+the backups and for how long. The deletion guarantee itself — the fan-out that
+reaches every copy, the per-target completion ledger, and the per-subject key
+destruction that covers stores which cannot delete in place — is in
+`data-lifecycle-and-privacy.md`.
 
 ## Review checklist
 

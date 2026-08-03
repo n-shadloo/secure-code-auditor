@@ -244,3 +244,7 @@ emits the required event or make the path unavailable for that model.
       idempotent.
 - [ ] User input sanitized before logging; logs shipped to a tamper-resistant
       store.
+- [ ] Personal data reaching logs, error reports, and history tables is counted
+      as a retained copy with a stated lifetime, and the audit store retains the
+      event without retaining the identity
+      (`data-lifecycle-and-privacy.md`).

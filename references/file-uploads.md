@@ -233,6 +233,12 @@ single-purpose signed URL. Bind delegated URLs to the exact object and
 disposition, use a short expiry, and prevent shared caching of private
 responses. Do not expose a permanent public media URL for a private object.
 
+Stored files outlive the rows that reference them: deleting a model instance
+does not delete its file, so erasure and retention have to remove the bytes
+explicitly. A generated export archive is this same delivery primitive wrapped
+around a subject's whole record, with its own lifetime. Both are in
+`data-lifecycle-and-privacy.md`.
+
 ## Review checklist
 
 ### Stack-neutral
