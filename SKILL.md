@@ -11,15 +11,18 @@ description: >-
   replicas, backups, file uploads, serializers, API endpoints, AI agents, MCP
   tool surfaces, LLM output, secrets, payments, notifications, background
   tasks, caching, async/ASGI, WebSockets, signals, soft delete, deletion,
-  erasure, retention, anonymization, personal data, exports, migrations, or
-  deployment configuration, even if "security" is never used. Review-time
-  returns prioritized findings with fixes; write-time applies secure defaults.
+  erasure, retention, anonymization, personal data, exports, migrations,
+  service-to-service calls, machine tokens, JWKS, client credentials, mutual
+  TLS, workload identity, internal endpoints, secrets, secret rotation,
+  SECRET_KEY, or deployment configuration, even if "security" is never used.
+  Review-time returns prioritized findings with fixes; write-time applies
+  secure defaults.
   Django/DRF-first; the general layer suits any stack.
 license: MIT
 allowed-tools: Read, Grep, Glob, Bash
 metadata:
   author: n-shadloo
-  version: 1.7.0
+  version: 1.8.0
 ---
 
 # secure-code-auditor
@@ -66,6 +69,7 @@ Load only the file(s) relevant to the concern in front of you.
 | AI agents and MCP tool surfaces, DRF viewsets republished as tools, agent tokens and audience validation, tool scope vs user permissions, model output and retrieved content as untrusted input, prompt injection reaching a backend sink, per-agent cost/concurrency limits, tool-call confirmation and audit | `references/agent-and-llm-interfaces.md` |
 | Database roles and privilege separation, row-level security, tenant context on pooled connections, verified DB TLS, field-level encryption and blind indexes, raw-SQL isolation bypass, NoSQL/Redis injection, read-replica staleness, connection exhaustion, backups and production-data copies | `references/data-layer-and-database.md` |
 | Deletion completeness and erasure, soft-delete tombstones leaking through related-object/admin/serializer/raw paths, files left after a row is deleted, retention and scheduled purges, anonymization vs pseudonymization, personal-data inventory and model-layer classification, data export/DSAR endpoints, copies in indexes, caches, history tables, and lower environments | `references/data-lifecycle-and-privacy.md` |
+| Service-to-service identity, machine-token validation (algorithm pinning, `iss`/`aud`, required claims), JWKS caching and key rotation, OAuth client credentials, mutual TLS and certificate-bound tokens, proxy-set client-certificate identity, platform workload identity, network-position-as-authentication on internal endpoints, downstream token exchange, secret storage/delivery/rotation, `SECRET_KEY` rotation, leaked-secret response | `references/service-identity-and-secrets.md` |
 | TLS/HSTS, Nginx, reverse-proxy & `X-Forwarded-*` trust, Gunicorn/systemd hardening, static/media, cache & queue exposure | `references/deployment-and-runtime.md` |
 | Vetted security-library choices, compatibility, minimum-safe versions, conditional/existing-install-only/rejected candidates (current as of 17 Jul 2026) | `references/security-hardening-libraries.md` |
 
@@ -92,7 +96,16 @@ gone; A09 owns what must be logged while the data-lifecycle file owns the log
 and the history table as retained copies of personal data; the data-layer file
 keeps backups, replicas, and the encryption substrate that the crypto-shredding
 route depends on; and the upload reference keeps storage and delivery of files
-whose deletion the data-lifecycle file owns.
+whose deletion the data-lifecycle file owns. The service-identity reference
+owns the machine principal and the credential material behind it — mechanism
+choice, inbound machine-token validation, JWKS rotation, proxy-set certificate
+identity, secret delivery, and key rotation — and stays clear of its
+neighbours: A07 keeps human authentication and the API-key discipline any
+static service key still has to meet, the agent reference keeps the tool-call
+threat model and the passthrough prohibition itself, the deployment file keeps
+proxy configuration and how the environment is injected, A04 keeps the
+cryptographic primitives the signing is built on, and A01 keeps SSRF and the
+metadata endpoint that a leaked workload credential is reached through.
 
 ## Mode selection
 

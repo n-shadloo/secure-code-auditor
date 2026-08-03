@@ -57,6 +57,13 @@ then a deep Django/DRF section with the actual settings, code, and gotchas.
   run, anonymization versus pseudonymization, personal-data classification in
   the model layer, and export/subject-access endpoints as an authenticated
   exfiltration path.
+- Service identity and secrets: choosing between a static key, an OAuth
+  client-credentials token, mutual TLS, and platform workload identity;
+  validating an inbound machine token claim by claim; JWKS caching and key
+  rotation; proxy-set client-certificate identity; endpoints authenticated only
+  by network position; downstream token exchange instead of forwarding; where
+  secrets live and how they reach the process; `SECRET_KEY` rotation and what
+  it does and does not invalidate; and the ordered response to a leak.
 - Configuration and crypto: the `SECURE_*`/`SESSION_*`/`CSRF_*` matrix, CORS,
   password hashing, secrets, signing.
 - Integrity: insecure deserialization, Celery serializers, webhook verification,
@@ -85,7 +92,10 @@ checked on 2 Aug 2026, as were the data-lifecycle packages
 (django-simple-history 3.13.0, django-celery-beat 2.9.0, django-cleanup 9.0.0,
 Faker 40.36.0, the two soft-delete packages, and the dedicated privacy
 packages, none of which is recommended). Django 6.0.7, 5.2.16 LTS, and DRF
-3.17.1 were re-confirmed as current on that date.
+3.17.1 were re-confirmed as current on that date. The service-identity
+packages were checked on 3 Aug 2026: PyJWT 2.13.0 is recommended with a
+`>=2.13.0` floor, and SimpleJWT was re-checked and confirmed not to cap PyJWT,
+while remaining out of scope as a machine-identity mechanism.
 
 ## Install
 
@@ -239,7 +249,8 @@ secure-code-auditor/
 │   ├── deployment-and-runtime.md
 │   ├── file-uploads.md
 │   ├── privileged-access-and-impersonation.md
-│   └── security-hardening-libraries.md
+│   ├── security-hardening-libraries.md
+│   └── service-identity-and-secrets.md
 ├── scripts/
 │   ├── dangerous_patterns.py           # read-only project scanner
 │   ├── settings_scan.py                # read-only Django settings scanner

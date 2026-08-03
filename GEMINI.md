@@ -15,7 +15,10 @@ security and tenant context on pooled connections, verified database TLS,
 field-level encryption, NoSQL injection, and connection exhaustion), the data
 lifecycle (deletion and erasure completeness, soft-delete leakage, retention,
 anonymization versus pseudonymization, personal-data classification, and
-export/subject-access endpoints), and a dated maintained-package gate for
+export/subject-access endpoints), service-to-service identity and secrets
+(machine-token validation, JWKS caching and rotation, client credentials,
+mutual TLS and proxy-set certificate identity, workload identity, secret
+delivery, and `SECRET_KEY` rotation), and a dated maintained-package gate for
 third-party security dependencies.
 
 Primary integration is Claude; this file exists so Gemini CLI uses the same

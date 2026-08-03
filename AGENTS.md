@@ -30,7 +30,12 @@ exhaustion, and copies of production data), the data lifecycle and privacy
 layer (deletion completeness, soft-delete leakage, erasure fan-out with a
 completion ledger, retention enforcement, anonymization versus
 pseudonymization, model-layer personal-data classification, and export and
-subject-access endpoints), and deployment/runtime hardening.
+subject-access endpoints), service-to-service identity and secrets management
+(machine-authentication mechanism choice, ordered inbound machine-token
+validation, JWKS caching and key rotation, proxy-set client-certificate
+identity, endpoints authenticated only by network position, downstream token
+exchange, secret storage and delivery, and `SECRET_KEY` rotation), and
+deployment/runtime hardening.
 
 ## Two modes
 - Review-time: audit existing code, produce prioritized findings (severity,
