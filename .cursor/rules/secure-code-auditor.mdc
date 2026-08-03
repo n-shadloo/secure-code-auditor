@@ -1,5 +1,5 @@
 ---
-description: Backend security review and secure-by-default coding, Django/DRF-first on an OWASP Top 10:2025 spine, including authorization architecture and the privilege model, impersonation and privileged access, OAuth2/OIDC, social login, API keys, agent and MCP tool surfaces, the database and data layer as a security boundary, and dependency vetting. Canonical instructions live in SKILL.md and references/.
+description: Backend security review and secure-by-default coding, Django/DRF-first on an OWASP Top 10:2025 spine, including authorization architecture and the privilege model, impersonation and privileged access, OAuth2/OIDC, social login, API keys, agent and MCP tool surfaces, the database and data layer as a security boundary, the data lifecycle (soft delete, erasure, retention, anonymization, personal-data exports), and dependency vetting. Canonical instructions live in SKILL.md and references/.
 alwaysApply: false
 ---
 
@@ -20,8 +20,10 @@ the model behind them, `privileged-access-and-impersonation.md` for operator
 privilege, A07 for auth/API keys, A03 for the dependency gate,
 `data-layer-and-database.md` whenever database roles, row-level security, tenant
 context on pooled connections, encrypted columns, raw SQL, NoSQL queries, read
-replicas, or connection pooling are in view, and the security-hardening library
-index for dated package dispositions.
+replicas, or connection pooling are in view, `data-lifecycle-and-privacy.md`
+whenever deletion, soft delete, retention, anonymization, personal-data exports,
+or copies of a record in indexes, caches, files, or lower environments are in
+view, and the security-hardening library index for dated package dispositions.
 
 Read-only triage scripts are in `scripts/`. Do not rely on this summary alone —
 read the referenced files.

@@ -12,8 +12,11 @@ tool surfaces, agent token audience validation, tool scope versus user
 permissions, model output and retrieved content as untrusted input), the
 database as a security boundary (migration versus runtime roles, row-level
 security and tenant context on pooled connections, verified database TLS,
-field-level encryption, NoSQL injection, and connection exhaustion), and a
-dated maintained-package gate for third-party security dependencies.
+field-level encryption, NoSQL injection, and connection exhaustion), the data
+lifecycle (deletion and erasure completeness, soft-delete leakage, retention,
+anonymization versus pseudonymization, personal-data classification, and
+export/subject-access endpoints), and a dated maintained-package gate for
+third-party security dependencies.
 
 Primary integration is Claude; this file exists so Gemini CLI uses the same
 single source of truth. Modes (review-time / write-time), the severity rubric,

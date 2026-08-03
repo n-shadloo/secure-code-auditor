@@ -26,7 +26,11 @@ content as untrusted input, per-agent cost limits, and tool-call audit), the
 database as a boundary of its own (migration versus runtime roles, row-level
 security and tenant context on pooled connections, verified database TLS,
 field-level encryption and blind indexes, NoSQL injection, connection
-exhaustion, and copies of production data), and deployment/runtime hardening.
+exhaustion, and copies of production data), the data lifecycle and privacy
+layer (deletion completeness, soft-delete leakage, erasure fan-out with a
+completion ledger, retention enforcement, anonymization versus
+pseudonymization, model-layer personal-data classification, and export and
+subject-access endpoints), and deployment/runtime hardening.
 
 ## Two modes
 - Review-time: audit existing code, produce prioritized findings (severity,

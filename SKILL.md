@@ -4,22 +4,22 @@ description: >-
   Backend security auditor for Django and Django REST Framework on an OWASP
   Top 10 (2025) and API Security Top 10 (2023) foundation. Use whenever backend
   code is written or reviewed and touches authentication, sessions, JWT,
-  OAuth2/OIDC, social login, API keys, tokens, permissions, roles, access
-  control, object- and field-level authorization, impersonation, privileged
-  access, user-supplied input, the ORM, raw SQL, database roles, row-level
-  security, tenant isolation, connection pooling, encrypted columns, NoSQL,
-  Redis, search indexes, read replicas, backups, file uploads, serializers, API
-  endpoints, AI agents, MCP servers, tool surfaces, LLM output in backend code,
-  secrets, payments, notifications, background tasks, caching, async/ASGI,
-  WebSockets, signals, migrations, or deployment configuration, even if
-  "security" is never used. Review-time returns prioritized findings with
-  severity, location, and fix; write-time applies secure defaults. Django/DRF is
-  the primary target; the general layer suits any stack.
+  OAuth2/OIDC, social login, API keys, permissions, access control, object- and
+  field-level authz, impersonation, privileged access, user-supplied input, the
+  ORM, raw SQL, database roles, row-level security, tenant isolation,
+  connection pooling, encrypted columns, NoSQL, Redis, search indexes, read
+  replicas, backups, file uploads, serializers, API endpoints, AI agents, MCP
+  tool surfaces, LLM output, secrets, payments, notifications, background
+  tasks, caching, async/ASGI, WebSockets, signals, soft delete, deletion,
+  erasure, retention, anonymization, personal data, exports, migrations, or
+  deployment configuration, even if "security" is never used. Review-time
+  returns prioritized findings with fixes; write-time applies secure defaults.
+  Django/DRF-first; the general layer suits any stack.
 license: MIT
 allowed-tools: Read, Grep, Glob, Bash
 metadata:
   author: n-shadloo
-  version: 1.6.0
+  version: 1.7.0
 ---
 
 # secure-code-auditor
@@ -65,6 +65,7 @@ Load only the file(s) relevant to the concern in front of you.
 | File uploads, type/content validation, safe names/storage/serving, SVG, image/archive bombs, size/count/quotas | `references/file-uploads.md` |
 | AI agents and MCP tool surfaces, DRF viewsets republished as tools, agent tokens and audience validation, tool scope vs user permissions, model output and retrieved content as untrusted input, prompt injection reaching a backend sink, per-agent cost/concurrency limits, tool-call confirmation and audit | `references/agent-and-llm-interfaces.md` |
 | Database roles and privilege separation, row-level security, tenant context on pooled connections, verified DB TLS, field-level encryption and blind indexes, raw-SQL isolation bypass, NoSQL/Redis injection, read-replica staleness, connection exhaustion, backups and production-data copies | `references/data-layer-and-database.md` |
+| Deletion completeness and erasure, soft-delete tombstones leaking through related-object/admin/serializer/raw paths, files left after a row is deleted, retention and scheduled purges, anonymization vs pseudonymization, personal-data inventory and model-layer classification, data export/DSAR endpoints, copies in indexes, caches, history tables, and lower environments | `references/data-lifecycle-and-privacy.md` |
 | TLS/HSTS, Nginx, reverse-proxy & `X-Forwarded-*` trust, Gunicorn/systemd hardening, static/media, cache & queue exposure | `references/deployment-and-runtime.md` |
 | Vetted security-library choices, compatibility, minimum-safe versions, conditional/existing-install-only/rejected candidates (current as of 17 Jul 2026) | `references/security-hardening-libraries.md` |
 
@@ -81,7 +82,17 @@ a boundary of its own — roles, row-level security, connection verification,
 encrypted columns, and pooling — and defers to A05 for injection mechanics, A04
 for the cryptographic principle, the authorization-architecture file for the
 tenant model those mechanisms enforce, and the deployment file for the network,
-cache, broker, and secrets operations around them.
+cache, broker, and secrets operations around them. The data-lifecycle reference
+owns the record over time — deletion completeness, what a soft-delete flag
+fails to hide, retention, anonymization, and every copy an erasure has to reach
+— and draws deliberate lines against the files it overlaps: the
+authorization-architecture file owns who may read a denormalised copy while the
+data-lifecycle file owns whether that copy still exists after the source row is
+gone; A09 owns what must be logged while the data-lifecycle file owns the log
+and the history table as retained copies of personal data; the data-layer file
+keeps backups, replicas, and the encryption substrate that the crypto-shredding
+route depends on; and the upload reference keeps storage and delivery of files
+whose deletion the data-lifecycle file owns.
 
 ## Mode selection
 

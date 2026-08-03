@@ -51,6 +51,12 @@ then a deep Django/DRF section with the actual settings, code, and gotchas.
   TLS, field-level encryption and blind-index lookups, raw-SQL isolation bypass,
   NoSQL and Redis injection, read-replica staleness in authorization reads,
   connection exhaustion, and where copies of production data may travel.
+- Data lifecycle and privacy: deletion completeness and what a soft-delete flag
+  does not hide, erasure as a fan-out with a per-target completion ledger,
+  files left behind after a row is gone, retention that can be shown to have
+  run, anonymization versus pseudonymization, personal-data classification in
+  the model layer, and export/subject-access endpoints as an authenticated
+  exfiltration path.
 - Configuration and crypto: the `SECURE_*`/`SESSION_*`/`CSRF_*` matrix, CORS,
   password hashing, secrets, signing.
 - Integrity: insecure deserialization, Celery serializers, webhook verification,
@@ -75,7 +81,11 @@ candidates, none of which are recommended) were checked separately on
 1 Aug 2026. The data-layer packages (django-tenants, the official
 django-mongodb-backend, PyCA cryptography 50.0.0, and the packaged Django
 field-encryption libraries, every one of which is rejected as abandoned) were
-checked on 2 Aug 2026.
+checked on 2 Aug 2026, as were the data-lifecycle packages
+(django-simple-history 3.13.0, django-celery-beat 2.9.0, django-cleanup 9.0.0,
+Faker 40.36.0, the two soft-delete packages, and the dedicated privacy
+packages, none of which is recommended). Django 6.0.7, 5.2.16 LTS, and DRF
+3.17.1 were re-confirmed as current on that date.
 
 ## Install
 
@@ -225,6 +235,7 @@ secure-code-auditor/
 │   ├── async-and-channels.md
 │   ├── authorization-architecture.md
 │   ├── data-layer-and-database.md
+│   ├── data-lifecycle-and-privacy.md
 │   ├── deployment-and-runtime.md
 │   ├── file-uploads.md
 │   ├── privileged-access-and-impersonation.md
