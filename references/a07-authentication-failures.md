@@ -63,6 +63,11 @@ succeeded.
 - SimpleJWT `5.5.1` contains the fix for CVE-2024-22513 but advertises support only
   through Django 5.2. Treat it as conditional on a compatible project, not as a
   Django 6 default; re-check compatibility before adoption.
+- A token minted by *another* system for a *machine* caller is a different
+  problem from one this application issued. The ordered claim-by-claim
+  verification, JWKS caching and rotation, sender-constrained tokens, and the
+  library floor are in `service-identity-and-secrets.md`, "Validating an
+  inbound machine token". SimpleJWT is not a service-identity mechanism.
 
 ## Token storage
 
@@ -203,8 +208,12 @@ reviewed `verify_token` override or replacement that enforces exact issuer and
 audience/client ID as well as signature, algorithm, expiry, and nonce. Otherwise,
 replace the integration.
 
-SAML, mTLS, and passkeys are outside this skill; when encountered, audit their
-maintained library configuration rather than reimplementing protocol internals.
+Service-to-service mutual TLS **is** in scope and lives in
+`service-identity-and-secrets.md`, along with certificate-bound tokens and the
+proxy-set client-certificate identity a Django application actually consumes.
+Human-facing mTLS, SAML, and passkeys stay outside this skill; when
+encountered, audit their maintained library configuration rather than
+reimplementing protocol internals.
 
 ## API keys
 
@@ -262,6 +271,9 @@ are in scope.
       re-authentication match the deployment architecture;
 - [ ] JWTs have fixed algorithms, issuer/audience/time validation, short lifetime,
       key rotation, and a revocation/staleness strategy; package compatibility is proven;
+- [ ] machine tokens from an external issuer are verified against a cached,
+      rotation-aware key set, with the algorithm pinned in configuration and
+      required claims enforced rather than assumed;
 - [ ] tokens are revalidated per request, audience is checked against this
       service, and no inbound token is forwarded to a downstream hop;
 - [ ] credentials and tokens are absent from URLs, source, logs, traces, analytics,

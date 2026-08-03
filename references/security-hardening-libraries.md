@@ -97,6 +97,26 @@ resource metadata, RFC 8707 audience-bound tokens, and the prohibition on token
 passthrough — are properties of the specification, not of any package. A
 package that implements transport does not implement those.
 
+## Service identity and secrets
+
+Versions and defaults in this section were checked against PyPI and the
+projects' own release notes on **3 Aug 2026**; the rest of this file carries
+the 17 Jul 2026 baseline above. Read with `service-identity-and-secrets.md`.
+
+Most of this area is not a dependency at all. `django.core.signing`,
+`SECRET_KEY_FALLBACKS`, `salted_hmac`, and the standard library's `secrets`
+cover signing and key rotation, and the platform side — workload identity, a
+service mesh, a secret manager — sits outside the Python dependency tree and is
+a pattern to audit rather than a package to tier.
+
+| Concern | Choice and version | Disposition and review notes |
+|---|---|---|
+| Validating third-party JWTs | `PyJWT==2.13.0` (21 May 2026) | **Recommend; require `>=2.13.0`** wherever the application is a resource server. MIT; maintained by the original author; Python >=3.9; pure Python, no transitive cost. 2.13.0 is a security release carrying five fixes: a JWK JSON document accepted as a raw HMAC secret, an algorithm-confusion gap the existing PEM/SSH guard did not cover; the header `alg` not bound to the `PyJWK` algorithm, so a caller's `algorithms=[...]` allow-list could be bypassed; `PyJWKClient` accepting non-`http(s)` URI schemes and so reaching `file://` and similar; the JWK-set cache being cleared whenever a fetch raised, turning a transient issuer outage into application-wide authentication failure; and an unconditional base64 decode of a detached payload, an unauthenticated denial-of-service amplifier. Below `2.13.0` is a finding in its own right. |
+| JWKS client | `PyJWKClient`, shipped inside PyJWT | **Recommend the built-in** rather than a separate client. Defaults are `cache_jwk_set=True` and `lifespan=300`, the cache lives on the client instance, and an unknown `kid` triggers exactly one refresh-and-retry. Hold one client at module or singleton scope or the cache never applies; leave `cache_keys` off, because that second per-key LRU has no time-based expiry. |
+| Service-to-service JWTs | `djangorestframework-simplejwt` | **Out of scope as a machine-identity mechanism; the existing A07 disposition is unchanged.** It issues and verifies tokens the Django application itself minted from a human login. `5.5.1` requires `pyjwt>=1.7.1` with no upper bound, so a `PyJWT>=2.13.0` floor does not conflict with it. |
+| Client-credentials issuance | `django-oauth-toolkit` | **Existing disposition above stands.** Relevant here only where the Django application is itself the authorization server minting client-credentials tokens, which is the uncommon case. *Consuming* such tokens needs no dependency beyond PyJWT. |
+| Workload identity, mesh, and secret storage | SPIFFE/SPIRE, cloud IAM and secret managers, Envoy/Istio | **Patterns, not vetting-gate entries.** None is a Python dependency of the Django application. Audit how the backend consumes an attested identity or a fetched secret; do not tier the platform. |
+
 ## Data layer and database
 
 Versions in this section were checked on **2 Aug 2026**; the rest of this file

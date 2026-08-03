@@ -67,6 +67,11 @@ pip-audit -r requirements.txt
   copy-pasted wheels.
 - Be wary of typosquats and newly published look-alike names; check the project
   is real and maintained before adding it.
+- CI is a credential store, and usually the least-guarded one. Prefer
+  short-lived OIDC federation from the CI provider to the cloud account over a
+  long-lived deployment key held as a repository secret; see
+  `service-identity-and-secrets.md`, "Choosing a machine-authentication
+  mechanism".
 - This applies to **Claude Skills too**: a skill can direct an agent to run code
   or move data. Only install skills from sources you trust, and read the bundled
   files.

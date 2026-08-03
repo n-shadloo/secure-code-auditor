@@ -292,6 +292,12 @@ guard for developer-initiated requests.
 - Allowlist destination hosts/schemes; reject everything else.
 - Block link-local and metadata addresses (`169.254.169.254`, `metadata.google.internal`),
   loopback, and private ranges — after DNS resolution, and re-check on redirects.
+- The cloud metadata endpoint is the highest-value entry on that list, because
+  what it returns is a live credential for the workload. Deny it in the
+  application *and* require the instance's hardened, token-based metadata
+  service with a minimal hop limit, so a single SSRF does not become credential
+  theft. What such a credential then unlocks is in
+  `service-identity-and-secrets.md`.
 - Disable or bound redirects; set timeouts; never reflect the raw response back
   to the user.
 - A URL assembled by a model, or lifted from content a model retrieved, is
@@ -341,5 +347,7 @@ break-glass elevation are in `privileged-access-and-impersonation.md`.
 - [ ] Admin/staff actions use a role check, not bare `IsAuthenticated`.
 - [ ] Authenticated/personalized responses are not shared-cached; any private
       cache key and invalidation cover every authorization dimension.
-- [ ] Every server-side URL fetch is allowlisted and blocks internal ranges.
+- [ ] Every server-side URL fetch is allowlisted and blocks internal ranges;
+      the cloud metadata endpoint is both denied in the application and
+      hardened at the instance.
 - [ ] Redirect targets validated with `url_has_allowed_host_and_scheme`.

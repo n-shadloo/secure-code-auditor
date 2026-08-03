@@ -188,7 +188,9 @@ billing.get("/invoices", headers={"Authorization": f"Bearer {downstream}"})
 ```
 
 Algorithm pinning, key rotation, lifetimes, claim staleness, and revocation are
-in `a07-authentication-failures.md`, "JWT" and apply unchanged. What is
+in `a07-authentication-failures.md`, "JWT"; the ordered claim-by-claim
+verification, JWKS caching and rotation, and the RFC 8693 exchange mechanics
+are in `service-identity-and-secrets.md`. Both apply unchanged. What is
 specific here is the audience check on every call and the passthrough
 prohibition. Maps to CWE-287, CWE-345, CWE-441; API2:2023; MCP01 Token
 Mismanagement and Secret Exposure, MCP07 Insufficient Authentication and

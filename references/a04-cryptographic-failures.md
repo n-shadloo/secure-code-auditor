@@ -57,8 +57,20 @@ credentials; see the auth file for lockout and breach handling.
 
 - `SECRET_KEY`, JWT `SIGNING_KEY`, DB passwords, and third-party API keys load
   from the environment or a secrets manager — never literals in `settings.py`,
-  never committed. Rotate `SECRET_KEY` via `SECRET_KEY_FALLBACKS` so existing
-  sessions/tokens survive the change.
+  never committed. Read required values with `os.environ[...]`, so a missing
+  production secret fails at startup instead of becoming `None` and quietly
+  disabling a check downstream.
+- `SECRET_KEY_FALLBACKS` lets the previous key keep *validating* while the new
+  key signs, which is what makes a rotation survivable. It does not cover
+  everything derived from the key, and — contrary to a widely repeated claim —
+  rotation does not invalidate CSRF tokens. The subsystem-by-subsystem
+  breakdown, the two-phase procedure, and the deliberate hard cut after a
+  compromise are in `service-identity-and-secrets.md`, "Rotating Django's
+  SECRET_KEY".
+- Where secrets should live per runtime, how they reach the process, and the
+  ordered response to a leak are in `service-identity-and-secrets.md`, as are
+  machine-to-machine credentials themselves — client-credentials tokens, mutual
+  TLS, and workload identity. This file keeps the primitives underneath them.
 - A hardcoded or committed secret is a finding on its own (High–Critical
   depending on what it unlocks). See `dangerous_patterns.py` for detection and
   the deployment/libraries files for `.env` hygiene.
@@ -98,8 +110,10 @@ credentials; see the auth file for lockout and breach handling.
 - [ ] Argon2 (or at least PBKDF2) first in `PASSWORD_HASHERS`; no reversible
       password storage.
 - [ ] `AUTH_PASSWORD_VALIDATORS` configured.
-- [ ] No secrets in source or VCS; loaded from env/secrets manager; rotation path
-      exists.
+- [ ] No secrets in source or VCS; loaded from env/secrets manager; a rotation
+      path exists with an overlap window sized to the longest-lived signed
+      artifact, and `SECRET_KEY_FALLBACKS` is wired into settings before it is
+      needed.
 - [ ] TLS in transit, with the database connection *verified* rather than only
       encrypted; no raw card data stored; disk encryption is not counted as
       column encryption.

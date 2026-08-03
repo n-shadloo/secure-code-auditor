@@ -48,6 +48,13 @@ This is the subtle one. Behind Nginx/Cloudflare:
   underscore-header spoofing CVE is a reminder not to enable it. Validate `Host`
   and consider a default server returning 444 for unknown hosts, complementing
   `ALLOWED_HOSTS`.
+- A header carrying a *verified client certificate* — `X-Forwarded-Client-Cert`,
+  or RFC 9440's `Client-Cert` — obeys the same rule at a higher penalty:
+  spoofing it is an authentication bypass, not a client-IP trust problem. The
+  proxy must strip or overwrite any inbound copy, and the application must not
+  be reachable except through it. The application side is in
+  `service-identity-and-secrets.md`, "Client-certificate identity behind a
+  proxy".
 
 Example Nginx snippet:
 
@@ -116,7 +123,11 @@ Grant write access only to the paths the app genuinely needs.
   timeouts — is in `data-layer-and-database.md`.
 - Load secrets with `os.environ` from an injected environment or through the
   official, maintained SDK for the deployment's secrets manager; keep `.env` out
-  of the repository and production artifact. Do not add a generic helper merely
+  of the repository and production artifact. Which delivery mechanism suits
+  which runtime, and why an environment variable is the floor rather than the
+  target for a production credential, are in
+  `service-identity-and-secrets.md`, "Where secrets live and how they reach the
+  process". Do not add a generic helper merely
   to parse environment variables. `python-decouple` does not pass the current
   maintenance gate; existing use should be re-vetted. Validate required settings
   and types at startup and fail closed without printing secret values.
@@ -152,7 +163,9 @@ Grant write access only to the paths the app genuinely needs.
 
 - [ ] TLS enforced; HSTS set; no redirect loop with the proxy.
 - [ ] Forwarded headers trusted only from the proxy; client IP for lockout is
-      correct; `SECURE_PROXY_SSL_HEADER` not client-spoofable.
+      correct; `SECURE_PROXY_SSL_HEADER` not client-spoofable; any forwarded
+      client-certificate identity is stripped inbound and the application port
+      cannot be reached without traversing the proxy.
 - [ ] Security headers defined once; server/version banners hidden.
 - [ ] Gunicorn non-root on a local socket; systemd unit hardened.
 - [ ] Uploads use inert/origin-isolated serving; hard edge limits and
