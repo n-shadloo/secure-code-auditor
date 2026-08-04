@@ -34,8 +34,11 @@ subject-access endpoints), service-to-service identity and secrets management
 (machine-authentication mechanism choice, ordered inbound machine-token
 validation, JWKS caching and key rotation, proxy-set client-certificate
 identity, endpoints authenticated only by network position, downstream token
-exchange, secret storage and delivery, and `SECRET_KEY` rotation), and
-deployment/runtime hardening.
+exchange, secret storage and delivery, and `SECRET_KEY` rotation), GraphQL and
+non-DRF API surfaces (resolver-edge authorization, schema and type exposure,
+document depth/alias/token/cost limits, introspection and error masking,
+mutation mass assignment, batching, persisted operations, and framework
+defaults that authenticate nothing), and deployment/runtime hardening.
 
 ## Two modes
 - Review-time: audit existing code, produce prioritized findings (severity,

@@ -18,8 +18,12 @@ anonymization versus pseudonymization, personal-data classification, and
 export/subject-access endpoints), service-to-service identity and secrets
 (machine-token validation, JWKS caching and rotation, client credentials,
 mutual TLS and proxy-set certificate identity, workload identity, secret
-delivery, and `SECRET_KEY` rotation), and a dated maintained-package gate for
-third-party security dependencies.
+delivery, and `SECRET_KEY` rotation), GraphQL and non-DRF API surfaces
+(authorization on every resolved edge, schema and type over-exposure, query
+depth/alias/token/cost limits, introspection and error masking, mutation mass
+assignment, persisted operations, and Django Ninja's default of no
+authentication), and a dated maintained-package gate for third-party security
+dependencies.
 
 Primary integration is Claude; this file exists so Gemini CLI uses the same
 single source of truth. Modes (review-time / write-time), the severity rubric,

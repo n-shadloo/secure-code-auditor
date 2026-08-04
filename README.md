@@ -37,6 +37,12 @@ then a deep Django/DRF section with the actual settings, code, and gotchas.
   brute-force resistance, MFA, password reset, and enumeration resistance.
 - API/DRF: serializer over-exposure and mass assignment, pagination/filter
   leakage, throttling, default permission classes, CSRF interaction, payments.
+- GraphQL and non-DRF API surfaces: authorization on every resolved edge rather
+  than at the query root, all-fields schema types, depth/alias/token/cost limits
+  applied before execution, introspection and error-message leakage, mutation
+  mass assignment, batching that defeats request throttling, N+1 as resource
+  exhaustion, persisted operations, and Django Ninja routes that are public
+  because nothing set `auth=`.
 - Async/ASGI and Channels: safe ORM boundaries, request-context isolation,
   origin checks, and per-connection authentication, authorization, and limits.
 - Agent and LLM-facing interfaces: DRF viewsets republished as MCP tools and
@@ -95,7 +101,12 @@ packages, none of which is recommended). Django 6.0.7, 5.2.16 LTS, and DRF
 3.17.1 were re-confirmed as current on that date. The service-identity
 packages were checked on 3 Aug 2026: PyJWT 2.13.0 is recommended with a
 `>=2.13.0` floor, and SimpleJWT was re-checked and confirmed not to cap PyJWT,
-while remaining out of scope as a machine-identity mechanism.
+while remaining out of scope as a machine-identity mechanism. The GraphQL and
+non-DRF packages were checked on 4 Aug 2026: strawberry-graphql 0.323.2 with
+strawberry-graphql-django 0.86.8 is conditional and pinned, django-ninja 1.6.2
+is conditional, and graphene-django 3.2.3 is existing-install audit only
+because it declares no support for Django 5.2 or 6.0 and has not released since
+March 2025.
 
 ## Install
 
@@ -248,6 +259,7 @@ secure-code-auditor/
 │   ├── data-lifecycle-and-privacy.md
 │   ├── deployment-and-runtime.md
 │   ├── file-uploads.md
+│   ├── graphql-and-alternative-api-surfaces.md
 │   ├── privileged-access-and-impersonation.md
 │   ├── security-hardening-libraries.md
 │   └── service-identity-and-secrets.md

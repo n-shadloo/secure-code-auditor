@@ -1,28 +1,25 @@
 ---
 name: secure-code-auditor
 description: >-
-  Backend security auditor for Django and Django REST Framework on an OWASP
-  Top 10 (2025) and API Security Top 10 (2023) foundation. Use whenever backend
-  code is written or reviewed and touches authentication, sessions, JWT,
-  OAuth2/OIDC, social login, API keys, permissions, access control, object- and
-  field-level authz, impersonation, privileged access, user-supplied input, the
-  ORM, raw SQL, database roles, row-level security, tenant isolation,
-  connection pooling, encrypted columns, NoSQL, Redis, search indexes, read
-  replicas, backups, file uploads, serializers, API endpoints, AI agents, MCP
-  tool surfaces, LLM output, secrets, payments, notifications, background
-  tasks, caching, async/ASGI, WebSockets, signals, soft delete, deletion,
-  erasure, retention, anonymization, personal data, exports, migrations,
-  service-to-service calls, machine tokens, JWKS, client credentials, mutual
-  TLS, workload identity, internal endpoints, secrets, secret rotation,
-  SECRET_KEY, or deployment configuration, even if "security" is never used.
-  Review-time returns prioritized findings with fixes; write-time applies
-  secure defaults.
-  Django/DRF-first; the general layer suits any stack.
+  Backend security auditor for Django and DRF on an OWASP Top 10 (2025) and
+  API Security Top 10 (2023) foundation. Use when backend code is written or
+  reviewed and touches authentication, sessions, JWT, OAuth2/OIDC, social
+  login, API keys, permissions, access control, object/field-level authz,
+  impersonation, user-supplied input, the ORM, raw SQL, database roles,
+  row-level security, encrypted columns, NoSQL, Redis, search indexes, file
+  uploads, serializers, API endpoints, GraphQL, resolvers, introspection,
+  Strawberry, Graphene, Django Ninja, AI agents, MCP tools, LLM output,
+  secrets, payments, notifications, background tasks, caching, async/ASGI,
+  WebSockets, signals, erasure, retention, anonymization, personal data,
+  migrations, service-to-service calls, machine tokens, JWKS, mutual TLS,
+  SECRET_KEY rotation, or deployment config, even if "security" is never
+  used. Review-time returns prioritized findings with fixes; write-time
+  applies secure defaults. Django/DRF-first; general layer suits any stack.
 license: MIT
 allowed-tools: Read, Grep, Glob, Bash
 metadata:
   author: n-shadloo
-  version: 1.8.0
+  version: 1.9.0
 ---
 
 # secure-code-auditor
@@ -64,6 +61,7 @@ Load only the file(s) relevant to the concern in front of you.
 | Privilege model (RBAC/ABAC/ReBAC), `ModelBackend`/DRF/admin permission behavior, default-deny + URLconf audit test, field-level authz (BOPLA), search-index and denormalised-copy leakage, authz test design, permission decay | `references/authorization-architecture.md` |
 | Impersonation / "log in as user", django-hijack, break-glass & JIT elevation, operator audit identity | `references/privileged-access-and-impersonation.md` |
 | Serializer over-exposure/mass assignment, pagination/filter leakage, throttling, default auth/permission classes, DRF+CSRF | `references/api-drf-specific.md` |
+| GraphQL endpoints and schemas, resolver-level authorization and nested traversal, all-fields types, query depth/alias/token/cost limits, introspection and error masking, mutation inputs and nested writes, batching, persisted queries, N+1 as resource exhaustion, Strawberry and graphene-django defaults, Django Ninja routes with no `auth=` | `references/graphql-and-alternative-api-surfaces.md` |
 | Async/ASGI boundaries, sync ORM access, task/request context, WebSocket/Channels origin, authentication, authorization, and limits | `references/async-and-channels.md` |
 | File uploads, type/content validation, safe names/storage/serving, SVG, image/archive bombs, size/count/quotas | `references/file-uploads.md` |
 | AI agents and MCP tool surfaces, DRF viewsets republished as tools, agent tokens and audience validation, tool scope vs user permissions, model output and retrieved content as untrusted input, prompt injection reaching a backend sink, per-agent cost/concurrency limits, tool-call confirmation and audit | `references/agent-and-llm-interfaces.md` |
@@ -105,7 +103,14 @@ static service key still has to meet, the agent reference keeps the tool-call
 threat model and the passthrough prohibition itself, the deployment file keeps
 proxy configuration and how the environment is injected, A04 keeps the
 cryptographic primitives the signing is built on, and A01 keeps SSRF and the
-metadata endpoint that a leaked workload credential is reached through.
+metadata endpoint that a leaked workload credential is reached through. The
+GraphQL reference owns the surface where the client composes the request —
+resolver-edge authorization, document cost limits, schema exposure, and the
+non-DRF framework defaults — and defers to A01 for the access-control failure
+itself, the authorization-architecture file for the field-level model, the DRF
+file for the serializer and throttling patterns it generalises, the upload and
+async references for uploads and subscriptions, and A03 for the stale-library
+finding a graphene-django install raises.
 
 ## Mode selection
 

@@ -1,5 +1,5 @@
 ---
-description: Backend security review and secure-by-default coding, Django/DRF-first on an OWASP Top 10:2025 spine, including authorization architecture and the privilege model, impersonation and privileged access, OAuth2/OIDC, social login, API keys, agent and MCP tool surfaces, the database and data layer as a security boundary, the data lifecycle (soft delete, erasure, retention, anonymization, personal-data exports), service-to-service identity and secrets management (machine tokens, JWKS, client credentials, mutual TLS, workload identity, secret storage and rotation), and dependency vetting. Canonical instructions live in SKILL.md and references/.
+description: Backend security review and secure-by-default coding, Django/DRF-first on an OWASP Top 10:2025 spine, including authorization architecture and the privilege model, impersonation and privileged access, OAuth2/OIDC, social login, API keys, agent and MCP tool surfaces, the database and data layer as a security boundary, the data lifecycle (soft delete, erasure, retention, anonymization, personal-data exports), service-to-service identity and secrets management (machine tokens, JWKS, client credentials, mutual TLS, workload identity, secret storage and rotation), GraphQL and non-DRF API surfaces (resolver-level authorization, schema exposure, query cost limits, introspection, persisted operations, Django Ninja defaults), and dependency vetting. Canonical instructions live in SKILL.md and references/.
 alwaysApply: false
 ---
 
@@ -26,7 +26,9 @@ or copies of a record in indexes, caches, files, or lower environments are in
 view, `service-identity-and-secrets.md` whenever service-to-service calls,
 machine tokens, JWKS, client credentials, mutual TLS, workload identity,
 internal-only endpoints, secret storage or delivery, or `SECRET_KEY` rotation
-are in view, and the security-hardening library index for dated package
+are in view, `graphql-and-alternative-api-surfaces.md` whenever a GraphQL
+schema, resolver, mutation, or a non-DRF framework such as Django Ninja is in
+view, and the security-hardening library index for dated package
 dispositions.
 
 Read-only triage scripts are in `scripts/`. Do not rely on this summary alone —
