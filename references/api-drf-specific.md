@@ -8,6 +8,12 @@ A01 (authz), A02 (config/CORS), A06/A07 (rate limiting/auth),
 to OWASP API Security Top 10:2023 broadly (API1 BOLA, API3 BOPLA, API4 resource
 consumption, API8 misconfiguration).
 
+This file is about DRF specifically. For a GraphQL schema, or a non-DRF
+framework such as Django Ninja whose defaults differ from DRF's, read
+`graphql-and-alternative-api-surfaces.md` — several patterns below generalise
+there with the unit of measurement changed, and the framework defaults do
+not carry over at all.
+
 ## Contents
 - [Serializer exposure and mass assignment (API3)](#serializer-exposure-and-mass-assignment-api3)
 - [Pagination and filter leakage](#pagination-and-filter-leakage)
@@ -153,3 +159,6 @@ rate".
       and concurrency as well as rate.
 - [ ] Payments resolve amounts server-side; webhooks verified/idempotent; no raw
       card storage.
+- [ ] Any GraphQL schema or non-DRF framework in the same project was reviewed
+      against `graphql-and-alternative-api-surfaces.md`; DRF defaults such as
+      `DEFAULT_PERMISSION_CLASSES` do not apply to those surfaces.

@@ -444,6 +444,11 @@ class InvoiceSerializer(serializers.ModelSerializer):
 Setting `read_only` on the field instance covers declared and generated fields
 alike, and applies to `PUT` and `PATCH` equally.
 
+The same failure appears in a GraphQL schema as a type that publishes every
+model field, where the deny-list version fails open as the model grows; see
+`graphql-and-alternative-api-surfaces.md`, "Schema exposure and the all-fields
+type (BOPLA)".
+
 ## Search indexes and denormalised copies
 
 A search index, a materialised report table, an analytics export, and a replica

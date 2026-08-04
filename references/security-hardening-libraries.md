@@ -165,6 +165,33 @@ classification convention cover the area without a dependency.
 | `django-anon`, `django-GDPR` | **Reject.** No release since 2023, no declared support for a supported Django line, and field-level “anonymizers” built on plain hashes are pseudonymization, not anonymization. |
 | Single-maintainer retention packages | **Reject as a category.** A management command plus a scheduled task and a persisted run record is smaller, reviewable, and does not add an unmaintained dependency to the deletion path. |
 
+## GraphQL and alternative API surfaces
+
+Versions and defaults in this section were checked against PyPI and the
+packages' own source on **4 Aug 2026**; the rest of this file carries the
+17 Jul 2026 baseline above. Read with
+`graphql-and-alternative-api-surfaces.md`.
+
+No package in this area ships the controls that make a GraphQL endpoint safe.
+Depth, alias, token, and cost limits, resolver-level authorization, and error
+masking are all opt-in in every library below, so the disposition decides which
+footguns you inherit, not whether you still have to do the work.
+
+| Concern | Choice and version | Disposition and review notes |
+|---|---|---|
+| GraphQL on Django (new work) | `strawberry-graphql==0.323.2` (23 Jul 2026) with `strawberry-graphql-django==0.86.8` (1 Aug 2026) | **Conditional; pin both exactly.** MIT; Python >=3.10; the Django package declares Django 5.2 and 6.0. Ships `QueryDepthLimiter`, `MaxAliasesLimiter`, `MaxTokensLimiter`, `AddValidationRules`, `DisableIntrospection`, `MaskErrors`, the `IsAuthenticated`/`HasPerm`/`HasSourcePerm`/`HasRetvalPerm` field extensions, and `DjangoOptimizerExtension` for N+1 — none of them enabled by default. Pre-1.0 on both lines with frequent releases (three on 1 Aug 2026 alone), so an unpinned install is a moving target. Pass limiter extensions as classes or factories; a shared instance carries execution context across concurrent requests. |
+| GraphQL on Django (existing install) | `graphene-django==3.2.3` (13 Mar 2025) | **Existing-install audit only.** MIT; classifiers stop at Django 4.2, so it declares no support for 5.2 LTS or 6.0, and there has been no release in roughly seventeen months. An install on a supported Django line is a supply-chain finding under A03, not merely a compatibility note. `DjangoObjectType` with `Meta.model` and neither `fields` nor `exclude` exposes every field behind a `DeprecationWarning`, and `graphene_django.utils.bypass_get_queryset` disables type-level scoping on foreign-key and one-to-one traversal. A release declaring Django 5.2/6.0 would move it back to conditional. |
+| GraphQL core validators | `graphene==3.4.3` (9 Nov 2024) | **Transitive; audit, do not add directly.** Supplies `graphene.validation.depth_limit_validator` and `DisableIntrospection`, neither wired into `GraphQLView` by default. Release cadence tracks graphene-django's, which is the concern above. |
+| Non-DRF HTTP API | `django-ninja==1.6.2` (18 Mar 2026) | **Conditional.** Declares Django 5.2 and 6.0; healthy adoption. The footgun is the default: an operation is public unless `auth=` is set on the `NinjaAPI`, router, or route, and there is no project-wide default-deny equivalent to `DEFAULT_PERMISSION_CLASSES`. Set `auth=` at the `NinjaAPI` object and treat every `auth=None` as a reviewed exception. |
+| Ninja JWT | `django-ninja-jwt==5.4.5` (21 Jul 2026) | **Existing-install audit only.** Actively released, but its classifiers stop at Django 4.1, so compatibility with a 5.2/6.0 baseline is undeclared — verify it in CI. Its `SIGNING_KEY` defaults to Django's `SECRET_KEY`; set an independent key so token forgery and `SECRET_KEY` rotation are not the same event. |
+| N+1 mitigation | `DjangoOptimizerExtension` (in strawberry-graphql-django); `graphene-django-optimizer` | **Prefer the built-in.** Strawberry's optimizer needs no new dependency. Reach for `graphene-django-optimizer` only on an existing graphene-django install, at **conditional**, and re-run the A03 gate at adoption. Verify either by query count under a realistically nested document; an optimizer that silently fails to engage looks identical to one that works. |
+
+| Candidate | Disposition and safer direction |
+|---|---|
+| `ariadne` 1.1.0 (15 Jun 2026) with `ariadne-django` 0.3.0 (19 Jul 2022) | **Reject the Django integration for new use.** Ariadne core is maintained and reached 1.x, but the Django integration has not been released in four years and declares no supported Django version. Where the schema-first style is wanted, mount Ariadne's own ASGI/WSGI application and own the integration deliberately, or use Strawberry. |
+| `django-socio-grpc` | **Scoping note, not a tier.** Niche gRPC-for-Django toolkit. If a Django application serves gRPC, audit its handlers with the authorization, input-validation, and limit rules in `graphql-and-alternative-api-surfaces.md`; the transport and mesh belong to `deployment-and-runtime.md` and `service-identity-and-secrets.md`. |
+| Persisted-query packages | **No first-party Django option; do not adopt by category.** Operation allowlisting is normally a gateway concern or a small server-side hash registry. An automatic-persisted-query implementation that registers whatever a client first sends is a cache, not an allowlist, and provides none of the security benefit. |
+
 ## Use in a review
 
 - Report the installed version and actual configuration, not merely the package name.
