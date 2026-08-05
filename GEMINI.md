@@ -22,8 +22,11 @@ delivery, and `SECRET_KEY` rotation), GraphQL and non-DRF API surfaces
 (authorization on every resolved edge, schema and type over-exposure, query
 depth/alias/token/cost limits, introspection and error masking, mutation mass
 assignment, persisted operations, and Django Ninja's default of no
-authentication), and a dated maintained-package gate for third-party security
-dependencies.
+authentication), the DRF API surface (routes where the object check never runs,
+function-level authorization on viewset actions, serializer and filter
+exposure, throttling mechanics, schema and browsable-API exposure, endpoint
+inventory, version deprecation, and bulk endpoints), and a dated
+maintained-package gate for third-party security dependencies.
 
 Primary integration is Claude; this file exists so Gemini CLI uses the same
 single source of truth. Modes (review-time / write-time), the severity rubric,

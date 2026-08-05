@@ -1,25 +1,26 @@
 ---
 name: secure-code-auditor
 description: >-
-  Backend security auditor for Django and DRF on an OWASP Top 10 (2025) and
-  API Security Top 10 (2023) foundation. Use when backend code is written or
-  reviewed and touches authentication, sessions, JWT, OAuth2/OIDC, social
-  login, API keys, permissions, access control, object/field-level authz,
-  impersonation, user-supplied input, the ORM, raw SQL, database roles,
-  row-level security, encrypted columns, NoSQL, Redis, search indexes, file
-  uploads, serializers, API endpoints, GraphQL, resolvers, introspection,
+  Backend security auditor for Django and DRF on an OWASP Top 10 (2025)
+  and API Security Top 10 (2023) foundation. Use when backend code is
+  written or reviewed and touches authentication, sessions, JWT,
+  OAuth2/OIDC, API keys, permissions, access control, object/field-level
+  authz, impersonation, user-supplied input, the ORM, raw SQL, database
+  roles, row-level security, encrypted columns, NoSQL, Redis, search
+  indexes, file uploads, serializers, API endpoints, BFLA, API inventory,
+  versioning, OpenAPI schema, GraphQL, resolvers, introspection,
   Strawberry, Graphene, Django Ninja, AI agents, MCP tools, LLM output,
   secrets, payments, notifications, background tasks, caching, async/ASGI,
-  WebSockets, signals, erasure, retention, anonymization, personal data,
-  migrations, service-to-service calls, machine tokens, JWKS, mutual TLS,
-  SECRET_KEY rotation, or deployment config, even if "security" is never
-  used. Review-time returns prioritized findings with fixes; write-time
-  applies secure defaults. Django/DRF-first; general layer suits any stack.
+  WebSockets, signals, erasure, retention, personal data, migrations,
+  service-to-service calls, JWKS, mutual TLS, SECRET_KEY rotation, or
+  deployment config, even if "security" is never used. Review-time returns
+  prioritized findings with fixes; write-time applies secure defaults.
+  Django/DRF-first; general layer suits any stack.
 license: MIT
 allowed-tools: Read, Grep, Glob, Bash
 metadata:
   author: n-shadloo
-  version: 1.9.0
+  version: 1.10.0
 ---
 
 # secure-code-auditor
@@ -60,7 +61,7 @@ Load only the file(s) relevant to the concern in front of you.
 | DEBUG/error views, stack-trace leakage, fail-open checks, race conditions/TOCTOU | `references/a10-exceptional-conditions.md` |
 | Privilege model (RBAC/ABAC/ReBAC), `ModelBackend`/DRF/admin permission behavior, default-deny + URLconf audit test, field-level authz (BOPLA), search-index and denormalised-copy leakage, authz test design, permission decay | `references/authorization-architecture.md` |
 | Impersonation / "log in as user", django-hijack, break-glass & JIT elevation, operator audit identity | `references/privileged-access-and-impersonation.md` |
-| Serializer over-exposure/mass assignment, pagination/filter leakage, throttling, default auth/permission classes, DRF+CSRF | `references/api-drf-specific.md` |
+| Where DRF runs the object check and the routes that skip it, `@action` and function-level authz (BFLA), serializer over-exposure/mass assignment, pagination/filter/ordering leakage, throttling mechanics, schema and browsable-API exposure, endpoint inventory and shadow routes, versioning and deprecation, bulk endpoints, unsafe DRF defaults, DRF+CSRF | `references/api-drf-specific.md` |
 | GraphQL endpoints and schemas, resolver-level authorization and nested traversal, all-fields types, query depth/alias/token/cost limits, introspection and error masking, mutation inputs and nested writes, batching, persisted queries, N+1 as resource exhaustion, Strawberry and graphene-django defaults, Django Ninja routes with no `auth=` | `references/graphql-and-alternative-api-surfaces.md` |
 | Async/ASGI boundaries, sync ORM access, task/request context, WebSocket/Channels origin, authentication, authorization, and limits | `references/async-and-channels.md` |
 | File uploads, type/content validation, safe names/storage/serving, SVG, image/archive bombs, size/count/quotas | `references/file-uploads.md` |
@@ -74,9 +75,10 @@ Load only the file(s) relevant to the concern in front of you.
 Cross-references between files are intentional: authz appears in A01 as
 per-request failures, in the authorization-architecture file as the model that
 produces them, and again API-shaped in the DRF file; rate limiting spans A06,
-A07, uploads, async connections, and the DRF file; deployment covers the
-infrastructure side of cache and media controls whose application rules live in
-A01 and the upload reference. The agent reference owns the tool-call threat
+A07, uploads, and async connections, with the DRF file owning the throttling
+mechanics the others defer to; deployment covers the infrastructure side of
+cache and media controls whose application rules live in A01 and the upload
+reference. The agent reference owns the tool-call threat
 model and the MCP-specific controls, and defers to those files for the
 authorization mechanics, token rules, injection sinks, and audit machinery it
 reuses rather than restating them. The data-layer reference owns the database as

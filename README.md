@@ -35,8 +35,14 @@ then a deep Django/DRF section with the actual settings, code, and gotchas.
   template, and header injection; server-side output handling.
 - Authentication: sessions, JWT, OAuth2/OIDC and social login, API keys,
   brute-force resistance, MFA, password reset, and enumeration resistance.
-- API/DRF: serializer over-exposure and mass assignment, pagination/filter
-  leakage, throttling, default permission classes, CSRF interaction, payments.
+- API/DRF: where the framework runs an object check and every route that skips
+  it (`@action(detail=True)`, plain `APIView`, overridden `get_object`, bulk),
+  function-level authorization on viewset actions, serializer over-exposure and
+  mass assignment, pagination/filter/ordering leakage, throttling mechanics that
+  decide whether a configured limit is the real one, browsable-API and OpenAPI
+  schema exposure, enumerating the live URL map to find shadow endpoints,
+  version deprecation that actually ends, default permission classes, CSRF
+  interaction, and webhook raw-body handling.
 - GraphQL and non-DRF API surfaces: authorization on every resolved edge rather
   than at the query root, all-fields schema types, depth/alias/token/cost limits
   applied before execution, introspection and error-message leakage, mutation
@@ -106,7 +112,11 @@ non-DRF packages were checked on 4 Aug 2026: strawberry-graphql 0.323.2 with
 strawberry-graphql-django 0.86.8 is conditional and pinned, django-ninja 1.6.2
 is conditional, and graphene-django 3.2.3 is existing-install audit only
 because it declares no support for Django 5.2 or 6.0 and has not released since
-March 2025.
+March 2025. The API-surface packages were checked on 5 Aug 2026:
+drf-spectacular 0.30.0 and django-filter 26.1 are recommended (the latter only
+with explicit field allowlists), django-extensions 4.1 is a development-only
+existing-install disposition, and both DRF bulk packages are rejected because
+their bulk paths skip per-object authorization.
 
 ## Install
 

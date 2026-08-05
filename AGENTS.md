@@ -38,7 +38,11 @@ exchange, secret storage and delivery, and `SECRET_KEY` rotation), GraphQL and
 non-DRF API surfaces (resolver-edge authorization, schema and type exposure,
 document depth/alias/token/cost limits, introspection and error masking,
 mutation mass assignment, batching, persisted operations, and framework
-defaults that authenticate nothing), and deployment/runtime hardening.
+defaults that authenticate nothing), the DRF API surface itself (the routes
+where the object check never runs, function-level authorization on viewset
+actions, serializer and filter exposure, throttling mechanics, schema and
+browsable-API exposure, endpoint inventory and shadow routes, version
+deprecation, and bulk endpoints), and deployment/runtime hardening.
 
 ## Two modes
 - Review-time: audit existing code, produce prioritized findings (severity,
