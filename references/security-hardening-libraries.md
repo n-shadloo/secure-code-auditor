@@ -192,6 +192,34 @@ footguns you inherit, not whether you still have to do the work.
 | `django-socio-grpc` | **Scoping note, not a tier.** Niche gRPC-for-Django toolkit. If a Django application serves gRPC, audit its handlers with the authorization, input-validation, and limit rules in `graphql-and-alternative-api-surfaces.md`; the transport and mesh belong to `deployment-and-runtime.md` and `service-identity-and-secrets.md`. |
 | Persisted-query packages | **No first-party Django option; do not adopt by category.** Operation allowlisting is normally a gateway concern or a small server-side hash registry. An automatic-persisted-query implementation that registers whatever a client first sends is a cache, not an allowlist, and provides none of the security benefit. |
 
+## API surface, schema, and bulk operations
+
+Versions and classifiers in this section were checked against PyPI on
+**5 Aug 2026**; the rest of this file carries the 17 Jul 2026 baseline above.
+Read with `api-drf-specific.md`. Note that DRF `3.17.2` was published on
+5 Aug 2026, after the repository baseline of `3.17.1` was set; it has not been
+through the gate here, so treat the baseline as unchanged and re-vet before
+moving a project onto it.
+
+The controls that make a DRF surface safe — scoped querysets, allow-listed
+serializer fields and filters, per-object authorization on every route — are
+framework built-ins and need no dependency. The packages below are for the two
+places DRF genuinely ships nothing: an OpenAPI schema worth generating, and
+declarative filtering. The bulk packages are listed because they are the ones
+already installed when a bulk endpoint turns out to skip every object check.
+
+| Concern | Choice and version | Disposition and review notes |
+|---|---|---|
+| OpenAPI schema generation | `drf-spectacular==0.30.0` (6 Jul 2026) | **Recommend, pinned.** BSD-3-Clause; actively released; 0.30.0 added Django 6.0 and DRF 3.17 support. It replaces DRF's own deprecated schema path. Deliberately pre-1.0, so any release may change generated output: pin the exact version and diff the generated schema on upgrade, since the schema is also the inventory artifact an audit diffs against. Set `SERVE_INCLUDE_SCHEMA = False` and gate the schema and UI views — generating a schema and publishing it are separate decisions. No advisory found in OSV, the GitHub Advisory Database, or Snyk as of this date, which is an absence of advisories rather than a guarantee. |
+| Declarative filtering | `django-filter==26.1` (11 Jul 2026) | **Recommend, with explicit allowlists only.** BSD-3-Clause; Python >=3.10; declares Django 5.2, 6.0, and 6.1. The package is safe; the usage is what fails review. Declare a `FilterSet` or a narrow `filterset_fields`; never generate filters across a model, and never set `filterset_fields` or `ordering_fields` to `"__all__"`. A filter over a column the caller cannot read is a disclosure oracle regardless of whether the column is serialized. |
+| URL-map enumeration (development) | `django-extensions==4.1` (11 Apr 2025) | **Existing-install audit only, and a development dependency at that.** MIT; Production/Stable, but classifiers stop at Django 5.2 and there has been no release in over a year, so 6.0 support is undeclared. Its `show_urls` is a convenient inventory command where it is already present; the equivalent recursion over `get_resolver().url_patterns` needs no dependency, and Django 6.2's built-in `listurls` supersedes both. Never ship it in a production requirements file — it also carries `shell_plus`, `runserver_plus`, and other development-only commands. |
+
+| Candidate | Disposition and safer direction |
+|---|---|
+| `djangorestframework-bulk==0.2.1` | **Reject.** Last released April 2015 and unmaintained for over a decade. Beyond the supply-chain finding, its bulk update path returns no object, so `check_object_permissions` never runs — a bulk route built on it authorizes nothing per record. Where it is installed, treat every route it serves as an unauthorized write path until proven otherwise. |
+| `drf-extensions==0.8.0` | **Reject for new use; existing-install audit only.** BSD; classifiers stop at Django 5.2 and it declares no `requires_python`. Its bulk operations run as queryset-level `update()`/`delete()`, which by design bypass serializer `save`/`delete` and every per-object check. If it is present, audit each bulk route against `api-drf-specific.md`, "Bulk endpoints"; its caching and nested-router features are a separate question. |
+| Bulk endpoints generally | **Prefer hand-written over packaged.** A bulk route is a per-object authorization problem, and the packaged mixins exist precisely to skip the per-object path. Loading the set from a requester-scoped queryset, confirming the returned count matches the requested ids, and wrapping the write in a transaction is a short amount of code that no dependency currently gets right. |
+
 ## Use in a review
 
 - Report the installed version and actual configuration, not merely the package name.

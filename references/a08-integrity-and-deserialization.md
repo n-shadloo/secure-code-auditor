@@ -62,7 +62,9 @@ For payment and third-party webhooks (Stripe et al.):
 - **Verify the signature against the raw request body** — Stripe's
   `construct_event` (or equivalent), using the endpoint's signing secret. Parsing
   JSON first and re-serializing breaks the HMAC; read `request.body` and verify
-  before parsing.
+  before parsing. In DRF the framework enforces that ordering: once a parser has
+  consumed the stream via `request.data`, `request.body` raises — see
+  `api-drf-specific.md`, "Payments and webhook bodies".
 - Enforce the provider's timestamp tolerance to block replay; optionally
   IP-allowlist the provider.
 - Make processing idempotent: a unique constraint on the event id in a

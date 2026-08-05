@@ -25,11 +25,15 @@ just a code diff.
 
 ## Rate limiting and anti-automation
 
-**Important:** DRF's throttling is explicitly **not** a security control. The DRF
-docs state it "should not be considered a security measure or protection against
-brute forcing or denial-of-service attacks" — IP origins can be spoofed, and it
-uses non-atomic cache operations. Also, throttles run *after* authentication, so
-they don't protect the auth step itself.
+**Important:** DRF's throttling is explicitly **not** a security control. The
+DRF documentation says so directly: it should not be treated as a defense
+against brute forcing or denial of service, because the default classes key on
+an IP origin an attacker can spoof and the counter is a non-atomic cache
+operation. Throttles also run *after* authentication, so they don't protect the
+auth step itself. The mechanics behind those caveats — the non-atomic
+read-modify-write, the per-process cache, and the ordering inside `initial()` —
+are in `api-drf-specific.md`, "Throttling as quota, not security (API4)". This
+file owns which flows need anti-automation in the first place.
 
 Package choices do not replace layered design. `django-axes==8.3.1` passes the
 maintained-package gate for login-attempt monitoring and lockout on Django 6.0,
