@@ -51,8 +51,12 @@ raw-body capture through signature, timestamp, and event de-duplication,
 outbound delivery that is neither an SSRF proxy nor a retry amplifier, insecure
 deserialization including the cache, session, and fixture paths Django
 deserializes without being asked, Celery task messages as input from anyone who
-can reach the broker, and artifact provenance), and deployment/runtime
-hardening.
+can reach the broker, and artifact provenance), the cryptographic primitives
+underneath all of it (password-hashing family and parameters tuned to the
+hardware that runs them, upgrade-on-login, randomness and token generation,
+scoped constant-time comparison, per-purpose salt discipline on signed values,
+key lifecycle and envelope encryption with versioned rotation, and post-quantum
+posture), and deployment/runtime hardening.
 
 ## Two modes
 - Review-time: audit existing code, produce prioritized findings (severity,

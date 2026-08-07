@@ -76,8 +76,16 @@ then a deep Django/DRF section with the actual settings, code, and gotchas.
   by network position; downstream token exchange instead of forwarding; where
   secrets live and how they reach the process; `SECRET_KEY` rotation and what
   it does and does not invalidate; and the ordered response to a leak.
-- Configuration and crypto: the `SECURE_*`/`SESSION_*`/`CSRF_*` matrix, CORS,
-  password hashing, secrets, signing.
+- Configuration: the `SECURE_*`/`SESSION_*`/`CSRF_*` matrix, CORS, headers.
+- Cryptography: choosing a password-hashing family and pinning its cost to the
+  hardware that runs it, why a stock Django install is on PBKDF2 no matter what
+  is in its requirements file, parameter increases that propagate as users log
+  in, randomness and token generation as the failure this category actually
+  catches most often, where a constant-time comparison earns its place and
+  where it is noise, per-purpose salt discipline so a token minted for one flow
+  cannot be replayed against another, the key lifecycle from generation to
+  destruction with envelope encryption and resumable re-encryption, and a sober
+  post-quantum posture that is an inventory rather than a migration.
 - Integrity and cross-system trust: the inbound webhook receiver end to end
   (raw-body capture before any parser, a timestamp inside the signed material,
   constant-time comparison, per-provider signing schemes, and a de-duplication
@@ -140,7 +148,13 @@ integrity and webhook packages were checked on the same date: standardwebhooks
 conditional on safe_load at every call site, svix 1.99.1 is rejected as a
 verification dependency because it pulls six packages transitively to compute
 one HMAC, and nothing is recommended for verifying an inbound webhook, because
-the standard library's hmac module already covers it. Django 6.0.8 and 5.2.17
+the standard library's hmac module already covers it. The cryptographic
+primitives were re-checked on the same date: argon2-cffi 25.1.0 and PyCA
+cryptography 50.0.0 are recommended and now sit in their own section of the
+index, django-fernet-encrypted-fields 0.4.0 is conditional as the one packaged
+field-encryption library that is still maintained — its condition being that it
+derives its key from SECRET_KEY and a SALT_KEY setting — and application-layer
+post-quantum libraries are not adopted this cycle. Django 6.0.8 and 5.2.17
 LTS were published on 4 Aug 2026, after this baseline was set, fixing
 four security issues; the repository baseline is unchanged until the next
 coordinated re-date, and any project still on 6.0.7 or 5.2.16 should take the

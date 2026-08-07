@@ -32,7 +32,11 @@ ordered against the commit, and regular-expression denial of service),
 integrity and cross-system trust (webhook signature verification on the raw
 body, timestamp tolerance and event de-duplication, outbound delivery controls,
 insecure deserialization including Django's cache, session, and fixture paths,
-and Celery task messages as untrusted input), and a dated maintained-package
+and Celery task messages as untrusted input), the cryptographic primitives
+underneath them (password-hashing family and parameters, upgrade-on-login,
+randomness and token generation, constant-time comparison scoped to where it
+matters, per-purpose salt discipline on signed values, key lifecycle and
+envelope encryption, and post-quantum posture), and a dated maintained-package
 gate for third-party security dependencies.
 
 Primary integration is Claude; this file exists so Gemini CLI uses the same

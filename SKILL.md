@@ -4,23 +4,24 @@ description: >-
   Backend security auditor for Django and DRF on an OWASP Top 10 (2025)
   and API Security Top 10 (2023) foundation. Use when backend code is
   written or reviewed and touches authentication, sessions, JWT,
-  OAuth2/OIDC, API keys, permissions, access control, object/field-level
-  authz, impersonation, user-supplied input, the ORM, raw SQL, database
-  roles, row-level security, encrypted columns, NoSQL, Redis, file
-  uploads, serializers, API endpoints, BFLA, versioning, OpenAPI schema,
-  GraphQL, resolvers, introspection, Django Ninja, AI agents, MCP tools,
-  LLM output, secrets, payments, webhooks, HMAC, idempotency,
+  OAuth2/OIDC, API keys, password hashing, Argon2, permissions, access
+  control, object/field authz, impersonation, the ORM, raw SQL, database
+  roles, row-level security, encrypted columns, envelope encryption,
+  NoSQL, Redis, file uploads, serializers, API endpoints, OpenAPI schema,
+  GraphQL, Django Ninja, AI agents, MCP tools, secrets, payments,
+  webhooks, HMAC, timing attacks, random tokens, idempotency,
   notifications, Celery, race conditions, caching, deserialization,
-  pickle, async/ASGI, WebSockets, signals, erasure, retention, personal
-  data, migrations, service-to-service, JWKS, mutual TLS, SECRET_KEY
-  rotation, or deployment config, even if "security" is never used.
+  async/ASGI, WebSockets, signals, erasure, retention, personal data,
+  migrations, service-to-service, JWKS, mutual TLS, post-quantum, key
+  rotation, SECRET_KEY, or deployment config, even if "security" is
+  never used.
   Review-time returns prioritized findings with fixes; write-time applies
   secure defaults. Django/DRF-first; general layer suits any stack.
 license: MIT
 allowed-tools: Read, Grep, Glob, Bash
 metadata:
   author: n-shadloo
-  version: 1.12.0
+  version: 1.13.0
 ---
 
 # secure-code-auditor
@@ -52,7 +53,7 @@ Load only the file(s) relevant to the concern in front of you.
 | Access control, IDOR/BOLA, object- & function-level authz, cache-mediated data leaks, SSRF, open redirect, multi-tenancy, admin access | `references/a01-broken-access-control.md` |
 | DEBUG/ALLOWED_HOSTS, SECURE_*/SESSION_*/CSRF_* matrix, CORS, headers, `check --deploy` | `references/a02-security-misconfiguration.md` |
 | Dependencies, third-party vetting/maintained-package gate, pinning/hashing, `pip-audit`, EOL frameworks, migrations/data integrity, SBOM | `references/a03-software-supply-chain.md` |
-| Password hashing, TLS-in-transit, data at rest, signing, reset tokens, secrets | `references/a04-cryptographic-failures.md` |
+| Password-hashing family and parameters, upgrade-on-login, randomness and token generation, constant-time comparison, signing and per-purpose salt discipline, TLS-in-transit, data at rest, key lifecycle and envelope encryption, post-quantum posture, secrets | `references/a04-cryptographic-failures.md` |
 | SQL/ORM injection, command injection, template injection, header/email injection, server-side output | `references/a05-injection.md` |
 | Rate limiting/anti-automation, business-logic and email/notification abuse, missing limits, insecure defaults | `references/a06-insecure-design.md` |
 | Sessions, JWT/SimpleJWT, OAuth2/OIDC/social login, API keys, brute force, MFA, password reset, allauth/dj-rest-auth/OAuth Toolkit, enumeration | `references/a07-authentication-failures.md` |
@@ -129,7 +130,18 @@ neighbours: A01 keeps the SSRF mechanics an outbound delivery worker has to
 satisfy, the deployment file keeps broker and cache-service exposure, the
 service-identity file keeps where signing secrets live and how they rotate, and
 A03 keeps dependency vetting while A08 keeps only the integrity of the artifacts
-and data the project itself produces and consumes.
+and data the project itself produces and consumes. A04 owns the choice of
+primitive and its parameters, and the life of a key from generation to
+destruction — the password-hashing family and its cost settings, the source and
+size of every random token, when a comparison has to be constant-time and when
+that is noise, per-purpose salt discipline on signed values, envelope
+encryption and versioned rotation, and the post-quantum inventory — while the
+files that consume those choices keep the mechanism: the data-layer file owns
+the encrypted column and the blind index, the service-identity file owns where
+the key lives and how `SECRET_KEY` rotates, the deployment file owns TLS at the
+edge, A08 owns the webhook receiver that the constant-time rule is applied
+inside, and A07 owns password policy and the API-key lifecycle whose tokens A04
+only says how to generate.
 
 ## Mode selection
 
