@@ -248,6 +248,31 @@ entries are for the narrow cases the built-ins genuinely do not reach.
 | Redis distributed-lock packages, as a correctness primitive | **Reject on design rather than on maintenance.** Redlock and single-instance `SET NX PX` provide no fencing token for the protected resource to check, so a lock holder that stalls cannot be excluded; single-instance Redis adds asynchronous-replication failover on top. This disposition does not depend on any individual package's release cadence and does not change if one is refreshed. Acceptable for best-effort de-duplication where a rare double execution is only wasteful — never where correctness depends on it. |
 | Transaction-isolation helpers | **Out of scope here; not tiered.** Packages that add isolation levels or retry loops to `atomic()` are a data-layer configuration decision, not a concurrency-bug fix. Vet them against `data-layer-and-database.md` if raising isolation is deliberately on the table. |
 
+## Integrity, webhooks, and deserialization
+
+Versions and classifiers in this section were checked against PyPI and the
+projects' own repositories on **7 Aug 2026**; the rest of this file carries the
+17 Jul 2026 baseline above. Read with `a08-integrity-and-deserialization.md`.
+
+Nothing is recommended here, and that is the finding. A conformant inbound
+webhook verifier is `hmac.new`, `hmac.compare_digest`, and a model with a unique
+constraint — standard library and ORM, perhaps thirty lines, fully reviewable.
+Taking a dependency to compute one HMAC widens the supply-chain surface this
+skill exists to shrink, and does so on the one route that is unauthenticated by
+design. The rule for this area: **verify inbound with the standard library; take
+a package only for the outbound interop problem, if at all.**
+
+| Concern | Choice and version | Disposition and review notes |
+|---|---|---|
+| Outbound webhook signing to a published spec | `standardwebhooks==1.1.0` (21 Jul 2026) | **Conditional, and only for outbound signing.** MIT; `requires_python >=3.9`; classifiers through Python 3.14; no declared install requirements, which is the reason it clears the gate at all. Justified only where you are publishing webhooks and want consumers to verify against a documented spec rather than a bespoke scheme — that interop is the whole value, and it is real. It is not justified for verifying inbound webhooks: implementing the same construction over `hmac` is a few lines and removes the dependency. Exit plan is to inline the construction, which the spec fully documents. |
+| YAML parsing | `PyYAML==6.0.3` (25 Sep 2025) | **Conditional, and the condition is the call site, not the version.** MIT; `requires_python >=3.8`; Production/Stable with classifiers through Python 3.14; maintained. The package is not the risk — its default API is. `yaml.load` with the default loader, `FullLoader`, or `UnsafeLoader`, plus `yaml.unsafe_load` and `yaml.full_load`, construct arbitrary Python objects and are CWE-502 on any input that crossed a trust boundary. Accept an install only with `yaml.safe_load`/`SafeLoader` at every call site, and prefer JSON where the format is yours to choose. Note it is also what makes Django's `yaml` fixture serializer available. |
+
+| Candidate | Disposition and safer direction |
+|---|---|
+| `svix==1.99.1` (23 Jul 2026) | **Reject for new use as a verification dependency.** MIT and actively released, so this is not a maintenance call. It is a vendor API client whose verifier is incidental, and it pulls `httpx`, `pydantic>=2.10`, `attrs`, `python-dateutil`, `deprecated`, and `standardwebhooks` transitively — six packages to compute one HMAC. Adopt it only if you are already a Svix customer using the API client for its own sake; never add it to a project solely to verify an inbound signature. |
+| Vendor SDKs as inbound webhook verifiers, generally | **Do not add one for verification alone.** A provider SDK you already run for its API is fine to verify with — Stripe's library is the ordinary example, and it removes a class of scheme-transcription bugs. Installing an SDK you otherwise have no use for, to check a signature, fails the gate on transitive cost with no control the standard library lacks. |
+| Celery, and message brokers generally | **Out of scope here; not tiered.** Celery is infrastructure a project already runs, not a security control being selected, so it does not take a disposition in this index. Audit its configuration against A08 — `accept_content`, the result backend, and who can reach the broker — rather than treating its presence as a package decision. `django-celery-beat` is tiered above for the narrower job of running retention. |
+
 ## Use in a review
 
 - Report the installed version and actual configuration, not merely the package name.

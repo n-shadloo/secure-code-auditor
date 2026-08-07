@@ -580,6 +580,10 @@ restated here. Two rules are worth
 repeating because they are absolute: never trust a client-supplied amount,
 price, or currency, and never store raw card data.
 
+The complete receiver — raw-body capture, timestamp tolerance, constant-time
+comparison, the per-provider signing schemes, and the de-duplication store — is
+in `a08-integrity-and-deserialization.md`, "Webhook and callback integrity".
+
 The DRF-specific mechanic is the raw body. A signature must be verified against
 the exact bytes the provider signed, but DRF's parsers consume the request
 stream — once `request.data` has been accessed, reading `request.body` raises
