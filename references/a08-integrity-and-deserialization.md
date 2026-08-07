@@ -69,6 +69,8 @@ For payment and third-party webhooks (Stripe et al.):
   IP-allowlist the provider.
 - Make processing idempotent: a unique constraint on the event id in a
   processed-events table, inside the **same transaction** as the business effect.
+  That is the provider-event case of the client-supplied idempotency-key design
+  in `a10-exceptional-conditions.md`, "Idempotency"; it is not restated here.
 - Never trust amounts/prices from the callback payload for authorization
   decisions; reconcile against your server-side record.
 

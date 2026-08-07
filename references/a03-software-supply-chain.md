@@ -157,7 +157,8 @@ every transformed row must be accounted for before enforcement changes.**
   Avoid one unbounded transaction that locks a hot table or exhausts logs.
 - Do not call external services or depend on mutable network state from an
   immutable migration. Persist local state and perform external coordination in
-  a separately operated, idempotent job.
+  a separately operated, idempotent job (idempotency design:
+  `a10-exceptional-conditions.md`).
 - Never commit credentials, private keys, production tokens, or real customer
   data in migration source, defaults, fixtures, examples, or reverse functions.
   Deleting a later line does not remove it from repository history.

@@ -220,6 +220,34 @@ already installed when a bulk endpoint turns out to skip every object check.
 | `drf-extensions==0.8.0` | **Reject for new use; existing-install audit only.** BSD; classifiers stop at Django 5.2 and it declares no `requires_python`. Its bulk operations run as queryset-level `update()`/`delete()`, which by design bypass serializer `save`/`delete` and every per-object check. If it is present, audit each bulk route against `api-drf-specific.md`, "Bulk endpoints"; its caching and nested-router features are a separate question. |
 | Bulk endpoints generally | **Prefer hand-written over packaged.** A bulk route is a per-object authorization problem, and the packaged mixins exist precisely to skip the per-object path. Loading the set from a requester-scoped queryset, confirming the returned count matches the requested ids, and wrapping the write in a transaction is a short amount of code that no dependency currently gets right. |
 
+## Concurrency, idempotency, and regular expressions
+
+Versions and classifiers in this section were checked against PyPI and the
+projects' own repositories on **7 Aug 2026**; the rest of this file carries the
+17 Jul 2026 baseline above. Read with `a10-exceptional-conditions.md`.
+
+This is the area where the built-ins win most clearly. `transaction.atomic()`,
+`select_for_update()`, `F()`, `UniqueConstraint`, `CheckConstraint`,
+`ExclusionConstraint`, and `transaction.on_commit()` cover the whole in-scope
+surface, and the idempotency design is one model with one unique constraint. No
+package below beats them on merit for the core controls; the two conditional
+entries are for the narrow cases the built-ins genuinely do not reach.
+
+| Concern | Choice and version | Disposition and review notes |
+|---|---|---|
+| Linear-time regular expressions | `google-re2==1.1.20251105` (5 Nov 2025) | **Conditional, and only where untrusted input must reach a genuinely dangerous pattern.** BSD; `requires_python ~=3.9`; published by the RE2 authors under Google's PyPI organisation and tracking the Google-maintained C++ engine, which guarantees match time linear in the length of the input — the property CPython's `re` cannot offer at any version. It is not a drop-in: backreferences and look-around are unsupported by design, so treat it as a targeted replacement for one pattern rather than a project-wide swap. Nine months since the last release, which tracks the upstream engine's own cadence rather than neglect, but re-check at adoption. Cap input length first; that control costs nothing. |
+| Declarative state machines | `django-fsm-2==4.2.4` (16 Mar 2026) | **Conditional.** MIT; Python >=3.10; maintained under `django-commons` and declaring Django 4.2 through 6.0. It makes transitions and their guards readable, but it does not make them concurrency-safe: the guard is an in-memory check followed by `save()`, with no row lock, so a conditional `.update()` or a `select_for_update()` read is still required underneath it. Adopt only where a model already carries enough transitions for the declaration to earn its keep. |
+
+| Candidate | Disposition and safer direction |
+|---|---|
+| `django-fsm==3.0.1` (7 Oct 2025) | **Reject for new use.** MIT, but PyPI classifies it `Development Status :: 7 - Inactive`, its Django classifiers stop at 5.2, and its own README states the 3.0 line was renamed `viewflow.fsm` with an API that does not work with the previous one. An existing install is therefore pinned to a renamed project: audit the transitions against the concurrency rules in A10 and plan a move to `django-fsm-2` or to plain fields with conditional updates. |
+| `re2` (PyPI) | **Reject.** The name resolves to `pyre2 0.2.24`, last released February 2019 by third-party authors. Use `google-re2` above. |
+| `regex` (PyPI) | **Reject as a ReDoS control.** Actively maintained and a capable `re` superset, but still a backtracking engine with no linear-time guarantee, so adopting it does not close the weakness it is often suggested for. |
+| `django-idempotency-key==1.3.0` (2 May 2023) | **Reject for new use.** MIT, but three years without a release and Django classifiers stopping at 4.2, so support for a 5.2/6.0 baseline is undeclared. The design is a model, a unique constraint, and a short view helper; own it rather than depending on it. |
+| `djangorestframework-idempotency-key==1.0.3` (29 Jul 2024) | **Reject for new use.** MIT, no Django version classifiers at all, and `requires_python >=3.6`. Same conclusion as above. |
+| Redis distributed-lock packages, as a correctness primitive | **Reject on design rather than on maintenance.** Redlock and single-instance `SET NX PX` provide no fencing token for the protected resource to check, so a lock holder that stalls cannot be excluded; single-instance Redis adds asynchronous-replication failover on top. This disposition does not depend on any individual package's release cadence and does not change if one is refreshed. Acceptable for best-effort de-duplication where a rare double execution is only wasteful — never where correctness depends on it. |
+| Transaction-isolation helpers | **Out of scope here; not tiered.** Packages that add isolation levels or retry loops to `atomic()` are a data-layer configuration decision, not a concurrency-bug fix. Vet them against `data-layer-and-database.md` if raising isolation is deliberately on the table. |
+
 ## Use in a review
 
 - Report the installed version and actual configuration, not merely the package name.

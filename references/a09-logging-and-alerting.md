@@ -84,7 +84,9 @@ are safe to retry.**
   record explicit in one transaction or consistency boundary.
 - Publish email, queue messages, cache invalidations, and remote calls only
   after commit. Give each event a stable idempotency key so retries do not
-  duplicate grants, messages, or audit entries.
+  duplicate grants, messages, or audit entries; this file owns the ordering and
+  the outbox, while the key design itself is in
+  `a10-exceptional-conditions.md`, "Idempotency".
 - Pass actor, tenant, request/correlation id, reason, old state, and new state
   explicitly. Ambient request context is unreliable in jobs and concurrent
   execution.

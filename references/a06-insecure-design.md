@@ -62,10 +62,15 @@ Investigate flows where "valid" requests cause harm:
   than resolved server-side (see the DRF file's payment section). Quantity/price
   never trusted from the request.
 - Idempotency: repeated submits creating duplicate orders/charges — enforce with
-  a unique constraint or idempotency key.
+  a unique constraint or idempotency key. The key design itself, including the
+  request fingerprint that stops a reused key answering a different request,
+  lives in `a10-exceptional-conditions.md`, "Idempotency".
 - Referral/coupon/invite systems that can be replayed or self-referred.
 - State machines that can be skipped (e.g. marking an order paid without a
-  payment event).
+  payment event), or transitioned twice concurrently because the guard is a
+  Python check rather than a conditional update. This file catalogues the flows
+  worth attacking; `a10-exceptional-conditions.md`, "Races, TOCTOU, and
+  adversarial sequencing" owns the concurrency mechanics that enforce them.
 
 ## Email and notification abuse
 
@@ -169,6 +174,11 @@ def create_invite(*, actor, project, recipient_email, idempotency_key):
     return invite
 ```
 
+`get_or_create()` above is race-safe only because a unique constraint on
+`(project, idempotency_key)` exists in the model and in a migration; without
+one it silently creates duplicates under concurrent submits, which is the
+failure this flow is meant to prevent.
+
 The worker must also be idempotent and re-check that the invite is pending,
 unexpired, and still authorized before sending. Do not put full message bodies,
 tokens, or unnecessary personal data in task arguments.
@@ -234,7 +244,8 @@ integrity are covered in A08; sensitive log handling is covered in A09.
       not just DRF throttles.
 - [ ] Expensive flows cap cost and concurrency per principal identity, not only
       requests per minute, and do not key the limit on IP for machine callers.
-- [ ] Money/quantity/discount resolved server-side; idempotency enforced.
+- [ ] Money/quantity/discount resolved server-side; idempotency enforced, with
+      a unique constraint actually behind the key rather than a Python check.
 - [ ] Replayable/self-referable business flows are constrained.
 - [ ] Notification triggers are non-enumerating, authorized, idempotent, and
       bounded by source, actor, tenant, destination, target, and global volume.

@@ -290,7 +290,8 @@ Maps to CWE-212 and CWE-459; A01:2025 where a surviving copy is reachable.
 
 Treat an erasure request as a durable object with per-target state, not as a
 function call. The request is recorded, each target is attempted
-independently and idempotently, each attempt writes its outcome, and the
+independently and idempotently (idempotency design:
+`a10-exceptional-conditions.md`), each attempt writes its outcome, and the
 request is complete only when every target reports success. Anything that
 cannot be deleted in place — backups, write-once storage, append-only streams —
 gets the cryptographic route instead: the subject's fields are encrypted under

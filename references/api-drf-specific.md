@@ -573,8 +573,10 @@ at write-time as a checklist and at review-time as a sweep:
 ## Payments and webhook bodies
 
 Payment integrity lives in A06 (resolve money server-side, idempotency, business
-invariants) and A08 (webhook signature verification, replay tolerance,
-reconciliation). Read those; they are not restated here. Two rules are worth
+invariants), A08 (webhook signature verification, replay tolerance,
+reconciliation), and A10 (the idempotency-key design itself, and the race
+conditions a double-submitted payment exploits). Read those; they are not
+restated here. Two rules are worth
 repeating because they are absolute: never trust a client-supplied amount,
 price, or currency, and never store raw card data.
 
