@@ -18,7 +18,6 @@ Advisory scanning alone is not vetting.
 
 | Concern | Choice and version | Disposition and review notes |
 |---|---|---|
-| Password hashing | `argon2-cffi==25.1.0` | **Recommend.** MIT; maintained; compatible with current Python. Use Django's Argon2 hasher first, retain fallback hashers, and benchmark worker cost. |
 | CORS | `django-cors-headers==4.9.0` | **Recommend.** MIT; maintained; Django 6.0 supported. Explicit origin allowlists; no credentialed wildcard/reflection. |
 | CSP | Django 6 built-in CSP | **Recommend built-in.** Avoids an extra dependency. For supported pre-6.0 projects only, `django-csp==4.0` is **conditional** through Django 5.2. |
 | Login lockout/monitoring | `django-axes==8.3.1` | **Recommend.** MIT/Jazzband; maintained; Django 6.0 supported. Correct trusted-proxy/client-IP handling first; avoid permanent attacker-triggered lockout. |
@@ -125,15 +124,17 @@ carries the 17 Jul 2026 baseline above. Read with
 
 Most of this domain is configuration rather than dependency: role separation,
 row-level security, connection verification, statement timeouts, and pool
-sizing are database and driver settings, and no package supplies them.
+sizing are database and driver settings, and no package supplies them. The
+encryption primitives themselves — `cryptography`, and the one packaged field
+library still worth a disposition — are in "Cryptographic primitives and
+password hashing" below, re-checked 7 Aug 2026.
 
 | Concern | Choice and version | Disposition and review notes |
 |---|---|---|
 | Connection pooling | psycopg 3 with the `pool` extra | **Recommend the built-in.** Django 5.1+ accepts `OPTIONS={"pool": {...}}` on the PostgreSQL backend and Django 6.0 adds async-aware pooling. The option requires psycopg 3 — it is unavailable under psycopg2 — and requires `CONN_MAX_AGE = 0`, or Django raises `ImproperlyConfigured`. PgBouncer stays the choice where a process-external pool is wanted; use session mode when row-level-security context or `search_path` tenancy is in play. |
-| Field-encryption primitives | `cryptography==50.0.0` (31 Jul 2026) | **Recommend as the base, not as a field library.** PyCA-maintained, dual Apache-2.0/BSD, healthy cadence. Build encrypt/decrypt and HMAC blind-index helpers on it directly and keep keys outside the database and out of the DSN. |
 | Schema-per-tenant | `django-tenants` 3.10.x (Jun 2026) | **Conditional.** MIT; Production/Stable; declares Django 4.2/5.2/6.0 and Python 3.10–3.13; actively maintained. Adopt only where schema-per-tenant genuinely is the architecture: it requires session-mode pooling because `search_path` is session state, and migration time scales linearly with tenant count. It is not the default answer to multi-tenancy — scoped querysets plus a cross-tenant test suite are. |
 | MongoDB backend | `django-mongodb-backend`, 6.0.x line (Apr 2026) | **Conditional.** MongoDB-maintained, Apache-2.0, Production/Stable, Python 3.12+, version-matched to the Django line. Only where MongoDB is already in the stack. Ordinary ORM `filter()` compiles to an aggregation pipeline and is the safe path; `raw_aggregate()` is the injection-sensitive one and `raw()` is unsupported. |
-| Packaged field encryption | `django-encrypted-model-fields`, `django-cryptography` and its Django-5 forks, `django-pgcrypto-fields`, `django-searchable-encrypted-fields`, `django-fernet-fields` | **Reject for new use — the whole category.** None declares support for Django 5.2 or 6.0 and each has gone more than a year without a release; `django-cryptography` still imports `django.utils.baseconv`, which Django 5 removed. **Existing-install audit only** where one is already present, with a documented migration off it. Build on `cryptography` instead. |
+| Packaged field encryption | `django-encrypted-model-fields`, `django-cryptography` and its Django-5 forks, `django-pgcrypto-fields`, `django-searchable-encrypted-fields`, `django-fernet-fields` | **Reject for new use.** None declares support for Django 5.2 or 6.0 and each has gone more than a year without a release; `django-cryptography` still imports `django.utils.baseconv`, which Django 5 removed. **Existing-install audit only** where one is already present, with a documented migration off it. Build on `cryptography` instead. The single exception in this category, `django-fernet-encrypted-fields`, is tiered conditional in "Cryptographic primitives and password hashing". |
 
 ## Data lifecycle and privacy
 
@@ -272,6 +273,32 @@ a package only for the outbound interop problem, if at all.**
 | `svix==1.99.1` (23 Jul 2026) | **Reject for new use as a verification dependency.** MIT and actively released, so this is not a maintenance call. It is a vendor API client whose verifier is incidental, and it pulls `httpx`, `pydantic>=2.10`, `attrs`, `python-dateutil`, `deprecated`, and `standardwebhooks` transitively — six packages to compute one HMAC. Adopt it only if you are already a Svix customer using the API client for its own sake; never add it to a project solely to verify an inbound signature. |
 | Vendor SDKs as inbound webhook verifiers, generally | **Do not add one for verification alone.** A provider SDK you already run for its API is fine to verify with — Stripe's library is the ordinary example, and it removes a class of scheme-transcription bugs. Installing an SDK you otherwise have no use for, to check a signature, fails the gate on transitive cost with no control the standard library lacks. |
 | Celery, and message brokers generally | **Out of scope here; not tiered.** Celery is infrastructure a project already runs, not a security control being selected, so it does not take a disposition in this index. Audit its configuration against A08 — `accept_content`, the result backend, and who can reach the broker — rather than treating its presence as a package decision. `django-celery-beat` is tiered above for the narrower job of running retention. |
+
+## Cryptographic primitives and password hashing
+
+Versions and defaults in this section were checked against PyPI and the
+projects' own source on **7 Aug 2026**; the rest of this file carries the
+17 Jul 2026 baseline above. Read with `a04-cryptographic-failures.md`. The
+`argon2-cffi` entry moved here from the table above and was re-checked on this
+date.
+
+This area is mostly two dependencies and a lot of parameters. The standard
+library covers randomness and constant-time comparison outright — `secrets` and
+`hmac.compare_digest` need no package — and `django.core.signing` covers signed
+values. What genuinely needs a dependency is the Argon2 implementation behind
+Django's hasher and the primitives behind an encrypted column.
+
+| Concern | Choice and version | Disposition and review notes |
+|---|---|---|
+| Password hashing | `argon2-cffi==25.1.0` | **Recommend.** MIT; `requires_python >=3.8`; maintained; it is what `pip install "django[argon2]"` pulls in and what `Argon2PasswordHasher` requires. Note that Django does **not** inherit this library's defaults: `argon2-cffi`'s own `PasswordHasher` is `time_cost=3`, `memory_cost=65536`, `parallelism=4` (the RFC 9106 SECOND profile, exposed as `argon2.profiles.RFC_9106_LOW_MEMORY`), while Django hard-codes `time_cost=2`, `memory_cost=102400`, `parallelism=8` on its own class. Neither tracks the other, so read the numbers off whichever is actually in the hash path, and benchmark rather than accept either. `check_needs_rehash()` is for non-Django callers; Django's `must_update()` already covers upgrade-on-login. |
+| Encryption primitives | `cryptography==50.0.0` | **Recommend as the base, not as a field library.** PyCA-maintained, dual Apache-2.0/BSD, healthy cadence; also listed under "Data layer and database" for the storage side. `Fernet` is AES-128-CBC plus HMAC-SHA256 and embeds the encryption time in the token as plaintext; `MultiFernet` supplies key versioning and `rotate()`; `AESGCM` and `ChaCha20Poly1305` supply single-pass AEAD where the Fernet timestamp or the CBC construction is unwanted. |
+| Packaged field encryption, the one current option | `django-fernet-encrypted-fields==0.4.0` (14 Apr 2026) | **Conditional, and the condition is key custody.** MIT under Jazzband, `requires_python >=3.10`, released Apr 2026, and its own test matrix runs Django 3.2 through 6.0 — which makes it the only member of this category that is not simply abandoned. Two things stop it short of a recommendation. Its PyPI classifiers are empty, so it *declares* no supported Django version and compatibility has to be verified in CI rather than read off the metadata. More importantly, it derives the Fernet key with PBKDF2-HMAC-SHA256 from Django's `SECRET_KEY` plus a `SALT_KEY` setting, so the signing key and the data-encryption key are the same secret: a `SECRET_KEY` rotation becomes a data re-encryption and a `SECRET_KEY` leak becomes a decryption-key leak. Acceptable where the data is low-sensitivity and that coupling is understood and written down; for anything worth a KMS, hold the key independently and build on `cryptography` directly. |
+
+| Candidate | Disposition and safer direction |
+|---|---|
+| Cloud KMS SDKs — `boto3`, `google-cloud-kms`, `azure-keyvault-keys` | **Patterns, not vetting-gate entries**, on the same basis as the workload-identity row above. These are the platform SDKs a project already runs, not security packages being selected against alternatives. Audit how the backend wraps and unwraps a data key and whether every unwrap is attributable; do not tier the cloud provider. |
+| CipherSweet | **Out of scope for a Python backend.** The reference implementations are PHP and JavaScript, so it is not an option here. It remains a useful published description of the blind-index construction, which `data-layer-and-database.md` implements directly over `hmac`. |
+| Post-quantum libraries in application code | **Do not adopt this cycle.** FIPS 203/204/205 are finalized and hybrid key exchange is real, but it belongs at the TLS terminator, not in Django. There is no application-layer control here worth a dependency yet; the in-scope action is the harvest-now-decrypt-later inventory in `a04-cryptographic-failures.md`. |
 
 ## Use in a review
 

@@ -312,12 +312,20 @@ ciphertext.
 Key storage, rotation, and managed-KMS integration are a separate concern from
 the storage mechanism and are not covered here; the minimum is that the key
 lives outside the database and outside the repository
-(`a04-cryptographic-failures.md`, "Secrets").
+(`a04-cryptographic-failures.md`, "Secrets"), and that it is versioned so a
+rotation is a background re-encryption rather than an outage
+(`a04-cryptographic-failures.md`, "Key lifecycle and envelope encryption").
+Deriving the field key from `SECRET_KEY` is the common shortcut and the one to
+flag: it makes a signing-key rotation into a data-re-encryption event.
 
-**Package decision (2 Aug 2026):** every packaged Django field-encryption
-library fails the A03 gate — none declares support for Django 5.2 or 6.0 and
-each has gone more than a year without a release. Build on PyCA `cryptography`
-directly. See `security-hardening-libraries.md`, "Data layer and database".
+**Package decision (2 Aug 2026, revisited 7 Aug 2026):** almost every packaged
+Django field-encryption library fails the A03 gate — none of the widely cited
+options declares support for Django 5.2 or 6.0 and each has gone more than a
+year without a release. The one current exception,
+`django-fernet-encrypted-fields`, is **conditional** rather than recommended,
+because it derives its key from `SECRET_KEY` and a `SALT_KEY` setting. Build on
+PyCA `cryptography` directly. See `security-hardening-libraries.md`,
+"Cryptographic primitives and password hashing".
 
 ## Raw SQL as an isolation bypass
 
