@@ -6,11 +6,11 @@ description: >-
   written or reviewed and touches authentication, sessions, JWT,
   OAuth2/OIDC, API keys, permissions, access control, object/field-level
   authz, impersonation, user-supplied input, the ORM, raw SQL, database
-  roles, row-level security, encrypted columns, NoSQL, Redis, search
-  indexes, file uploads, serializers, API endpoints, BFLA, API inventory,
-  versioning, OpenAPI schema, GraphQL, resolvers, introspection,
-  Strawberry, Graphene, Django Ninja, AI agents, MCP tools, LLM output,
-  secrets, payments, notifications, background tasks, caching, async/ASGI,
+  roles, row-level security, encrypted columns, NoSQL, Redis, file
+  uploads, serializers, API endpoints, BFLA, API inventory, versioning,
+  OpenAPI schema, GraphQL, resolvers, introspection, Django Ninja, AI
+  agents, MCP tools, LLM output, secrets, payments, idempotency,
+  notifications, background tasks, race conditions, caching, async/ASGI,
   WebSockets, signals, erasure, retention, personal data, migrations,
   service-to-service calls, JWKS, mutual TLS, SECRET_KEY rotation, or
   deployment config, even if "security" is never used. Review-time returns
@@ -20,7 +20,7 @@ license: MIT
 allowed-tools: Read, Grep, Glob, Bash
 metadata:
   author: n-shadloo
-  version: 1.10.0
+  version: 1.11.0
 ---
 
 # secure-code-auditor
@@ -58,7 +58,7 @@ Load only the file(s) relevant to the concern in front of you.
 | Sessions, JWT/SimpleJWT, OAuth2/OIDC/social login, API keys, brute force, MFA, password reset, allauth/dj-rest-auth/OAuth Toolkit, enumeration | `references/a07-authentication-failures.md` |
 | Insecure deserialization (pickle/yaml), Celery serializer, signed data, CI/CD integrity | `references/a08-integrity-and-deserialization.md` |
 | Sensitive-data leakage in logs, audit logging, lifecycle hooks/signals, alerting, log injection | `references/a09-logging-and-alerting.md` |
-| DEBUG/error views, stack-trace leakage, fail-open checks, race conditions/TOCTOU | `references/a10-exceptional-conditions.md` |
+| DEBUG/error views, stack-trace leakage, fail-open vs fail-closed checks, race conditions/TOCTOU, locking vs database constraints, idempotency-key design, transaction side-effect ordering, state-transition enforcement, ReDoS | `references/a10-exceptional-conditions.md` |
 | Privilege model (RBAC/ABAC/ReBAC), `ModelBackend`/DRF/admin permission behavior, default-deny + URLconf audit test, field-level authz (BOPLA), search-index and denormalised-copy leakage, authz test design, permission decay | `references/authorization-architecture.md` |
 | Impersonation / "log in as user", django-hijack, break-glass & JIT elevation, operator audit identity | `references/privileged-access-and-impersonation.md` |
 | Where DRF runs the object check and the routes that skip it, `@action` and function-level authz (BFLA), serializer over-exposure/mass assignment, pagination/filter/ordering leakage, throttling mechanics, schema and browsable-API exposure, endpoint inventory and shadow routes, versioning and deprecation, bulk endpoints, unsafe DRF defaults, DRF+CSRF | `references/api-drf-specific.md` |
@@ -112,7 +112,15 @@ non-DRF framework defaults — and defers to A01 for the access-control failure
 itself, the authorization-architecture file for the field-level model, the DRF
 file for the serializer and throttling patterns it generalises, the upload and
 async references for uploads and subscriptions, and A03 for the stale-library
-finding a graphene-django install raises.
+finding a graphene-django install raises. A10 owns what happens when the
+expected sequence does not hold — the concurrency mechanics, the idempotency-key
+design, and fail-closed error handling — and is the single home for each: A06
+keeps the catalogue of business flows worth attacking and defers to A10 for the
+race and idempotency mechanics that enforce them, A08 keeps webhook signature
+and replay verification while its event de-duplication is the same design, A09
+keeps the lifecycle ordering and the transactional outbox that the side-effect
+section points back at, and the DRF, migration, and data-lifecycle files carry
+one-line uses that name A10 rather than restating the design.
 
 ## Mode selection
 

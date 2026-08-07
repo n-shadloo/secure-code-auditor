@@ -82,6 +82,13 @@ then a deep Django/DRF section with the actual settings, code, and gotchas.
   and safe schema/data migrations.
 - Logging and lifecycle: secret-safe audit logs, complete lifecycle coverage,
   post-commit side effects, error handling, and alerting.
+- Exceptional conditions and concurrency: fail-closed error handling and the
+  shapes that fail open instead, race conditions and TOCTOU, when the right
+  defence is a database constraint and when it is a row lock, the four ways
+  `select_for_update()` silently does nothing, idempotency-key design with a
+  request fingerprint so a reused key cannot answer a different request, side
+  effects ordered against the commit, state transitions the database arbitrates
+  rather than a Python check, and regular-expression denial of service.
 - Deployment/runtime: TLS, headers, reverse-proxy trust, Gunicorn/systemd,
   origin-isolated media, caching, and brokers.
 - Supply chain: third-party dependency vetting, maintained-package gates,
@@ -116,7 +123,16 @@ March 2025. The API-surface packages were checked on 5 Aug 2026:
 drf-spectacular 0.30.0 and django-filter 26.1 are recommended (the latter only
 with explicit field allowlists), django-extensions 4.1 is a development-only
 existing-install disposition, and both DRF bulk packages are rejected because
-their bulk paths skip per-object authorization.
+their bulk paths skip per-object authorization. The concurrency and idempotency
+packages were checked on 7 Aug 2026: google-re2 1.1.20251105 and django-fsm-2
+4.2.4 are conditional, django-fsm 3.0.1 is rejected for new use because PyPI
+classifies it inactive and its own README renames the line to viewflow.fsm, the
+two idempotency-key packages are rejected as stale, and Redis distributed-lock
+packages are rejected as a correctness primitive on design grounds. Django 6.0.8
+and 5.2.17 LTS were published on 4 Aug 2026, after this baseline was set, fixing
+four security issues; the repository baseline is unchanged until the next
+coordinated re-date, and any project still on 6.0.7 or 5.2.16 should take the
+patch now.
 
 ## Install
 

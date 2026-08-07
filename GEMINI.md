@@ -25,8 +25,11 @@ assignment, persisted operations, and Django Ninja's default of no
 authentication), the DRF API surface (routes where the object check never runs,
 function-level authorization on viewset actions, serializer and filter
 exposure, throttling mechanics, schema and browsable-API exposure, endpoint
-inventory, version deprecation, and bulk endpoints), and a dated
-maintained-package gate for third-party security dependencies.
+inventory, version deprecation, and bulk endpoints), the handling of
+exceptional conditions (fail-closed error paths, race conditions and TOCTOU,
+database constraints versus row locks, idempotency-key design, side effects
+ordered against the commit, and regular-expression denial of service), and a
+dated maintained-package gate for third-party security dependencies.
 
 Primary integration is Claude; this file exists so Gemini CLI uses the same
 single source of truth. Modes (review-time / write-time), the severity rubric,

@@ -42,7 +42,11 @@ defaults that authenticate nothing), the DRF API surface itself (the routes
 where the object check never runs, function-level authorization on viewset
 actions, serializer and filter exposure, throttling mechanics, schema and
 browsable-API exposure, endpoint inventory and shadow routes, version
-deprecation, and bulk endpoints), and deployment/runtime hardening.
+deprecation, and bulk endpoints), the handling of exceptional conditions
+(fail-closed error paths, race conditions and TOCTOU, database constraints
+versus row locks, idempotency-key design, transaction side-effect ordering,
+state-transition enforcement, and regular-expression denial of service), and
+deployment/runtime hardening.
 
 ## Two modes
 - Review-time: audit existing code, produce prioritized findings (severity,
