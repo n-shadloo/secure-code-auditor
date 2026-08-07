@@ -4,24 +4,25 @@ description: >-
   Backend security auditor for Django and DRF on an OWASP Top 10 (2025)
   and API Security Top 10 (2023) foundation. Use when backend code is
   written or reviewed and touches authentication, sessions, JWT,
-  OAuth2/OIDC, API keys, password hashing, permissions, access
-  control, object/field authz, impersonation, the ORM, raw SQL, database
-  roles, row-level security, encrypted columns, NoSQL, Redis, file
-  uploads, serializers, API endpoints, OpenAPI schema, GraphQL, Django
-  Ninja, AI agents, MCP tools, secrets, payments, webhooks, HMAC,
-  idempotency, notifications, Celery, race conditions, caching,
-  deserialization, async/ASGI, WebSockets, signals, erasure, retention,
-  personal data, migrations, service-to-service, JWKS, mutual TLS, key
-  rotation, SECRET_KEY, containers, Dockerfile, proxy trust,
+  OAuth2/OIDC, API keys, password hashing, permissions, access control,
+  object/field authz, impersonation, the ORM, raw SQL, database roles,
+  row-level security, encrypted columns, NoSQL, Redis, file uploads,
+  object storage, S3, buckets, presigned URLs, serializers, API
+  endpoints, OpenAPI schema, GraphQL, Django Ninja, AI agents, MCP
+  tools, secrets, payments, webhooks, HMAC, notifications, Celery, race
+  conditions, caching, CDN, deserialization, async/ASGI, WebSockets,
+  erasure, retention, personal data, migrations, service-to-service,
+  JWKS, mutual TLS, key rotation, SECRET_KEY, Dockerfile,
   X-Forwarded-For, SPF/DKIM/DMARC, or deployment config, even if
   "security" is never used.
-  Review-time returns prioritized findings with fixes; write-time applies
-  secure defaults. Django/DRF-first; general layer suits any stack.
+  Review-time returns prioritized findings with fixes; write-time
+  applies secure defaults. Django/DRF-first; general layer suits any
+  stack.
 license: MIT
 allowed-tools: Read, Grep, Glob, Bash
 metadata:
   author: n-shadloo
-  version: 1.14.0
+  version: 1.15.0
 ---
 
 # secure-code-auditor
@@ -65,7 +66,7 @@ Load only the file(s) relevant to the concern in front of you.
 | Where DRF runs the object check and the routes that skip it, `@action` and function-level authz (BFLA), serializer over-exposure/mass assignment, pagination/filter/ordering leakage, throttling mechanics, schema and browsable-API exposure, endpoint inventory and shadow routes, versioning and deprecation, bulk endpoints, unsafe DRF defaults, DRF+CSRF | `references/api-drf-specific.md` |
 | GraphQL endpoints and schemas, resolver-level authorization and nested traversal, all-fields types, query depth/alias/token/cost limits, introspection and error masking, mutation inputs and nested writes, batching, persisted queries, N+1 as resource exhaustion, Strawberry and graphene-django defaults, Django Ninja routes with no `auth=` | `references/graphql-and-alternative-api-surfaces.md` |
 | Async/ASGI boundaries, sync ORM access, task/request context, WebSocket/Channels origin, authentication, authorization, and limits | `references/async-and-channels.md` |
-| File uploads, type/content validation, safe names/storage/serving, SVG, image/archive bombs, size/count/quotas | `references/file-uploads.md` |
+| File uploads, type/content validation, safe names and storage-key design, object-storage configuration and bucket exposure, presigned URLs and direct-to-storage uploads, quarantine and promotion, callback trust, SVG, image/archive bombs, size/count/quotas, private downloads, proxy vs signed URL, CDN caching of private objects | `references/file-uploads.md` |
 | AI agents and MCP tool surfaces, DRF viewsets republished as tools, agent tokens and audience validation, tool scope vs user permissions, model output and retrieved content as untrusted input, prompt injection reaching a backend sink, per-agent cost/concurrency limits, tool-call confirmation and audit | `references/agent-and-llm-interfaces.md` |
 | Database roles and privilege separation, row-level security, tenant context on pooled connections, verified DB TLS, field-level encryption and blind indexes, raw-SQL isolation bypass, NoSQL/Redis injection, read-replica staleness, connection exhaustion, backups and production-data copies | `references/data-layer-and-database.md` |
 | Deletion completeness and erasure, soft-delete tombstones leaking through related-object/admin/serializer/raw paths, files left after a row is deleted, retention and scheduled purges, anonymization vs pseudonymization, personal-data inventory and model-layer classification, data export/DSAR endpoints, copies in indexes, caches, history tables, and lower environments | `references/data-lifecycle-and-privacy.md` |
@@ -154,7 +155,20 @@ mailer can be driven. The container material stops at the artifact the
 repository produces — base image, `USER`, `.dockerignore`, and secrets baked
 into layers — and names orchestrator enforcement as a cross-team recommendation
 rather than a repository finding, while the service-identity file keeps where a
-secret comes from at run time.
+secret comes from at run time. The upload reference owns the file from the
+request to the reader, and now owns the architecture where the bytes never
+reach the application at all: what a delegated upload URL binds and what each
+unbound constraint buys an attacker, the quarantine prefix an object waits in
+until the server has verified it against the store rather than against the
+uploader's claims, the object-store settings a code review can actually see
+and the platform state it cannot, and the choice between proxying a private
+download and signing a URL for it. Its boundaries run three ways: A08 keeps
+the signature, timestamp, and replay rules an upload callback has to satisfy;
+A01 keeps the SSRF mechanics of an import-from-URL path and the general
+cache-mediated leak that a CDN cache key dropping the signing parameters is
+one case of; and the data-lifecycle file keeps whether the bytes are gone,
+while the upload reference keeps only the fact that an already-issued signed
+URL is beyond the reach of any erasure.
 
 ## Mode selection
 

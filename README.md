@@ -29,8 +29,15 @@ then a deep Django/DRF section with the actual settings, code, and gotchas.
   and authorization test design that isn't false confidence.
 - Privileged access: impersonation ("log in as user"), break-glass and
   just-in-time elevation, and the operator audit identity both require.
-- File uploads: type/content validation, safe names and inert storage/serving,
-  SVG, image/archive bombs, size/count limits, quotas, private downloads.
+- File uploads: type/content validation, safe names and storage keys that leak
+  nothing, inert storage and serving, the object-store settings a code review
+  can see and the platform state it cannot, delegated upload URLs and what
+  each unbound constraint hands an attacker, direct-to-storage uploads with a
+  quarantine prefix and a verification step that reads size and type back from
+  the store, callback and event-notification trust, SVG, image/archive bombs,
+  size/count limits, quotas, private downloads, the choice between proxying
+  and signing, and CDN cache keys that turn a signed URL into a cross-user
+  read.
 - Injection: SQL/ORM (including the recent column-alias class), command,
   template, and header injection; server-side output handling.
 - Authentication: sessions, JWT, OAuth2/OIDC and social login, API keys,
@@ -174,7 +181,14 @@ LTS were published on 4 Aug 2026, after this baseline was set, fixing
 four security issues; the repository baseline is unchanged until the next
 coordinated re-date, and any project still on 6.0.7 or 5.2.16 should take the
 patch now. Django 6.1 followed on 5 Aug 2026, which makes 6.0 a
-security-fix-only line through April 2027.
+security-fix-only line through April 2027. The object-storage packages were
+checked on 7 Aug 2026: `django-storages` 1.14.6 stays rejected as a new
+recommendation and is now recorded with the evidence — its own Django
+classifiers stop at 5.1, and on an existing install `AWS_S3_CUSTOM_DOMAIN`
+makes `url()` return an unsigned URL unless a CloudFront signer is configured
+alongside it, which silently overrides `AWS_QUERYSTRING_AUTH`. The provider
+object-storage SDKs are recorded as patterns to audit rather than gate
+entries, on the same basis as the cloud KMS SDKs.
 
 ## Install
 

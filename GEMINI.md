@@ -43,7 +43,13 @@ dangling-DNS subdomain takeover), deployment and runtime hardening
 (forwarded-header trust and reading the client IP behind proxies, development
 tooling and profilers reachable in production, and the container image as a
 build artifact with a non-root user, a pinned base, and no secret left in a
-layer), and a dated maintained-package gate for third-party security
+layer), file uploads from the request through storage to the reader
+(content validation, storage keys that disclose nothing, object-store
+configuration and the platform state a code review cannot answer, delegated
+upload URLs and what each unbound constraint permits, direct-to-storage
+uploads held in quarantine until the server verifies them against the store,
+callback trust, private downloads, and CDN cache keys for private objects),
+and a dated maintained-package gate for third-party security
 dependencies.
 
 Primary integration is Claude; this file exists so Gemini CLI uses the same
