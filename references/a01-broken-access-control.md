@@ -183,6 +183,11 @@ cache it. Where caching is justified:
 named request headers fully capture the response audience and every caching
 layer honors it.
 
+A signed URL served through a CDN is this failure in its least obvious form: if
+the cache key omits the signing parameters, one authorized response is stored
+under a key that another request also produces. The storage-specific form of
+that rule is in `file-uploads.md`, "Private downloads".
+
 ### Django & DRF implementation layer
 
 Do not put `cache_page` or Django's site cache around an authenticated or

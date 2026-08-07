@@ -403,7 +403,10 @@ critical by blast radius.
   no execute behavior and no write path into deployed code. Public user content
   should use an isolated origin; private media must not have a permanent,
   directly browsable URL. Full validation, SVG/image/archive handling, generated
-  names, and download authorization are in `file-uploads.md`.
+  names, and download authorization are in `file-uploads.md`. A CDN placed in
+  front of private objects must either not cache them or include the signing
+  parameters in its cache key; the same file carries that rule and the
+  internal-redirect pattern that pairs with it.
 - Serve static via Nginx or WhiteNoise. Put a hard request-body limit at Nginx
   (`client_max_body_size`) or the gateway, then apply endpoint-specific file,
   count, processing, and quota limits in the application (A06 and

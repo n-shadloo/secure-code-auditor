@@ -402,6 +402,14 @@ model signals, so raw SQL, `_raw_delete()`, `TRUNCATE`, and database-level
 cascades bypass them entirely, and file deletion has to be reconciled with
 transaction rollback so a rolled-back delete does not destroy a live file.
 
+Two object-store behaviours also make a delete less complete than its return
+value suggests. On a versioned bucket, deleting an object writes a delete
+marker and retains every prior version, so the erasure has to enumerate and
+remove the versions rather than the key — and where delete protection requires
+multi-factor authentication, that step cannot be fully automated and belongs
+in the ledger as a manual one. A replicated copy in another bucket is a
+separate object with its own deletion, not a mirror that follows.
+
 Storage, naming, and authorized delivery of these files are in
 `file-uploads.md`; this file owns only their disappearance.
 
