@@ -56,7 +56,14 @@ underneath all of it (password-hashing family and parameters tuned to the
 hardware that runs them, upgrade-on-login, randomness and token generation,
 scoped constant-time comparison, per-purpose salt discipline on signed values,
 key lifecycle and envelope encryption with versioned rotation, and post-quantum
-posture), and deployment/runtime hardening.
+posture), the DNS-published configuration that decides whether the domain
+itself can be forged (SPF lookup limits and alignment, DKIM signing through a
+third-party sender, DMARC rollout under the 2026 specification, CAA, and
+dangling-DNS subdomain takeover), and deployment/runtime hardening including
+forwarded-header trust and reading the client IP behind proxies, development
+tooling and profilers reachable in production, and the container image as a
+build artifact with a non-root user, a pinned base, and no secret surviving in
+a layer.
 
 ## Two modes
 - Review-time: audit existing code, produce prioritized findings (severity,

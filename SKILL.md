@@ -4,24 +4,24 @@ description: >-
   Backend security auditor for Django and DRF on an OWASP Top 10 (2025)
   and API Security Top 10 (2023) foundation. Use when backend code is
   written or reviewed and touches authentication, sessions, JWT,
-  OAuth2/OIDC, API keys, password hashing, Argon2, permissions, access
+  OAuth2/OIDC, API keys, password hashing, permissions, access
   control, object/field authz, impersonation, the ORM, raw SQL, database
-  roles, row-level security, encrypted columns, envelope encryption,
-  NoSQL, Redis, file uploads, serializers, API endpoints, OpenAPI schema,
-  GraphQL, Django Ninja, AI agents, MCP tools, secrets, payments,
-  webhooks, HMAC, timing attacks, random tokens, idempotency,
-  notifications, Celery, race conditions, caching, deserialization,
-  async/ASGI, WebSockets, signals, erasure, retention, personal data,
-  migrations, service-to-service, JWKS, mutual TLS, post-quantum, key
-  rotation, SECRET_KEY, or deployment config, even if "security" is
-  never used.
+  roles, row-level security, encrypted columns, NoSQL, Redis, file
+  uploads, serializers, API endpoints, OpenAPI schema, GraphQL, Django
+  Ninja, AI agents, MCP tools, secrets, payments, webhooks, HMAC,
+  idempotency, notifications, Celery, race conditions, caching,
+  deserialization, async/ASGI, WebSockets, signals, erasure, retention,
+  personal data, migrations, service-to-service, JWKS, mutual TLS, key
+  rotation, SECRET_KEY, containers, Dockerfile, proxy trust,
+  X-Forwarded-For, SPF/DKIM/DMARC, or deployment config, even if
+  "security" is never used.
   Review-time returns prioritized findings with fixes; write-time applies
   secure defaults. Django/DRF-first; general layer suits any stack.
 license: MIT
 allowed-tools: Read, Grep, Glob, Bash
 metadata:
   author: n-shadloo
-  version: 1.13.0
+  version: 1.14.0
 ---
 
 # secure-code-auditor
@@ -51,7 +51,7 @@ Load only the file(s) relevant to the concern in front of you.
 |---|---|
 | Method & severity model, report format, mode selection | `references/00-methodology-and-severity.md` |
 | Access control, IDOR/BOLA, object- & function-level authz, cache-mediated data leaks, SSRF, open redirect, multi-tenancy, admin access | `references/a01-broken-access-control.md` |
-| DEBUG/ALLOWED_HOSTS, SECURE_*/SESSION_*/CSRF_* matrix, CORS, headers, `check --deploy` | `references/a02-security-misconfiguration.md` |
+| DEBUG/ALLOWED_HOSTS, SECURE_*/SESSION_*/CSRF_* matrix, CORS, headers, mail authentication (SPF/DKIM/DMARC alignment and rollout), CAA and dangling-DNS/subdomain takeover, `check --deploy` and what it cannot see | `references/a02-security-misconfiguration.md` |
 | Dependencies, third-party vetting/maintained-package gate, pinning/hashing, `pip-audit`, EOL frameworks, migrations/data integrity, SBOM | `references/a03-software-supply-chain.md` |
 | Password-hashing family and parameters, upgrade-on-login, randomness and token generation, constant-time comparison, signing and per-purpose salt discipline, TLS-in-transit, data at rest, key lifecycle and envelope encryption, post-quantum posture, secrets | `references/a04-cryptographic-failures.md` |
 | SQL/ORM injection, command injection, template injection, header/email injection, server-side output | `references/a05-injection.md` |
@@ -70,7 +70,7 @@ Load only the file(s) relevant to the concern in front of you.
 | Database roles and privilege separation, row-level security, tenant context on pooled connections, verified DB TLS, field-level encryption and blind indexes, raw-SQL isolation bypass, NoSQL/Redis injection, read-replica staleness, connection exhaustion, backups and production-data copies | `references/data-layer-and-database.md` |
 | Deletion completeness and erasure, soft-delete tombstones leaking through related-object/admin/serializer/raw paths, files left after a row is deleted, retention and scheduled purges, anonymization vs pseudonymization, personal-data inventory and model-layer classification, data export/DSAR endpoints, copies in indexes, caches, history tables, and lower environments | `references/data-lifecycle-and-privacy.md` |
 | Service-to-service identity, machine-token validation (algorithm pinning, `iss`/`aud`, required claims), JWKS caching and key rotation, OAuth client credentials, mutual TLS and certificate-bound tokens, proxy-set client-certificate identity, platform workload identity, network-position-as-authentication on internal endpoints, downstream token exchange, secret storage/delivery/rotation, `SECRET_KEY` rotation, leaked-secret response | `references/service-identity-and-secrets.md` |
-| TLS/HSTS, Nginx, reverse-proxy & `X-Forwarded-*` trust, Gunicorn/systemd hardening, static/media, cache & queue exposure | `references/deployment-and-runtime.md` |
+| TLS/HSTS, Nginx, reverse-proxy & `X-Forwarded-*` trust, reading the client IP behind proxies, header ownership edge-vs-Django, debug/profiling and metrics endpoints reachable in production, Gunicorn/systemd hardening, container image posture and secrets baked into layers, static/media, cache & queue exposure | `references/deployment-and-runtime.md` |
 | Vetted security-library choices, compatibility, minimum-safe versions, conditional/existing-install-only/rejected candidates (current as of 17 Jul 2026) | `references/security-hardening-libraries.md` |
 
 Cross-references between files are intentional: authz appears in A01 as
@@ -141,7 +141,20 @@ the encrypted column and the blind index, the service-identity file owns where
 the key lives and how `SECRET_KEY` rotates, the deployment file owns TLS at the
 edge, A08 owns the webhook receiver that the constant-time rule is applied
 inside, and A07 owns password policy and the API-key lifecycle whose tokens A04
-only says how to generate.
+only says how to generate. A02 and the deployment file split the configuration
+surface by where the setting lives rather than by topic: A02 owns what a
+settings module or a DNS zone declares — the security matrix, CORS, CSP, and
+the SPF, DKIM, DMARC, and CAA records that decide whether the domain can be
+forged or a certificate issued for it — while the deployment file owns what the
+proxy, the process, and the image do with a request once it arrives, including
+forwarded-header trust and the client IP that every rate limit and audit record
+depends on. Mail authentication is deliberately separate from A06's notification
+abuse: one asks whether your domain can be impersonated, the other whether your
+mailer can be driven. The container material stops at the artifact the
+repository produces — base image, `USER`, `.dockerignore`, and secrets baked
+into layers — and names orchestrator enforcement as a cross-team recommendation
+rather than a repository finding, while the service-identity file keeps where a
+secret comes from at run time.
 
 ## Mode selection
 

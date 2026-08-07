@@ -76,7 +76,12 @@ then a deep Django/DRF section with the actual settings, code, and gotchas.
   by network position; downstream token exchange instead of forwarding; where
   secrets live and how they reach the process; `SECRET_KEY` rotation and what
   it does and does not invalidate; and the ordered response to a leak.
-- Configuration: the `SECURE_*`/`SESSION_*`/`CSRF_*` matrix, CORS, headers.
+- Configuration: the `SECURE_*`/`SESSION_*`/`CSRF_*` matrix, CORS, headers, the
+  DNS records that decide whether your domain can be forged (SPF's ten-lookup
+  ceiling, DKIM alignment through a third-party sender, and the DMARC rollout
+  under the 2026 specification that removed `pct` and added `np`), CAA and
+  dangling-DNS subdomain takeover, and the list of things `check --deploy`
+  structurally cannot see.
 - Cryptography: choosing a password-hashing family and pinning its cost to the
   hardware that runs it, why a stock Django install is on PBKDF2 no matter what
   is in its requirements file, parameter increases that propagate as users log
@@ -103,8 +108,13 @@ then a deep Django/DRF section with the actual settings, code, and gotchas.
   request fingerprint so a reused key cannot answer a different request, side
   effects ordered against the commit, state transitions the database arbitrates
   rather than a Python check, and regular-expression denial of service.
-- Deployment/runtime: TLS, headers, reverse-proxy trust, Gunicorn/systemd,
-  origin-isolated media, caching, and brokers.
+- Deployment/runtime: TLS, security headers and which layer owns each one,
+  reverse-proxy trust and reading the client IP from the right of
+  `X-Forwarded-For` rather than the attacker-supplied left, debug toolbars and
+  profilers reachable in production, Gunicorn/systemd, the container image as a
+  build artifact of its own (non-root, pinned base, and the secrets that stay
+  readable in a layer after a later layer deletes them), origin-isolated media,
+  caching, and brokers.
 - Supply chain: third-party dependency vetting, maintained-package gates,
   pinning, hashing, advisory scanning, SBOMs, and EOL frameworks.
 
@@ -125,7 +135,12 @@ checked on 2 Aug 2026, as were the data-lifecycle packages
 (django-simple-history 3.13.0, django-celery-beat 2.9.0, django-cleanup 9.0.0,
 Faker 40.36.0, the two soft-delete packages, and the dedicated privacy
 packages, none of which is recommended). Django 6.0.7, 5.2.16 LTS, and DRF
-3.17.1 were re-confirmed as current on that date. The service-identity
+3.17.1 were re-confirmed as current on that date. The runtime and proxy-trust
+packages were checked on 7 Aug 2026: django-ipware 7.0.1 is rejected for new
+use because it has not released since April 2024 and declares no supported
+Django version at all, and django-debug-toolbar 7.0.0 and django-silk 5.5.0 are
+rejected for production as development-only tooling rather than on maintenance
+grounds. The service-identity
 packages were checked on 3 Aug 2026: PyJWT 2.13.0 is recommended with a
 `>=2.13.0` floor, and SimpleJWT was re-checked and confirmed not to cap PyJWT,
 while remaining out of scope as a machine-identity mechanism. The GraphQL and
@@ -158,7 +173,8 @@ post-quantum libraries are not adopted this cycle. Django 6.0.8 and 5.2.17
 LTS were published on 4 Aug 2026, after this baseline was set, fixing
 four security issues; the repository baseline is unchanged until the next
 coordinated re-date, and any project still on 6.0.7 or 5.2.16 should take the
-patch now.
+patch now. Django 6.1 followed on 5 Aug 2026, which makes 6.0 a
+security-fix-only line through April 2027.
 
 ## Install
 

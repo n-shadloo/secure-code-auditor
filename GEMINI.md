@@ -36,8 +36,15 @@ and Celery task messages as untrusted input), the cryptographic primitives
 underneath them (password-hashing family and parameters, upgrade-on-login,
 randomness and token generation, constant-time comparison scoped to where it
 matters, per-purpose salt discipline on signed values, key lifecycle and
-envelope encryption, and post-quantum posture), and a dated maintained-package
-gate for third-party security dependencies.
+envelope encryption, and post-quantum posture), the configuration published in
+DNS rather than in code (SPF lookup limits and alignment, DKIM signing through
+third-party senders, DMARC rollout under the 2026 specification, CAA, and
+dangling-DNS subdomain takeover), deployment and runtime hardening
+(forwarded-header trust and reading the client IP behind proxies, development
+tooling and profilers reachable in production, and the container image as a
+build artifact with a non-root user, a pinned base, and no secret left in a
+layer), and a dated maintained-package gate for third-party security
+dependencies.
 
 Primary integration is Claude; this file exists so Gemini CLI uses the same
 single source of truth. Modes (review-time / write-time), the severity rubric,
