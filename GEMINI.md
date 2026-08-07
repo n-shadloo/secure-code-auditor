@@ -28,8 +28,12 @@ exposure, throttling mechanics, schema and browsable-API exposure, endpoint
 inventory, version deprecation, and bulk endpoints), the handling of
 exceptional conditions (fail-closed error paths, race conditions and TOCTOU,
 database constraints versus row locks, idempotency-key design, side effects
-ordered against the commit, and regular-expression denial of service), and a
-dated maintained-package gate for third-party security dependencies.
+ordered against the commit, and regular-expression denial of service),
+integrity and cross-system trust (webhook signature verification on the raw
+body, timestamp tolerance and event de-duplication, outbound delivery controls,
+insecure deserialization including Django's cache, session, and fixture paths,
+and Celery task messages as untrusted input), and a dated maintained-package
+gate for third-party security dependencies.
 
 Primary integration is Claude; this file exists so Gemini CLI uses the same
 single source of truth. Modes (review-time / write-time), the severity rubric,

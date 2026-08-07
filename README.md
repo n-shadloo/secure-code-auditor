@@ -78,8 +78,14 @@ then a deep Django/DRF section with the actual settings, code, and gotchas.
   it does and does not invalidate; and the ordered response to a leak.
 - Configuration and crypto: the `SECURE_*`/`SESSION_*`/`CSRF_*` matrix, CORS,
   password hashing, secrets, signing.
-- Integrity: insecure deserialization, Celery serializers, webhook verification,
-  and safe schema/data migrations.
+- Integrity and cross-system trust: the inbound webhook receiver end to end
+  (raw-body capture before any parser, a timestamp inside the signed material,
+  constant-time comparison, per-provider signing schemes, and a de-duplication
+  store keyed on the provider's event id), outbound delivery that isn't an SSRF
+  proxy or a retry amplifier, insecure deserialization including the cache,
+  session, and fixture paths Django deserializes without being asked, Celery
+  task messages as input from anyone who can reach the broker, artifact
+  provenance, and safe schema/data migrations.
 - Logging and lifecycle: secret-safe audit logs, complete lifecycle coverage,
   post-commit side effects, error handling, and alerting.
 - Exceptional conditions and concurrency: fail-closed error handling and the
@@ -128,8 +134,14 @@ packages were checked on 7 Aug 2026: google-re2 1.1.20251105 and django-fsm-2
 4.2.4 are conditional, django-fsm 3.0.1 is rejected for new use because PyPI
 classifies it inactive and its own README renames the line to viewflow.fsm, the
 two idempotency-key packages are rejected as stale, and Redis distributed-lock
-packages are rejected as a correctness primitive on design grounds. Django 6.0.8
-and 5.2.17 LTS were published on 4 Aug 2026, after this baseline was set, fixing
+packages are rejected as a correctness primitive on design grounds. The
+integrity and webhook packages were checked on the same date: standardwebhooks
+1.1.0 is conditional and only for signing the webhooks you send, PyYAML 6.0.3 is
+conditional on safe_load at every call site, svix 1.99.1 is rejected as a
+verification dependency because it pulls six packages transitively to compute
+one HMAC, and nothing is recommended for verifying an inbound webhook, because
+the standard library's hmac module already covers it. Django 6.0.8 and 5.2.17
+LTS were published on 4 Aug 2026, after this baseline was set, fixing
 four security issues; the repository baseline is unchanged until the next
 coordinated re-date, and any project still on 6.0.7 or 5.2.16 should take the
 patch now.

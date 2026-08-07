@@ -7,20 +7,20 @@ description: >-
   OAuth2/OIDC, API keys, permissions, access control, object/field-level
   authz, impersonation, user-supplied input, the ORM, raw SQL, database
   roles, row-level security, encrypted columns, NoSQL, Redis, file
-  uploads, serializers, API endpoints, BFLA, API inventory, versioning,
-  OpenAPI schema, GraphQL, resolvers, introspection, Django Ninja, AI
-  agents, MCP tools, LLM output, secrets, payments, idempotency,
-  notifications, background tasks, race conditions, caching, async/ASGI,
-  WebSockets, signals, erasure, retention, personal data, migrations,
-  service-to-service calls, JWKS, mutual TLS, SECRET_KEY rotation, or
-  deployment config, even if "security" is never used. Review-time returns
-  prioritized findings with fixes; write-time applies secure defaults.
-  Django/DRF-first; general layer suits any stack.
+  uploads, serializers, API endpoints, BFLA, versioning, OpenAPI schema,
+  GraphQL, resolvers, introspection, Django Ninja, AI agents, MCP tools,
+  LLM output, secrets, payments, webhooks, HMAC, idempotency,
+  notifications, Celery, race conditions, caching, deserialization,
+  pickle, async/ASGI, WebSockets, signals, erasure, retention, personal
+  data, migrations, service-to-service, JWKS, mutual TLS, SECRET_KEY
+  rotation, or deployment config, even if "security" is never used.
+  Review-time returns prioritized findings with fixes; write-time applies
+  secure defaults. Django/DRF-first; general layer suits any stack.
 license: MIT
 allowed-tools: Read, Grep, Glob, Bash
 metadata:
   author: n-shadloo
-  version: 1.11.0
+  version: 1.12.0
 ---
 
 # secure-code-auditor
@@ -56,7 +56,7 @@ Load only the file(s) relevant to the concern in front of you.
 | SQL/ORM injection, command injection, template injection, header/email injection, server-side output | `references/a05-injection.md` |
 | Rate limiting/anti-automation, business-logic and email/notification abuse, missing limits, insecure defaults | `references/a06-insecure-design.md` |
 | Sessions, JWT/SimpleJWT, OAuth2/OIDC/social login, API keys, brute force, MFA, password reset, allauth/dj-rest-auth/OAuth Toolkit, enumeration | `references/a07-authentication-failures.md` |
-| Insecure deserialization (pickle/yaml), Celery serializer, signed data, CI/CD integrity | `references/a08-integrity-and-deserialization.md` |
+| Insecure deserialization (pickle/yaml), the cache/session/fixture paths Django deserializes without being asked, Celery task-message trust and serializers, signed data, inbound webhook signature/timestamp/replay and event de-duplication, outbound webhook delivery controls, artifact provenance | `references/a08-integrity-and-deserialization.md` |
 | Sensitive-data leakage in logs, audit logging, lifecycle hooks/signals, alerting, log injection | `references/a09-logging-and-alerting.md` |
 | DEBUG/error views, stack-trace leakage, fail-open vs fail-closed checks, race conditions/TOCTOU, locking vs database constraints, idempotency-key design, transaction side-effect ordering, state-transition enforcement, ReDoS | `references/a10-exceptional-conditions.md` |
 | Privilege model (RBAC/ABAC/ReBAC), `ModelBackend`/DRF/admin permission behavior, default-deny + URLconf audit test, field-level authz (BOPLA), search-index and denormalised-copy leakage, authz test design, permission decay | `references/authorization-architecture.md` |
@@ -120,7 +120,16 @@ race and idempotency mechanics that enforce them, A08 keeps webhook signature
 and replay verification while its event de-duplication is the same design, A09
 keeps the lifecycle ordering and the transactional outbox that the side-effect
 section points back at, and the DRF, migration, and data-lifecycle files carry
-one-line uses that name A10 rather than restating the design.
+one-line uses that name A10 rather than restating the design. A08 owns the
+receiving end of cross-system trust — the inbound webhook receiver end to end,
+every path that turns bytes back into live objects including the ones the
+framework runs without being asked, and the task message a worker will execute
+for anyone who can reach the broker — and holds its boundaries against four
+neighbours: A01 keeps the SSRF mechanics an outbound delivery worker has to
+satisfy, the deployment file keeps broker and cache-service exposure, the
+service-identity file keeps where signing secrets live and how they rotate, and
+A03 keeps dependency vetting while A08 keeps only the integrity of the artifacts
+and data the project itself produces and consumes.
 
 ## Mode selection
 

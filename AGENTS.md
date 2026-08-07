@@ -45,8 +45,14 @@ browsable-API exposure, endpoint inventory and shadow routes, version
 deprecation, and bulk endpoints), the handling of exceptional conditions
 (fail-closed error paths, race conditions and TOCTOU, database constraints
 versus row locks, idempotency-key design, transaction side-effect ordering,
-state-transition enforcement, and regular-expression denial of service), and
-deployment/runtime hardening.
+state-transition enforcement, and regular-expression denial of service),
+integrity and cross-system trust (the inbound webhook receiver end to end from
+raw-body capture through signature, timestamp, and event de-duplication,
+outbound delivery that is neither an SSRF proxy nor a retry amplifier, insecure
+deserialization including the cache, session, and fixture paths Django
+deserializes without being asked, Celery task messages as input from anyone who
+can reach the broker, and artifact provenance), and deployment/runtime
+hardening.
 
 ## Two modes
 - Review-time: audit existing code, produce prioritized findings (severity,
