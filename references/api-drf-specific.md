@@ -360,8 +360,17 @@ matters (expensive queries, exports, file processing). Upload endpoints also
 need hard edge, per-file, aggregate, parser, and storage-quota controls from
 `file-uploads.md`.
 
-Three mechanics decide whether a configured limit is the limit you actually get:
+Four mechanics decide whether a configured limit is the limit you actually get:
 
+- **The default client-IP identity is the whole forwarded chain.** The throttle
+  base class keys on `NUM_PROXIES`, which defaults to `None`; on that default it
+  identifies the caller by the entire `X-Forwarded-For` value with whitespace
+  stripped, which DRF's own documentation describes as less strict IP matching.
+  A caller who varies the header therefore gets a fresh bucket per value and the
+  limit becomes opt-out. Set `NUM_PROXIES` to the number of proxies you actually
+  operate and the class takes the address that many hops in from the right —
+  the entry your own infrastructure appended. The rule and the topology it
+  depends on are in `deployment-and-runtime.md`, "Reading the client IP".
 - **The counter is not atomic.** `SimpleRateThrottle` reads the request history
   from the cache, trims it in local memory, appends the current timestamp, and
   writes the list back. There is no lock and no compare-and-set, so concurrent
@@ -568,6 +577,8 @@ at write-time as a checklist and at review-time as a sweep:
 - `SessionAuthentication` on a login or token-obtain view built on plain
   `APIView` does not enforce CSRF for unauthenticated users.
 - The throttle cache defaulting to `LocMemCache` gives one counter per worker.
+- `NUM_PROXIES = None` keys the IP throttles on the whole `X-Forwarded-For`
+  value, so varying the header is enough to earn a fresh bucket.
 - `@action(detail=True)` adds a `pk` to the URL and authorizes nothing.
 
 ## Payments and webhook bodies
@@ -629,9 +640,10 @@ def payment_webhook(request):
 - [ ] `DEFAULT_PERMISSION_CLASSES` restrictive; no accidental `AllowAny`.
 - [ ] CSRF correct for the auth model; login views not CSRF-exempt by accident.
 - [ ] Throttles used as quotas only; real abuse defense elsewhere; the throttle
-      cache is shared rather than `LocMemCache`; machine callers are keyed on
-      identity, not IP; costly calls are capped by cost and concurrency as well
-      as rate.
+      cache is shared rather than `LocMemCache`; `NUM_PROXIES` matches the
+      deployed proxy count so the key is not a caller-supplied forwarded chain;
+      machine callers are keyed on identity, not IP; costly calls are capped by
+      cost and concurrency as well as rate.
 - [ ] `BrowsableAPIRenderer` is absent from production renderers, not merely
       ordered last; schema and Swagger/Redoc routes are authenticated or
       `DEBUG`-gated unless the API is deliberately public.

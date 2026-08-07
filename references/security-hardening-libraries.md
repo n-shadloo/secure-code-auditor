@@ -300,6 +300,28 @@ Django's hasher and the primitives behind an encrypted column.
 | CipherSweet | **Out of scope for a Python backend.** The reference implementations are PHP and JavaScript, so it is not an option here. It remains a useful published description of the blind-index construction, which `data-layer-and-database.md` implements directly over `hmac`. |
 | Post-quantum libraries in application code | **Do not adopt this cycle.** FIPS 203/204/205 are finalized and hybrid key exchange is real, but it belongs at the TLS terminator, not in Django. There is no application-layer control here worth a dependency yet; the in-scope action is the harvest-now-decrypt-later inventory in `a04-cryptographic-failures.md`. |
 
+## Runtime, proxy trust, and operational endpoints
+
+Versions and classifiers in this section were checked against PyPI and the
+projects' own repositories on **7 Aug 2026**; the rest of this file carries the
+17 Jul 2026 baseline above. Read with `deployment-and-runtime.md`.
+
+Nothing is recommended here, for the same reason as the webhook section above:
+both controls in scope are already built in. Reading the client IP correctly is
+a hop count and a list index — DRF exposes it as `NUM_PROXIES`, and outside DRF
+it is the few lines in `deployment-and-runtime.md`, "Reading the client IP".
+Container posture is a Dockerfile, not a dependency. The packages below are
+listed because they are the ones already installed when a review finds a
+spoofable throttle key or a SQL console answering on a production host.
+
+| Candidate | Disposition and safer direction |
+|---|---|
+| `django-ipware==7.0.1` (19 Apr 2024), with `python-ipware==3.0.0` (same date) | **Reject for new use.** MIT, and the design is sound — `proxy_count` and `proxy_trusted_ips` implement exactly the right rule. It fails the gate on maintenance and declared compatibility: more than two years without a release, no Django version classifiers at all, and Python classifiers stopping at 3.12 while Django 6.0 already requires 3.12 or later and 6.1 supports 3.14. Its own README states that it is not a defence against address spoofing on its own and must complement a correctly configured proxy — so it never removes the work of knowing your topology, which is the only hard part. Set DRF's `NUM_PROXIES`, or write the handful of lines directly. Neither adds a dependency to the code path that decides who gets rate-limited and who appears in the audit log. |
+| `django-debug-toolbar==7.0.0` | **Reject for production; development dependency only.** This is not a maintenance call — BSD-3-Clause, Python >=3.10, and it declares Django 5.2 and 6.0. It renders SQL, settings, and request internals by design, and CVE-2021-30459 (CVSS 9.8, fixed in 1.11.1, 2.2.1, and 3.2.1) allowed SQL execution through the SQL panel's own form. Keep it out of the production requirements file entirely, so a mistaken `DEBUG = True` raises `ImportError` rather than publishing a console. An install in a production image is a finding on its own weight. |
+| `django-silk==5.5.0` (8 Mar 2026) | **Reject for production; development dependency only.** MIT; Python >=3.10; declares Django 4.2 through 6.0 and is actively maintained. The disposition is about where it runs, not whether it is cared for: it publishes a request and SQL profiling UI, and `SILKY_MAX_REQUEST_BODY_SIZE` defaults to `-1`, so it records every request and response body without limit. On a production database that is an unscoped copy of personal data as well as a disclosure surface — see `data-lifecycle-and-privacy.md`. |
+| `django-extensions` | **Existing disposition above stands** — development-only, existing-install audit. Restated here for one reason: it carries `runserver_plus`, and therefore the Werkzeug interactive debugger, which is arbitrary code execution by design. That is the most severe item in this table and it usually arrives as a convenience nobody chose deliberately. |
+| Metrics and health-check exporters | **Not tiered; audit the exposure rather than the package.** `django-prometheus` and its equivalents are observability infrastructure a project already runs, not a security control being selected against alternatives. The review questions are whether the endpoint is authenticated or bound to an internal interface, and what a health payload discloses about versions and dependency reachability. |
+
 ## Use in a review
 
 - Report the installed version and actual configuration, not merely the package name.
