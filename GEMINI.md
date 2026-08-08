@@ -1,8 +1,12 @@
 # Gemini CLI context: secure-code-auditor
 
 This repo's security instructions live in `SKILL.md` and `references/`. Load
-`SKILL.md` first, then the relevant `references/*.md` file. See `AGENTS.md` for
-the full description. Do not duplicate the content here — read the source files.
+`SKILL.md` first, then the relevant `references/*.md` file. Its router is
+grouped into the OWASP Top 10:2025 spine, cross-cutting surfaces, and package
+decisions; where two rows could both match, the "Ownership and boundaries"
+section below the router names the one file that owns the topic. See
+`AGENTS.md` for the full description. Do not duplicate the content here — read
+the source files.
 
 Coverage includes the authorization architecture and privilege model (object-,
 function-, and field-level authorization, default-deny, authorization test

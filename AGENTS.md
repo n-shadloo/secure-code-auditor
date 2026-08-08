@@ -90,8 +90,13 @@ defined in `references/00-methodology-and-severity.md`.
 
 ## How to use the content
 1. Read `SKILL.md` for the router, mode logic, and severity summary.
-2. Open the `references/*.md` file(s) for the concern in front of you (the table
-   in `SKILL.md` maps concern → file).
+2. Open the `references/*.md` file(s) for the concern in front of you. The
+   router is grouped — the OWASP Top 10:2025 spine, then cross-cutting
+   surfaces, then package decisions — so pick the group, then the row.
+3. Where two rows could both match, the "Ownership and boundaries" section
+   below the router names the single owning file for each contested topic;
+   every other file cross-references it rather than restating its rules. Each
+   reference file repeats its own half of that rule in its opening paragraph.
 3. Optional read-only triage (standard library only, no network):
    - `python scripts/settings_scan.py path/to/settings.py`
    - `python scripts/dangerous_patterns.py path/to/project`

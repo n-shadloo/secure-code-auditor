@@ -19,6 +19,16 @@ It's organized on the OWASP Top 10 (2025) as a spine. Each category has two
 layers: a short, stack-agnostic explanation of the vulnerability and its defense,
 then a deep Django/DRF section with the actual settings, code, and gotchas.
 
+Security topics don't sort cleanly into ten boxes, so the router is grouped —
+the OWASP spine, then cross-cutting surfaces, then package decisions — and
+every topic that more than one file could plausibly own has a single named
+owner. Rate limiting, object-level authorization, secrets, SSRF, error
+behaviour and the rest are each settled once, in an "Ownership and boundaries"
+section under the router, and every other file cross-references the owner
+rather than keeping its own copy of the rules. Each reference file restates its
+own half of that boundary in its opening paragraph, so an agent that opened the
+wrong file first is told where to go.
+
 ## What it covers
 
 - Access control: object- and function-level authorization, IDOR/BOLA,

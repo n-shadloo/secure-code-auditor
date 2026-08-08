@@ -5,13 +5,13 @@ description: >-
   and API Security Top 10 (2023) foundation. Use when backend code is
   written or reviewed and touches authentication, sessions, JWT,
   OAuth2/OIDC, API keys, password hashing, permissions, access control,
-  impersonation, the ORM, raw SQL, SQL/command/template injection, XSS,
-  LDAP, row-level security, encrypted columns, NoSQL, Redis, file
-  uploads, object storage, S3, presigned URLs, serializers, viewsets,
-  querysets, API endpoints, OpenAPI schema, GraphQL, Django Ninja, AI
-  agents, MCP tools, secrets, payments, webhooks, HMAC, notifications,
-  Celery, race conditions, caching, CDN, deserialization, async/ASGI,
-  WebSockets, erasure, retention, personal data, migrations, JWKS,
+  impersonation, raw SQL, SQL/command/template injection, XSS, LDAP,
+  row-level security, encrypted columns, NoSQL, Redis, file uploads,
+  S3, presigned URLs, serializers, viewsets, querysets, API endpoints,
+  rate limiting, CSRF/CORS, OpenAPI schema, GraphQL, Django Ninja, AI
+  agents, MCP tools, secrets, payments, webhooks, HMAC, Celery, race
+  conditions, caching, CDN, deserialization, async/ASGI, WebSockets,
+  audit logging, erasure, retention, personal data, migrations, JWKS,
   mutual TLS, key rotation, SECRET_KEY, Dockerfile, X-Forwarded-For,
   SPF/DKIM/DMARC, or deployment config, even if "security" is never
   used.
@@ -22,7 +22,7 @@ license: MIT
 allowed-tools: Read, Grep, Glob, Bash
 metadata:
   author: n-shadloo
-  version: 1.17.0
+  version: 1.18.0
 ---
 
 # secure-code-auditor
@@ -46,21 +46,39 @@ cross-cutting topic references have two layers:
    correct/incorrect examples, gotchas, and hardening steps. This is where the
    depth lives.
 
-Load only the file(s) relevant to the concern in front of you.
+Load only the file(s) relevant to the concern in front of you. The tables below
+group on that spine, so the choice is two steps rather than one: pick the group,
+then the row. Where two rows could both match, the ownership rules underneath
+decide which file is authoritative.
+
+### Start here
 
 | Concern | Reference file |
 |---|---|
 | Method & severity model, report format, mode selection, the write-time secure-default contract and the index of which file holds each generation moment's rule, what to do when a secure default conflicts with the request, the security-decisions note write-time returns instead of a findings report, and the two-mode convention every control follows | `references/00-methodology-and-severity.md` |
-| Access control, IDOR/BOLA, object- & function-level authz, cache-mediated data leaks, SSRF, open redirect, multi-tenancy, admin access | `references/a01-broken-access-control.md` |
-| DEBUG/ALLOWED_HOSTS, SECURE_*/SESSION_*/CSRF_* matrix, CORS, headers, mail authentication (SPF/DKIM/DMARC alignment and rollout), CAA and dangling-DNS/subdomain takeover, `check --deploy` and what it cannot see | `references/a02-security-misconfiguration.md` |
-| Dependencies, third-party vetting/maintained-package gate, pinning/hashing, `pip-audit`, EOL frameworks, migrations/data integrity, SBOM | `references/a03-software-supply-chain.md` |
-| Password-hashing family and parameters, upgrade-on-login, randomness and token generation, constant-time comparison, signing and per-purpose salt discipline, TLS-in-transit, data at rest, key lifecycle and envelope encryption, post-quantum posture, secrets | `references/a04-cryptographic-failures.md` |
-| The sink inventory every other reference defers to and the method for tracing a source to it, SQL/ORM injection, dictionary-expansion column aliases, command and argument injection, template injection and XSS from server-rendered output, LDAP/directory injection, header/email injection | `references/a05-injection.md` |
-| Rate limiting/anti-automation, business-logic and email/notification abuse, missing limits, insecure defaults | `references/a06-insecure-design.md` |
-| Sessions, JWT/SimpleJWT, OAuth2/OIDC/social login, API keys, brute force, MFA, password reset, allauth/dj-rest-auth/OAuth Toolkit, enumeration | `references/a07-authentication-failures.md` |
-| Insecure deserialization (pickle/yaml), the cache/session/fixture paths Django deserializes without being asked, Celery task-message trust and serializers, signed data, inbound webhook signature/timestamp/replay and event de-duplication, outbound webhook delivery controls, artifact provenance | `references/a08-integrity-and-deserialization.md` |
-| Sensitive-data leakage in logs, audit logging, lifecycle hooks/signals, alerting, log injection | `references/a09-logging-and-alerting.md` |
-| DEBUG/error views, stack-trace leakage, fail-open vs fail-closed checks, race conditions/TOCTOU, locking vs database constraints, idempotency-key design, transaction side-effect ordering, state-transition enforcement, ReDoS | `references/a10-exceptional-conditions.md` |
+
+### The OWASP Top 10:2025 spine
+
+| Concern | Reference file |
+|---|---|
+| **A01** Access control, IDOR/BOLA, object- & function-level authz, cache-mediated data leaks, SSRF, open redirect, multi-tenancy, admin access | `references/a01-broken-access-control.md` |
+| **A02** DEBUG/ALLOWED_HOSTS, SECURE_*/SESSION_*/CSRF_* matrix, CORS, headers, mail authentication (SPF/DKIM/DMARC alignment and rollout), CAA and dangling-DNS/subdomain takeover, `check --deploy` and what it cannot see | `references/a02-security-misconfiguration.md` |
+| **A03** Dependencies, third-party vetting/maintained-package gate, pinning/hashing, `pip-audit`, EOL frameworks, migrations/data integrity, SBOM | `references/a03-software-supply-chain.md` |
+| **A04** Password-hashing family and parameters, upgrade-on-login, randomness and token generation, constant-time comparison, signing and per-purpose salt discipline, TLS-in-transit, data at rest, key lifecycle and envelope encryption, post-quantum posture | `references/a04-cryptographic-failures.md` |
+| **A05** The sink inventory every other reference defers to and the method for tracing a source to it, SQL/ORM injection, dictionary-expansion column aliases, command and argument injection, template injection and XSS from server-rendered output, LDAP/directory injection, header/email injection | `references/a05-injection.md` |
+| **A06** Which flows need a rate limit or anti-automation in the first place, business-logic and email/notification abuse, missing limits, insecure defaults | `references/a06-insecure-design.md` |
+| **A07** Human authentication: sessions, JWT/SimpleJWT, OAuth2/OIDC/social login, API keys, brute force, MFA, password reset, allauth/dj-rest-auth/OAuth Toolkit, enumeration | `references/a07-authentication-failures.md` |
+| **A08** Insecure deserialization (pickle/yaml), the cache/session/fixture paths Django deserializes without being asked, Celery task-message trust and serializers, signed data, inbound webhook signature/timestamp/replay and event de-duplication, outbound webhook delivery controls, artifact provenance | `references/a08-integrity-and-deserialization.md` |
+| **A09** Sensitive-data leakage in logs, audit logging, lifecycle hooks/signals, alerting, log injection | `references/a09-logging-and-alerting.md` |
+| **A10** Fail-open vs fail-closed checks, error views and stack-trace leakage, race conditions/TOCTOU, locking vs database constraints, idempotency-key design, transaction side-effect ordering, state-transition enforcement, ReDoS | `references/a10-exceptional-conditions.md` |
+
+### Cross-cutting surfaces
+
+These span several categories, so they are grouped by the surface in front of
+you rather than by OWASP number.
+
+| Concern | Reference file |
+|---|---|
 | Privilege model (RBAC/ABAC/ReBAC), `ModelBackend`/DRF/admin permission behavior, default-deny + URLconf audit test, field-level authz (BOPLA), search-index and denormalised-copy leakage, authz test design, permission decay | `references/authorization-architecture.md` |
 | Impersonation / "log in as user", django-hijack, break-glass & JIT elevation, operator audit identity | `references/privileged-access-and-impersonation.md` |
 | Where DRF runs the object check and the routes that skip it, `@action` and function-level authz (BFLA), serializer over-exposure/mass assignment, pagination/filter/ordering leakage, throttling mechanics, schema and browsable-API exposure, endpoint inventory and shadow routes, versioning and deprecation, bulk endpoints, unsafe DRF defaults, DRF+CSRF | `references/api-drf-specific.md` |
@@ -72,114 +90,131 @@ Load only the file(s) relevant to the concern in front of you.
 | Deletion completeness and erasure, soft-delete tombstones leaking through related-object/admin/serializer/raw paths, files left after a row is deleted, retention and scheduled purges, anonymization vs pseudonymization, personal-data inventory and model-layer classification, data export/DSAR endpoints, copies in indexes, caches, history tables, and lower environments | `references/data-lifecycle-and-privacy.md` |
 | Service-to-service identity, machine-token validation (algorithm pinning, `iss`/`aud`, required claims), JWKS caching and key rotation, OAuth client credentials, mutual TLS and certificate-bound tokens, proxy-set client-certificate identity, platform workload identity, network-position-as-authentication on internal endpoints, downstream token exchange, secret storage/delivery/rotation, `SECRET_KEY` rotation, leaked-secret response | `references/service-identity-and-secrets.md` |
 | TLS/HSTS, Nginx, reverse-proxy & `X-Forwarded-*` trust, reading the client IP behind proxies, header ownership edge-vs-Django, debug/profiling and metrics endpoints reachable in production, Gunicorn/systemd hardening, container image posture and secrets baked into layers, static/media, cache & queue exposure | `references/deployment-and-runtime.md` |
+
+### Package decisions
+
+| Concern | Reference file |
+|---|---|
 | Vetted security-library choices, compatibility, minimum-safe versions, conditional/existing-install-only/rejected candidates (current as of 17 Jul 2026) | `references/security-hardening-libraries.md` |
 
-Cross-references between files are intentional: authz appears in A01 as
-per-request failures, in the authorization-architecture file as the model that
-produces them, and again API-shaped in the DRF file; rate limiting spans A06,
-A07, uploads, and async connections, with the DRF file owning the throttling
-mechanics the others defer to; deployment covers the infrastructure side of
-cache and media controls whose application rules live in A01 and the upload
-reference. The agent reference owns the tool-call threat
-model and the MCP-specific controls, and defers to those files for the
-authorization mechanics, token rules, injection sinks, and audit machinery it
-reuses rather than restating them. The data-layer reference owns the database as
-a boundary of its own — roles, row-level security, connection verification,
-encrypted columns, and pooling — and defers to A05 for injection mechanics, A04
-for the cryptographic principle, the authorization-architecture file for the
-tenant model those mechanisms enforce, and the deployment file for the network,
-cache, broker, and secrets operations around them. The data-lifecycle reference
-owns the record over time — deletion completeness, what a soft-delete flag
-fails to hide, retention, anonymization, and every copy an erasure has to reach
-— and draws deliberate lines against the files it overlaps: the
-authorization-architecture file owns who may read a denormalised copy while the
-data-lifecycle file owns whether that copy still exists after the source row is
-gone; A09 owns what must be logged while the data-lifecycle file owns the log
-and the history table as retained copies of personal data; the data-layer file
-keeps backups, replicas, and the encryption substrate that the crypto-shredding
-route depends on; and the upload reference keeps storage and delivery of files
-whose deletion the data-lifecycle file owns. The service-identity reference
-owns the machine principal and the credential material behind it — mechanism
-choice, inbound machine-token validation, JWKS rotation, proxy-set certificate
-identity, secret delivery, and key rotation — and stays clear of its
-neighbours: A07 keeps human authentication and the API-key discipline any
-static service key still has to meet, the agent reference keeps the tool-call
-threat model and the passthrough prohibition itself, the deployment file keeps
-proxy configuration and how the environment is injected, A04 keeps the
-cryptographic primitives the signing is built on, and A01 keeps SSRF and the
-metadata endpoint that a leaked workload credential is reached through. The
-GraphQL reference owns the surface where the client composes the request —
-resolver-edge authorization, document cost limits, schema exposure, and the
-non-DRF framework defaults — and defers to A01 for the access-control failure
-itself, the authorization-architecture file for the field-level model, the DRF
-file for the serializer and throttling patterns it generalises, the upload and
-async references for uploads and subscriptions, and A03 for the stale-library
-finding a graphene-django install raises. A10 owns what happens when the
-expected sequence does not hold — the concurrency mechanics, the idempotency-key
-design, and fail-closed error handling — and is the single home for each: A06
-keeps the catalogue of business flows worth attacking and defers to A10 for the
-race and idempotency mechanics that enforce them, A08 keeps webhook signature
-and replay verification while its event de-duplication is the same design, A09
-keeps the lifecycle ordering and the transactional outbox that the side-effect
-section points back at, and the DRF, migration, and data-lifecycle files carry
-one-line uses that name A10 rather than restating the design. A08 owns the
-receiving end of cross-system trust — the inbound webhook receiver end to end,
-every path that turns bytes back into live objects including the ones the
+## Ownership and boundaries
+
+Overlap between these files is designed. Each contested topic below has exactly
+one owner; every other file names the topic and points at the owner instead of
+restating its rules. Each reference file repeats its own half of the rule in
+its opening paragraph, so the decision holds whichever file you opened first.
+
+**Authorization.** A01 owns the per-request failure and how to recognise it.
+The authorization-architecture file owns the privilege model that produces it,
+the field-level model, and the table of which DRF paths invoke the object hook.
+The DRF file owns the call sites — the routes, actions, and defaults where a
+correct model still fails to run. The privileged-access file owns operator
+privilege. The bypass-path table lives only in the authorization-architecture
+file; everything else cross-references it.
+
+**Rate limiting.** A06 owns which flows need a limit in the first place. The
+DRF file owns the throttling mechanics every other file defers to, including
+the reasons a configured rate is not the effective one. A07 owns login lockout,
+the agent file owns per-agent cost and concurrency limits, and A10 owns the race
+and idempotency mechanics that decide whether a limit holds under concurrent
+requests.
+
+**Injection sinks.** A05 is the inventory for the whole skill, and it is meant
+to be exhaustive so that no other file keeps a partial copy. It owns SQL, the
+shell, and server-side output outright. Its other rows point outward: the
+data-layer file for raw paths and document-store shape validation, the upload
+file for storage keys, A01 for SSRF, A08 for deserialization, and A09 for the
+log line.
+
+**SSRF.** A01, which absorbed it in the 2025 list. The upload, agent,
+service-identity, and integrity files each reach it and all defer here, as does
+the cloud metadata endpoint a leaked workload credential is reached through.
+
+**Secrets and keys.** A04 owns the choice of primitive and its parameters, and
+the life of a key from generation to destruction. The service-identity file
+owns where a secret lives, how it reaches the process, and how it rotates,
+`SECRET_KEY` included. A02 owns the settings module that names it, and the
+deployment file owns how the environment is injected.
+
+**Configuration versus runtime.** Split by where the setting lives rather than
+by topic. A02 owns what a settings module or a DNS zone declares. The
+deployment file owns what the proxy, the process, and the image do with a
+request once it arrives, including forwarded-header trust and the client IP
+that every rate limit and audit record depends on. Mail authentication is A02 —
+whether your domain can be forged — while whether your mailer can be driven is
+A06.
+
+**Failure behaviour.** A10 owns what happens when the expected sequence does
+not hold: the concurrency mechanics, idempotency-key design, and fail-closed
+error handling. A09 owns what must be recorded and what must never be. A06
+catalogues the flows worth attacking, A08's event de-duplication is the same
+design as A10's idempotency key, and the DRF, migration, and data-lifecycle
+files carry one-line uses that name A10 rather than restating it.
+
+**Human versus machine identity.** A07 owns the human principal and every
+credential issued to one, including the API-key discipline a static service key
+still has to meet. The service-identity file owns the machine principal —
+mechanism choice, inbound machine-token validation, JWKS caching and rotation,
+proxy-set certificate identity, and downstream token exchange. The agent file
+owns the tool-call threat model and the passthrough prohibition itself, and A04
+owns the primitives all of it is built on.
+
+**Cross-system trust.** A08 owns the receiving end: the inbound webhook end to
+end, every path that turns bytes back into live objects including the ones the
 framework runs without being asked, and the task message a worker will execute
-for anyone who can reach the broker — and holds its boundaries against four
-neighbours: A01 keeps the SSRF mechanics an outbound delivery worker has to
-satisfy, the deployment file keeps broker and cache-service exposure, the
-service-identity file keeps where signing secrets live and how they rotate, and
-A03 keeps dependency vetting while A08 keeps only the integrity of the artifacts
-and data the project itself produces and consumes. A04 owns the choice of
-primitive and its parameters, and the life of a key from generation to
-destruction — the password-hashing family and its cost settings, the source and
-size of every random token, when a comparison has to be constant-time and when
-that is noise, per-purpose salt discipline on signed values, envelope
-encryption and versioned rotation, and the post-quantum inventory — while the
-files that consume those choices keep the mechanism: the data-layer file owns
-the encrypted column and the blind index, the service-identity file owns where
-the key lives and how `SECRET_KEY` rotates, the deployment file owns TLS at the
-edge, A08 owns the webhook receiver that the constant-time rule is applied
-inside, and A07 owns password policy and the API-key lifecycle whose tokens A04
-only says how to generate. A02 and the deployment file split the configuration
-surface by where the setting lives rather than by topic: A02 owns what a
-settings module or a DNS zone declares — the security matrix, CORS, CSP, and
-the SPF, DKIM, DMARC, and CAA records that decide whether the domain can be
-forged or a certificate issued for it — while the deployment file owns what the
-proxy, the process, and the image do with a request once it arrives, including
-forwarded-header trust and the client IP that every rate limit and audit record
-depends on. Mail authentication is deliberately separate from A06's notification
-abuse: one asks whether your domain can be impersonated, the other whether your
-mailer can be driven. The container material stops at the artifact the
+for anyone who can reach the broker. A01 keeps the SSRF mechanics an outbound
+delivery worker has to satisfy, the deployment file keeps broker and cache
+exposure, the service-identity file keeps where signing secrets live, and A03
+keeps dependency vetting while A08 keeps only the integrity of what the project
+itself produces and consumes.
+
+**Uploads and object storage.** The upload file owns the file from the request
+to the reader, including the architecture where the bytes never reach the
+application at all: what a delegated upload URL binds, the quarantine prefix an
+object waits in until the server has verified it against the store rather than
+against the uploader's claims, and the choice between proxying a private
+download and signing a URL for it. A08 keeps the signature, timestamp, and
+replay rules a callback has to satisfy. A01 keeps import-from-URL SSRF and the
+cache-mediated leak that a CDN cache key dropping its signing parameters is one
+case of. The data-lifecycle file keeps whether the bytes are gone, while the
+upload file keeps only the fact that an already-issued signed URL is beyond the
+reach of any erasure.
+
+**The database as a boundary.** The data-layer file owns roles, row-level
+security, connection verification, encrypted columns, and pooling. It defers to
+A05 for injection mechanics, A04 for the cryptographic principle, the
+authorization-architecture file for the tenant model those mechanisms enforce,
+and the deployment file for the network, cache, broker, and secrets operations
+around them.
+
+**The record over time.** The data-lifecycle file owns deletion completeness,
+what a soft-delete flag fails to hide, retention, anonymization, and every copy
+an erasure has to reach. The authorization-architecture file owns who may read
+a denormalised copy while the data-lifecycle file owns whether that copy still
+exists once the source row is gone. A09 owns what must be logged while the
+data-lifecycle file owns the log and the history table as retained copies of
+personal data. The data-layer file keeps backups, replicas, and the encryption
+substrate that crypto-shredding depends on, and the upload file keeps storage
+and delivery of the files whose deletion the data-lifecycle file owns.
+
+**Client-composed requests.** The GraphQL file owns the surface where the
+client composes the request — resolver-edge authorization, document cost
+limits, schema exposure, and the non-DRF framework defaults. It defers to A01
+for the access-control failure itself, the authorization-architecture file for
+the field-level model, the DRF file for the serializer and throttling patterns
+it generalises, the upload and async files for uploads and subscriptions, and
+A03 for the stale-library finding a graphene-django install raises.
+
+**Agent and MCP surfaces.** The agent file owns the tool-call threat model and
+the MCP-specific controls, and defers to the files above for the authorization
+mechanics, token rules, injection sinks, and audit machinery it reuses rather
+than restating them.
+
+**The container image.** The deployment file stops at the artifact the
 repository produces — base image, `USER`, `.dockerignore`, and secrets baked
-into layers — and names orchestrator enforcement as a cross-team recommendation
-rather than a repository finding, while the service-identity file keeps where a
-secret comes from at run time. The upload reference owns the file from the
-request to the reader, and now owns the architecture where the bytes never
-reach the application at all: what a delegated upload URL binds and what each
-unbound constraint buys an attacker, the quarantine prefix an object waits in
-until the server has verified it against the store rather than against the
-uploader's claims, the object-store settings a code review can actually see
-and the platform state it cannot, and the choice between proxying a private
-download and signing a URL for it. Its boundaries run three ways: A08 keeps
-the signature, timestamp, and replay rules an upload callback has to satisfy;
-A01 keeps the SSRF mechanics of an import-from-URL path and the general
-cache-mediated leak that a CDN cache key dropping the signing parameters is
-one case of; and the data-lifecycle file keeps whether the bytes are gone,
-while the upload reference keeps only the fact that an already-issued signed
-URL is beyond the reach of any erasure. A05 is the sink inventory for the whole
-skill: it enumerates every interpreter a request can reach — SQL and its
-identifier positions, the shell and a program's own option parser, the template
-compiler, the directory, headers, log lines, paths, outbound HTTP,
-deserializers, XML — so that a reference deferring to it can rely on the list
-being complete rather than restating a partial copy, and it carries the
-source-to-sink tracing method the other files apply. Its rows point outward
-where another file owns the rules: the data-layer file for the raw-path
-enumeration and document-store shape validation, the upload reference for
-storage keys, A01 for SSRF, A08 for deserialization, and A09 for the log line.
-The three sinks it owns outright and no other file duplicates are SQL, the
-shell, and server-side output.
+into layers. Orchestrator enforcement is named as a cross-team recommendation
+rather than a repository finding, and where a secret comes from at run time
+belongs to the service-identity file.
 
 ## Mode selection
 
