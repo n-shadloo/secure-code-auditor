@@ -25,15 +25,19 @@ delegated upload URLs and the constraints each one has to bind,
 direct-to-storage uploads held in a quarantine prefix until the server
 verifies them against the store, callback and event trust, private downloads,
 and CDN caching of private objects),
-async/Channels, caching, migrations, signals, email/notification abuse,
+async/Channels including the subscription on its subscribe and publish paths,
+caching, migrations, signals, email/notification abuse, algorithmic resource
+exhaustion and the server-enforced bound every caller-controlled input that
+multiplies work has to carry,
 agent- and LLM-facing interfaces (MCP tool surfaces, agent token audience
 validation, tool scope versus user permissions, model output and retrieved
 content as untrusted input, per-agent cost limits, and tool-call audit), the
 database as a boundary of its own (migration versus runtime roles, row-level
 security and tenant context on pooled connections, verified database TLS,
-field-level encryption and blind indexes, NoSQL injection, connection
-exhaustion, and copies of production data), the data lifecycle and privacy
-layer (deletion completeness, soft-delete leakage, erasure fan-out with a
+field-level encryption and blind indexes, NoSQL injection, transaction
+isolation and the serialization-failure retry a raised level requires,
+connection exhaustion, and copies of production data), the data lifecycle and
+privacy layer (deletion completeness, soft-delete leakage, erasure fan-out with a
 completion ledger, retention enforcement, anonymization versus
 pseudonymization, model-layer personal-data classification, and export and
 subject-access endpoints), service-to-service identity and secrets management

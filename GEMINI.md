@@ -16,8 +16,9 @@ social login, API-key lifecycle and scoping, agent- and LLM-facing interfaces
 permissions, model output and retrieved content as untrusted input), the
 database as a security boundary (migration versus runtime roles, row-level
 security and tenant context on pooled connections, verified database TLS,
-field-level encryption, NoSQL injection, and connection exhaustion), the data
-lifecycle (deletion and erasure completeness, soft-delete leakage, retention,
+field-level encryption, NoSQL injection, transaction isolation and the retry a
+raised level requires, and connection exhaustion), the data lifecycle
+(deletion and erasure completeness, soft-delete leakage, retention,
 anonymization versus pseudonymization, personal-data classification, and
 export/subject-access endpoints), service-to-service identity and secrets
 (machine-token validation, JWKS caching and rotation, client credentials,
@@ -29,8 +30,11 @@ assignment, persisted operations, and Django Ninja's default of no
 authentication), the DRF API surface (routes where the object check never runs,
 function-level authorization on viewset actions, serializer and filter
 exposure, throttling mechanics, schema and browsable-API exposure, endpoint
-inventory, version deprecation, and bulk endpoints), the handling of
-exceptional conditions (fail-closed error paths, race conditions and TOCTOU,
+inventory, version deprecation, and bulk endpoints), algorithmic resource
+exhaustion as the design rule that every caller-controlled value multiplying
+work carries a server-enforced ceiling, with a table naming the surface that
+enforces each one, the handling of exceptional conditions (fail-closed error
+paths, race conditions and TOCTOU,
 database constraints versus row locks, idempotency-key design, side effects
 ordered against the commit, and regular-expression denial of service),
 integrity and cross-system trust (webhook signature verification on the raw

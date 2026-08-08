@@ -7,7 +7,7 @@ description: >-
   OAuth2/OIDC, API keys, password hashing, permissions, access control,
   SSRF, impersonation, SQL/command/template injection, XSS, LDAP,
   row-level security, encrypted columns, NoSQL, Redis, file uploads, S3,
-  presigned URLs, serializers, viewsets, querysets, API endpoints, rate
+  presigned URLs, serializers, viewsets, API endpoints, pagination, rate
   limiting, CSRF/CORS, OpenAPI schema, GraphQL, Django Ninja, AI agents,
   MCP tools, secrets, payments, webhooks, Celery, race conditions,
   caching, deserialization, async/ASGI, WebSockets, audit logging,
@@ -21,7 +21,7 @@ license: MIT
 allowed-tools: Read, Grep, Glob, Bash
 metadata:
   author: n-shadloo
-  version: 1.22.0
+  version: 1.23.0
 ---
 
 # secure-code-auditor
@@ -78,7 +78,7 @@ decide which file is authoritative.
 | **A03** Dependencies, third-party vetting/maintained-package gate, pinning/hashing, `pip-audit`, EOL frameworks, migrations/data integrity, SBOM | `references/a03-software-supply-chain.md` |
 | **A04** Password-hashing family and parameters, upgrade-on-login, randomness and token generation, constant-time comparison, signing and per-purpose salt discipline, TLS-in-transit, data at rest, key lifecycle and envelope encryption, post-quantum posture | `references/a04-cryptographic-failures.md` |
 | **A05** The sink inventory every other reference defers to and the method for tracing a source to it, SQL/ORM injection, dictionary-expansion column aliases, command and argument injection, template injection and XSS from server-rendered output, LDAP/directory injection, header/email injection | `references/a05-injection.md` |
-| **A06** Which flows need a rate limit or anti-automation in the first place, business-logic and email/notification abuse, missing limits, insecure defaults | `references/a06-insecure-design.md` |
+| **A06** Which flows need a rate limit or anti-automation in the first place, algorithmic resource exhaustion and the bound every caller-controlled input needs, business-logic and email/notification abuse, missing limits, insecure defaults | `references/a06-insecure-design.md` |
 | **A07** Human authentication: sessions, JWT/SimpleJWT, OAuth2/OIDC/social login, API keys, brute force, MFA, password reset, allauth/dj-rest-auth/OAuth Toolkit, enumeration | `references/a07-authentication-failures.md` |
 | **A08** Insecure deserialization (pickle/yaml), the cache/session/fixture paths Django deserializes without being asked, Celery task-message trust and serializers, signed data, inbound webhook signature/timestamp/replay and event de-duplication, outbound webhook delivery controls, artifact provenance | `references/a08-integrity-and-deserialization.md` |
 | **A09** Sensitive-data leakage in logs, audit logging, lifecycle hooks/signals, alerting, log injection | `references/a09-logging-and-alerting.md` |
@@ -95,10 +95,10 @@ you rather than by OWASP number.
 | Impersonation / "log in as user", django-hijack, break-glass & JIT elevation, operator audit identity | `references/privileged-access-and-impersonation.md` |
 | Where DRF runs the object check and the routes that skip it, `@action` and function-level authz (BFLA), serializer over-exposure/mass assignment, pagination/filter/ordering leakage, throttling mechanics, schema and browsable-API exposure, endpoint inventory and shadow routes, versioning and deprecation, bulk endpoints, unsafe DRF defaults, DRF+CSRF | `references/api-drf-specific.md` |
 | GraphQL endpoints and schemas, resolver-level authorization and nested traversal, all-fields types, query depth/alias/token/cost limits, introspection and error masking, mutation inputs and nested writes, batching, persisted queries, N+1 as resource exhaustion, Strawberry and graphene-django defaults, Django Ninja routes with no `auth=` | `references/graphql-and-alternative-api-surfaces.md` |
-| Async/ASGI boundaries, sync ORM access, task/request context, WebSocket/Channels origin, authentication, authorization, and limits | `references/async-and-channels.md` |
+| Async/ASGI boundaries, sync ORM access, task/request context, WebSocket/Channels origin, authentication, authorization, and limits, subscriptions on the subscribe and publish paths | `references/async-and-channels.md` |
 | File uploads, type/content validation, safe names and storage-key design, object-storage configuration and bucket exposure, presigned URLs and direct-to-storage uploads, quarantine and promotion, callback trust, SVG, image/archive bombs, size/count/quotas, private downloads, proxy vs signed URL, CDN caching of private objects | `references/file-uploads.md` |
 | AI agents and MCP tool surfaces, DRF viewsets republished as tools, agent tokens and audience validation, tool scope vs user permissions, model output and retrieved content as untrusted input, prompt injection reaching a backend sink, per-agent cost/concurrency limits, tool-call confirmation and audit | `references/agent-and-llm-interfaces.md` |
-| Database roles and privilege separation, row-level security, tenant context on pooled connections, verified DB TLS, field-level encryption and blind indexes, raw-SQL isolation bypass, NoSQL/Redis injection, read-replica staleness, connection exhaustion, backups and production-data copies | `references/data-layer-and-database.md` |
+| Database roles and privilege separation, row-level security, tenant context on pooled connections, verified DB TLS, field-level encryption and blind indexes, raw-SQL isolation bypass, NoSQL/Redis injection, read-replica staleness, transaction isolation and the serialization-failure retry a raised level requires, connection exhaustion, backups and production-data copies | `references/data-layer-and-database.md` |
 | Deletion completeness and erasure, soft-delete tombstones leaking through related-object/admin/serializer/raw paths, files left after a row is deleted, retention and scheduled purges, anonymization vs pseudonymization, personal-data inventory and model-layer classification, data export/DSAR endpoints, copies in indexes, caches, history tables, and lower environments | `references/data-lifecycle-and-privacy.md` |
 | Service-to-service identity, machine-token validation (algorithm pinning, `iss`/`aud`, required claims), JWKS caching and key rotation, OAuth client credentials, mutual TLS and certificate-bound tokens, proxy-set client-certificate identity, platform workload identity, network-position-as-authentication on internal endpoints, downstream token exchange, secret storage/delivery/rotation, `SECRET_KEY` rotation, leaked-secret response | `references/service-identity-and-secrets.md` |
 | TLS/HSTS, Nginx, reverse-proxy & `X-Forwarded-*` trust, reading the client IP behind proxies, header ownership edge-vs-Django, debug/profiling and metrics endpoints reachable in production, Gunicorn/systemd hardening, container image posture and secrets baked into layers, static/media, cache & queue exposure | `references/deployment-and-runtime.md` |
@@ -131,6 +131,16 @@ defers to, including the reasons a configured rate is not the effective one.
 A07 owns login lockout, `references/agent-and-llm-interfaces.md` owns per-agent
 cost and concurrency limits, and A10 owns the race and idempotency mechanics
 that decide whether a limit holds under concurrent requests.
+
+**Algorithmic resource exhaustion.** A06, which owns the design question —
+which caller-controlled inputs multiply work and therefore need a bound the
+server enforces — and the table naming the surface that enforces each one. The
+mechanics stay where they already are: `references/file-uploads.md` for size,
+count, and expansion, `references/api-drf-specific.md` for pagination,
+`references/graphql-and-alternative-api-surfaces.md` for document cost,
+`references/async-and-channels.md` for the long-lived connection,
+`references/data-layer-and-database.md` for connections and query time, and A10
+for the regular expression alone.
 
 **Injection sinks.** A05 is the inventory for the whole skill, and it is meant
 to be exhaustive so that no other file keeps a partial copy. It owns SQL, the
@@ -201,8 +211,11 @@ are gone, while `references/file-uploads.md` keeps only the fact that an
 already-issued signed URL is beyond the reach of any erasure.
 
 **The database as a boundary.** `references/data-layer-and-database.md` owns
-roles, row-level security, connection verification, encrypted columns, and
-pooling. It defers to A05 for injection mechanics, A04 for the cryptographic
+roles, row-level security, connection verification, encrypted columns, the
+isolation level the connection runs at, and pooling. It keeps the
+serialization-failure retry that a raised level requires, while A10 keeps the
+constraint-versus-lock choice that usually makes raising it unnecessary.
+It defers to A05 for injection mechanics, A04 for the cryptographic
 principle, `references/authorization-architecture.md` for the tenant model
 those mechanisms enforce, and `references/deployment-and-runtime.md` for the
 network, cache, broker, and secrets operations around them.

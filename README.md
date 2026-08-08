@@ -45,7 +45,11 @@ rule for generating that code.
 ## What it covers
 
 - Access control: object- and function-level authorization, IDOR/BOLA,
-  cache-mediated data leaks, SSRF, open redirect, multi-tenancy, admin exposure.
+  cache-mediated data leaks, SSRF and the egress control behind it —
+  allowlist-by-destination, deny-by-default egress for the workers whose
+  destinations are known in advance, and the split between what the platform
+  enforces and what the application checks — open redirect, multi-tenancy,
+  admin exposure.
 - Authorization architecture: the privilege model (RBAC/ABAC/ReBAC), what
   Django's permission layer actually does, the DRF and admin enforcement
   surfaces, default-deny with a URLconf audit test, field-level authorization,
@@ -84,7 +88,13 @@ rule for generating that code.
   exhaustion, persisted operations, and Django Ninja routes that are public
   because nothing set `auth=`.
 - Async/ASGI and Channels: safe ORM boundaries, request-context isolation,
-  origin checks, and per-connection authentication, authorization, and limits.
+  origin checks, per-connection authentication, authorization, and limits, and
+  the subscription as a long-lived query — authorized when it is registered and
+  again before every event it publishes.
+- Algorithmic resource exhaustion: the design rule that every caller-controlled
+  value which multiplies work carries a ceiling the server enforces, the
+  paginator, serializer, and recursion mechanics that decide whether one
+  exists, and a table naming the surface that owns each bound.
 - Agent and LLM-facing interfaces: DRF viewsets republished as MCP tools and
   the controls that silently drop, agent token audience validation and the
   no-passthrough rule, tool scope intersected with the user's own permissions,
@@ -96,7 +106,9 @@ rule for generating that code.
   security and tenant context that survives a connection pool, verified database
   TLS, field-level encryption and blind-index lookups, raw-SQL isolation bypass,
   NoSQL and Redis injection, read-replica staleness in authorization reads,
-  connection exhaustion, and where copies of production data may travel.
+  transaction isolation and the serialization-failure retry a raised level
+  requires rather than merely benefits from, connection exhaustion, and where
+  copies of production data may travel.
 - Data lifecycle and privacy: deletion completeness and what a soft-delete flag
   does not hide, erasure as a fan-out with a per-target completion ledger,
   files left behind after a row is gone, retention that can be shown to have
@@ -131,8 +143,9 @@ rule for generating that code.
   store keyed on the provider's event id), outbound delivery that isn't an SSRF
   proxy or a retry amplifier, insecure deserialization including the cache,
   session, and fixture paths Django deserializes without being asked, Celery
-  task messages as input from anyone who can reach the broker, artifact
-  provenance, and safe schema/data migrations.
+  task messages as input from anyone who can reach the broker and the
+  confidentiality a signed serializer does not provide, artifact provenance,
+  and safe schema/data migrations.
 - Logging and lifecycle: secret-safe audit logs, complete lifecycle coverage,
   post-commit side effects, error handling, and alerting.
 - Exceptional conditions and concurrency: fail-closed error handling and the
