@@ -156,6 +156,20 @@ class OrderToolViewSet(ModelViewSet):
         return Order.objects.filter(owner=self.request.user)
 ```
 
+**Write-time.** When generating an MCP tool over a Django application, state
+`authentication_classes`, `permission_classes`, `filter_backends`,
+`pagination_class`, and `throttle_classes` on the tool path itself rather than
+relying on the viewset they were declared on, because the integration decides
+whether that pipeline runs at all and the one in widest use disables four of
+them by default. Authenticate with a class that validates `aud` against this
+server's own identifier on every invocation, and resolve `request.user` to the
+invoking human rather than to the process credential, so `get_queryset()` can
+be scoped to the intersection of the scope granted to the tool and the
+permissions of that user. Where the tool does anything irreversible, issue and
+consume a server-side confirmation token bound to the action and its
+parameters in the same change, because a `confirmed` flag in the request body
+is the client asserting its own approval.
+
 Severity is Critical where the tool spans tenants: the failure is BOLA at the
 scale of the whole table rather than one object
 (`a01-broken-access-control.md`, "IDOR / BOLA"). Maps to CWE-862, CWE-1220;

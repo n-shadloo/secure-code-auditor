@@ -347,6 +347,19 @@ with transaction.atomic():
 ordering mechanism itself, the transactional outbox, and which Django write
 paths run which hooks. It is not restated here.
 
+**Write-time.** When generating a transaction or a state transition, choose
+between a constraint and a lock before writing either: express the invariant
+as a `UniqueConstraint` or a `CheckConstraint` wherever it is a property of
+the data, and reserve `select_for_update()` inside `atomic()` for the
+read-modify-write on a row that already exists, because the constraint also
+holds on the admin, shell, and migration paths this view does not own. Write
+the transition as a conditional `.update()` whose `WHERE` clause carries the
+guard and whose returned count decides the outcome, rather than a `get()`, an
+`if`, and a later `save()`. Register every external effect through
+`transaction.on_commit()` in the edit that introduces it, and give any handler
+a retry can reach the idempotency-key shape below, because the retry arrives
+whether or not the handler was designed for one.
+
 #### Reading code for a race
 
 Grep produces starting points, not findings. A race is a property of the gap

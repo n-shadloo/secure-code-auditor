@@ -109,6 +109,19 @@ monitoring/lockout. Its correctness depends on trusted-proxy and client-IP
 configuration. It does not replace edge limits, business-flow quotas, MFA, or
 compromised-password defenses. `django-defender` does not pass the current gate.
 
+**Write-time.** When generating a login, signup, reset, invite, or MFA
+endpoint, return the same public response on the account-exists and
+account-absent branches and wire the lockout in the same change rather than
+after the first credential-stuffing run, because both the oracle and the
+missing limit are properties of the first version and neither shows up as a
+failing test. Reach for `django-axes` at its defaults and settle the
+trusted-proxy and client-IP configuration in that edit, since a lockout keyed
+on a spoofable address locks out whichever principal the attacker names. Two
+adjacent defaults belong to the same moment: the credential the flow issues is
+single-use and expiring, and the session identifier is rotated on login and on
+any privilege change, so a session captured before the change does not survive
+it.
+
 ## Password reset
 
 - Return the same public response for existing and absent accounts, and apply the

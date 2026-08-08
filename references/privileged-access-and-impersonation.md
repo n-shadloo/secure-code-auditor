@@ -92,6 +92,18 @@ Three documented incidents, useful for justifying the controls below:
   is untrusted input: store it, neutralize it before logging
   (`a09-logging-and-alerting.md`), and never let it drive a decision.
 
+**Write-time.** When generating an impersonation or break-glass path, reach
+for `django-hijack` at its own defaults before writing one, because those
+defaults — superusers only, POST with CSRF, session flush on both edges — are
+several of the requirements above already implemented and reviewed. Where the
+flow genuinely has to be home-grown, write the dual-identity token, the expiry
+that does not depend on an operator clicking release, the reduced scope
+embedded in the token rather than inherited from whoever started the session,
+the server-validated reason, and the audit record naming both identities, in
+the change that introduces the feature: each is load-bearing on its own, and
+this is the tooling that defines the blast radius rather than the login in
+front of it.
+
 ## Django implementation: django-hijack
 
 `django-hijack` (3.7.8, Apr 2026; see `security-hardening-libraries.md`) is the

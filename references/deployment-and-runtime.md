@@ -360,6 +360,15 @@ tell whether a user *name* resolves to zero. `collectstatic` output and any
 writable cache directory belong in a build stage or a mounted volume, not in a
 path the running process has to create for itself.
 
+**Write-time.** When generating a Dockerfile, write the pinned base image, the
+multi-stage split, the numeric non-root `USER`, and a `.dockerignore` with a
+scoped `COPY` as the first version of the file rather than as a later
+hardening pass, because a layer is immutable and additive: an image that once
+carried `.env`, `.git`, or a build credential still carries it after the line
+that copied it is gone. Keep the running process writing only to `/tmp` or a
+mounted volume in that same edit, so the platform can switch on a read-only
+root filesystem without the application having to be rewritten for it.
+
 ### Secrets in image layers
 
 Layers are immutable and additive. A file written in one layer stays in that

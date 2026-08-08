@@ -298,6 +298,18 @@ import secrets
 token = secrets.token_urlsafe()  # DEFAULT_ENTROPY == 32 bytes
 ```
 
+**Write-time.** When generating a token or any other secret, call `secrets`
+and take its default length rather than sizing the value yourself, because the
+bare call is already 256 bits and a length chosen by hand is the one that
+turns out to be the 71 bits above. Mint one per purpose and store the
+long-lived ones hashed, and reach for `PasswordResetTokenGenerator` where the
+flow is a reset or a verification instead of re-implementing single use and
+expiry. Two decisions travel with the value and are cheapest in the same edit:
+any `Signer` or `TimestampSigner` carrying it takes a per-purpose `salt=`, and
+the check that later compares it against a stored copy uses
+`hmac.compare_digest` over fixed-length digests wherever the scope section
+below says the comparison is itself the gate.
+
 ## Constant-time comparison
 
 Maps to CWE-208 (observable timing discrepancy).

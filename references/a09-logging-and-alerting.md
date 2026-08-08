@@ -302,6 +302,18 @@ logger.info("login failed for %s", safe_username)
   documents. Personal data in that store is a retained copy with a lifetime —
   see `data-lifecycle-and-privacy.md`.
 
+**Write-time.** When generating a log or an audit call, pass the values as
+structured fields through `extra=` rather than interpolating them into the
+message, because that hands escaping to the encoder once instead of to every
+call site forever, and the call site that gets missed is the one in an
+exception handler. Decide at that same call what may appear in the record —
+identifiers rather than objects, and no password, token, `Authorization`
+header, or personal data — because a redaction filter added afterwards covers
+only the shipper somebody remembered to configure. Where the project's lines
+stay plain text, put the control-character escaping in a `logging.Formatter`
+subclass in the same change, so the rule also holds for the calls nobody has
+written yet.
+
 Every other interpreter a request can reach, and the method for tracing a
 source to one, is in `a05-injection.md`, "Tracing input to a sink".
 

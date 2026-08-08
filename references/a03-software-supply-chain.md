@@ -299,6 +299,18 @@ Test:
 - row counts, constraints, indexes, permissions, and query plans; and
 - backups and restore/rehearsal for destructive or high-volume changes.
 
+**Write-time.** When generating a data migration, take the model from
+`apps.get_model()` and route every query through `.using(alias)` with the
+alias read from `schema_editor.connection`, because the imported model is
+today's code running against yesterday's schema and the default alias ignores
+the router a multi-database deployment relies on. Verify before transforming
+and stop on an unmapped or null row rather than defaulting it, since a
+migration is the one place where a permissive fallback silently becomes the
+access decision for every row it touched. Write the reverse function in the
+same change, or omit `reverse_code` so Django refuses the reversal, and keep
+credentials and real customer data out of the file entirely — deleting the
+line later does not remove it from the repository's history.
+
 ### Migration review checklist
 
 #### Stack-neutral

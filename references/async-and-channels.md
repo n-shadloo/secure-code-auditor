@@ -247,6 +247,17 @@ metadata, not an authorization boundary. Check authorization before adding a
 connection to a sensitive group, exclude secrets from broadcast payloads, and
 handle revocation for connections already joined.
 
+**Write-time.** When generating a consumer, authenticate and authorize in
+`connect()` and `close()` before `accept()` rather than after it, because an
+accepted socket is already a channel the client can send on. Re-check the same
+authorization inside `receive_json()` for every privileged message and
+allow-list the actions by name, since a connection outlives the grant that
+opened it and a revocation lands mid-session. Scope each lookup to the
+principal inside the `database_sync_to_async` call instead of fetching by the
+id the URL supplied, and wrap the routing in `AllowedHostsOriginValidator` and
+`AuthMiddlewareStack` in the edit that publishes the consumer, because the
+handshake is a cross-origin request that no CSRF token covers.
+
 ## Long-lived consumers and resource limits
 
 Session or permission state can change while a socket remains open. For

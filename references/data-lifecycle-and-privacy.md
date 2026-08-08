@@ -601,6 +601,16 @@ visible in review. Prefer twenty lines of local convention to a dependency: the
 packaged options in this area are unmaintained, as recorded in
 `security-hardening-libraries.md`, "Data lifecycle and privacy".
 
+**Write-time.** When generating a model field that holds personal data, add it
+to that model's `Privacy` declaration in the same edit — `personal_fields`,
+the `export_fields` a subject-access response returns, and an `on_erasure`
+action of delete, anonymize, or retain with its reason — because the erasure
+fan-out, the retention job, and the export endpoint are all driven from that
+declaration, and a field missing from it is invisible to all three while
+looking entirely ordinary on the model. Choose `retain` deliberately rather
+than by omission: a field nobody classified is retained by accident and
+defended by nobody.
+
 ## Lower environments and the copies they inherit
 
 A production dump loaded into staging, a demo environment, or a laptop

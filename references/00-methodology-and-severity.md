@@ -312,6 +312,21 @@ an index to them, not a copy:
 | A Celery task or its serializer configuration | `a08-integrity-and-deserialization.md` |
 | An outbound HTTP call whose URL derives from input | `a01-broken-access-control.md`, "SSRF" |
 | A new limit, quota, or business flow | `a06-insecure-design.md` |
+| A data migration | `a03-software-supply-chain.md`, "Migration and data-integrity safety" |
+| A token, a secret, or the check that compares one | `a04-cryptographic-failures.md` |
+| A login, signup, reset, invite, or MFA endpoint | `a07-authentication-failures.md` |
+| A log line or an audit record | `a09-logging-and-alerting.md` |
+| A transaction, a state transition, or a retryable handler | `a10-exceptional-conditions.md` |
+| A new route of any kind reaching the URLconf | `authorization-architecture.md`, "Default-deny architecture" |
+| An impersonation or break-glass path | `privileged-access-and-impersonation.md` |
+| A GraphQL type or resolver | `graphql-and-alternative-api-surfaces.md` |
+| A Django Ninja route | `graphql-and-alternative-api-surfaces.md`, "Django Ninja: nothing is authenticated by default" |
+| A Channels consumer or its routing | `async-and-channels.md` |
+| An MCP tool over a Django application | `agent-and-llm-interfaces.md` |
+| A field holding a value the database must not read | `data-layer-and-database.md` |
+| A model field holding personal data | `data-lifecycle-and-privacy.md` |
+| A verifier for an inbound machine token | `service-identity-and-secrets.md` |
+| A Dockerfile | `deployment-and-runtime.md` |
 
 ## When a secure default conflicts with the request
 

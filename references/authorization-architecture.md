@@ -396,6 +396,15 @@ the benefit is that adding a public endpoint becomes a conscious, reviewable act
 rather than an omission. A non-DRF view has no `permission_classes`, so either
 allow-list it or give it a project-specific marker the test can read.
 
+**Write-time.** When generating a new route, write its authorization decision
+in the same edit that adds it to the URLconf, and extend the allow-list above
+only where the route is deliberately public, because the audit test is the
+mechanism that makes the decision compulsory and an entry added to keep the
+suite green converts the control into a formality. A plain Django view, a
+Ninja operation, and a tool path carry no `permission_classes` for that test
+to read, so each needs its own marker or its own row rather than being assumed
+to inherit a DRF default that never applied to it.
+
 ## Field-level authorization (BOPLA)
 
 API3:2023 combines the former "Excessive Data Exposure" (returning properties

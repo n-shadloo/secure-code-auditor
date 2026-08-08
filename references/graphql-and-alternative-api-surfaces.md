@@ -216,6 +216,17 @@ one in `authorization-architecture.md` — in particular "Object permissions are
 a no-op by default", which applies unchanged, because `user.has_perm(perm,
 obj)` behaves identically whether it is called from a resolver or a viewset.
 
+**Write-time.** When generating a type or a resolver, override `get_queryset`
+on every type that reaches an object and scope it to `info.context.user`,
+rather than authorizing the entry point and trusting the edges beneath it,
+because the default implementation returns the queryset unchanged and the
+nested selection is the client's choice rather than yours. Enumerate `fields`
+on the type in the same edit — an allow-list, never `exclude` and never
+`"__all__"` — since a deny-list publishes whatever the next migration adds.
+Wire the depth, alias, token, and cost rules onto the schema and the view as
+they are constructed, because neither library applies one by default and a
+limit that exists only in the documentation is not applied.
+
 ## Schema exposure and the all-fields type (BOPLA)
 
 The GraphQL analogue of serializer over-exposure is a type that publishes every
@@ -489,6 +500,16 @@ it does not provide. Validated input is still unauthorized input.
 Ninja routes must appear as their own rows in the URLconf audit test in
 `authorization-architecture.md`, "Default-deny architecture". They are not
 DRF views and will not be caught by a DRF-shaped audit.
+
+**Write-time.** When generating a Django Ninja route, set `auth=` on the
+`NinjaAPI` object in the edit that creates it and treat an operation
+overriding it to `None` as the exception you have to justify, because there is
+no project-wide default to inherit and an un-annotated operation is public the
+moment it is routed. Scope the queryset to `request.auth` at the same time —
+authentication resolves who is calling and decides nothing about which object
+they may reach — and enable CSRF explicitly on any operation that
+authenticates from a session cookie, since it is off by default and correct
+only for bearer credentials.
 
 ## Out of backend scope
 

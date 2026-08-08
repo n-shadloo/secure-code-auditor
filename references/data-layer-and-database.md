@@ -331,6 +331,18 @@ rotation is a background re-encryption rather than an outage
 Deriving the field key from `SECRET_KEY` is the common shortcut and the one to
 flag: it makes a signing-key rotation into a data-re-encryption event.
 
+**Write-time.** When generating a field that holds a value the database must
+not be able to read, write the randomized ciphertext column, a blind index for
+each exact-match lookup the code actually performs, and a key read from
+outside the database and outside the repository, in the single edit that adds
+the field — adding searchability afterwards means re-encrypting every row that
+already exists, and a column that shipped readable stays readable in every
+backup taken since. Key the blind index separately from the ciphertext and
+derive neither from `SECRET_KEY`, because that turns a signing-key rotation
+into a data-re-encryption event. Where the requirement is only the stolen-disk
+threat, say that volume encryption already answers it and add no encrypted
+column at all.
+
 **Package decision (2 Aug 2026, revisited 7 Aug 2026):** almost every packaged
 Django field-encryption library fails the A03 gate — none of the widely cited
 options declares support for Django 5.2 or 6.0 and each has gone more than a

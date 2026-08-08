@@ -203,6 +203,16 @@ Review notes:
   High for a missing `aud` or `iss` check, and higher still where several APIs
   share one identity provider.
 
+**Write-time.** When generating a verifier for an inbound machine token, write
+it as a DRF authentication class and pass the algorithm from configuration,
+`issuer=`, `audience=`, and `options={"require": [...]}` in the same call,
+because a verifier assembled without the require list accepts a token that
+simply omits the claim it was configured to check. Resolve the key by `kid`
+from a module-level JWKS client pointed at a configured URI, never from a
+`jku` or `x5u` the token itself supplies, and return a service principal that
+permission classes and a scoped queryset then decide authority over, since a
+valid token is authentication and never authorization.
+
 ## JWKS as a rotation-aware trust anchor
 
 **Principle: treat the key set as a cached trust anchor that expects
