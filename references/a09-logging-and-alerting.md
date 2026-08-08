@@ -230,9 +230,71 @@ emits the required event or make the path unavailable for that model.
 
 ## Log injection and integrity
 
-- Neutralize newlines/control characters in user-supplied values before logging
-  so an attacker can't forge log lines.
-- Protect log integrity/retention; ship to a store the app can't rewrite.
+A log line is an interpreter too. Whatever reads the log — a shipper, a SIEM
+query, a person in a terminal — treats the line as the record boundary, so a
+value carrying CR or LF splits one record into two and the second record is
+whatever the attacker wrote. That buys a forged authentication success beside
+the real failure, a fabricated admin action, or an entry attributed to another
+user. It is an attack on the evidence rather than on the application, which is
+what makes it easy to under-rate: nothing in production breaks, and the
+incident review afterwards is reading fiction. Maps to CWE-117, and to CWE-93
+for the injected separator itself.
+
+```python
+# Wrong: the submitted username owns the rest of this line and the start of the
+# next one, so it can append a whole record of its own.
+import logging
+
+logger = logging.getLogger(__name__)
+
+logger.info("login failed for %s", request.POST["username"])
+```
+
+Lazy `%s` formatting is the right habit for other reasons and does not help
+here: the substitution happens inside the formatter, so the newline reaches the
+output either way. Two fixes, in order of preference:
+
+```python
+# Correct: a structured record, where the username is a field rather than part
+# of the line, and the encoder owns escaping for every field.
+import logging
+
+logger = logging.getLogger(__name__)
+
+logger.info("login failed", extra={"username": username})
+```
+
+```python
+# Correct: or neutralize separators before the value is formatted in. This
+# escapes control characters as a class instead of stripping two of them.
+import logging
+
+logger = logging.getLogger(__name__)
+
+safe_username = username.encode("unicode_escape").decode("ascii")
+logger.info("login failed for %s", safe_username)
+```
+
+- Structured (JSON) logging is the durable answer, because escaping stops being
+  a thing each call site has to remember.
+- Where lines stay plain text, do the escaping in a `logging.Formatter`
+  subclass rather than at every call site. One missed call site is the whole
+  control, and the missed one is usually in an exception handler.
+- Escape control characters as a class, not `\r` and `\n` alone. Terminal
+  escape sequences can rewrite what an operator sees in a live tail, and
+  Unicode line
+  and paragraph separators split records for some parsers even after CR and LF
+  are gone.
+- Sanitize values the request supplied and values read back from storage
+  equally: a username saved with a newline last week forges a line the first
+  time anything logs it.
+- Protect integrity and retention. Ship logs to a store the application's own
+  credentials cannot rewrite, so the record survives the compromise it
+  documents. Personal data in that store is a retained copy with a lifetime —
+  see `data-lifecycle-and-privacy.md`.
+
+Every other interpreter a request can reach, and the method for tracing a
+source to one, is in `a05-injection.md`, "Tracing input to a sink".
 
 ## Review checklist
 
@@ -244,8 +306,9 @@ emits the required event or make the path unavailable for that model.
 - [ ] Security-relevant lifecycle events cover save, bulk, delete, admin, job,
       migration, and approved raw paths; effects occur after commit and are
       idempotent.
-- [ ] User input sanitized before logging; logs shipped to a tamper-resistant
-      store.
+- [ ] User input reaching a log line has control characters escaped as a class,
+      in a formatter rather than per call site, or is emitted as a structured
+      field; logs shipped to a tamper-resistant store.
 - [ ] Personal data reaching logs, error reports, and history tables is counted
       as a retained copy with a stated lifetime, and the audit store retains the
       event without retaining the identity

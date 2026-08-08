@@ -243,6 +243,11 @@ applies unchanged when the string came from a model rather than a request body.
 The only new thing is the source, and the only new risk is a reviewer treating
 "our own model wrote it" as provenance.
 
+The sink inventory that file keeps — every interpreter a request can reach, and
+which reference owns each one — is in `a05-injection.md`, "Tracing input to a
+sink". An agent design is the case that most needs it whole, because a model
+can emit input for any row in it from a single tool call.
+
 Applying unchanged from `a05-injection.md`:
 
 - parameterized queries only — never `.raw()`, `.extra()`, `RawSQL`, or
