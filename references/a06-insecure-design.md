@@ -238,6 +238,15 @@ integrity are covered in A08; sensitive log handling is covered in A09.
 - New features should default to the least-privileged, least-exposed setting;
   opening up is a deliberate act.
 
+**Write-time.** When generating a flow that costs something to run — mail,
+money, model tokens, an export, a third-party call — give it its limit in the
+same change that introduces the flow, keyed on the principal rather than on the
+address, because a flow ships without a limit exactly once and the limit is
+then written under incident conditions. Where the flow is security-sensitive,
+that limit has to be an atomic counter or a database constraint rather than a
+throttle class; the distinction and the mechanics behind it are in
+`api-drf-specific.md`, "Throttling as quota, not security (API4)".
+
 ## Review checklist
 
 - [ ] Login and sensitive flows have real anti-automation (lockout + limits),

@@ -206,6 +206,14 @@ CELERY_ACCEPT_CONTENT = ["json"]
 two only decide what it emits. A single `"pickle"` entry there re-opens the hole
 regardless of what the producers are configured to send.
 
+**Write-time.** When generating Celery configuration, write those three
+settings explicitly even though the defaults already match them, because the
+finding here is always a later widening and an explicit `["json"]` is the line
+a reviewer can watch being changed. When generating a task, validate its
+arguments inside the task body and pass identifiers rather than objects,
+secrets, or an already-authorized token, because whatever can reach the broker
+can call that task with arguments of its own choosing.
+
 - **The result backend is a second exposure with the same reach.** Results are
   written to the broker or an equivalent store and are readable and writable by
   whatever can reach it, so a task returning personal data or a token publishes

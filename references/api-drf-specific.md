@@ -251,6 +251,13 @@ A `SerializerMethodField` is ordinary Python and is subject to no field-level
 check whatsoever, so treat every relation it walks as a separate read that needs
 its own justification. The same applies to nested serializers and `depth`.
 
+**Write-time.** When generating a `ModelSerializer`, enumerate `fields`
+explicitly and mark the server-controlled attributes read-only in the same
+edit, because `"__all__"` and `exclude` both admit whatever the model gains
+next and the field added six months from now is the one nobody re-reviews.
+Where the field is declared on the serializer rather than only named in `Meta`,
+put `read_only=True` on the field, since `read_only_fields` does not reach it.
+
 Where the writable set differs *by role*, allow-list writable fields per role
 rather than deny-listing them, and test `PATCH` separately from `PUT`; see
 `authorization-architecture.md` for the pattern and the full BOPLA surface.
@@ -327,6 +334,17 @@ REST_FRAMEWORK = {
 
 A default of `AllowAny` makes every un-annotated view public — a common
 misconfiguration.
+
+**Write-time.** When generating a viewset or an `APIView`, set
+`permission_classes` on the class itself rather than inheriting whatever the
+project default happens to be, and reserve `AllowAny` for an endpoint you were
+told is public — DRF's own default is `AllowAny`, so an omission is a decision
+to publish. Write `get_queryset()` scoped to the requester in the same edit,
+before the serializer or the actions, because the unscoped queryset is what
+turns an authenticated route into a cross-tenant read and no object hook runs
+on the list path to catch it. Setting the project default as well is belt and
+braces, not an alternative: the per-class declaration is what survives a
+settings file being replaced.
 
 This setting covers DRF only, not plain Django views, the admin, or third-party
 URLs. To make deny-by-default enforceable across the whole project, pair it with

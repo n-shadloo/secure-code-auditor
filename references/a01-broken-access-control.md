@@ -309,6 +309,15 @@ guard for developer-initiated requests.
   client-influenced for this purpose; see `agent-and-llm-interfaces.md`,
   "Model output as an injection source".
 
+**Write-time.** When generating an outbound call whose URL derives from input,
+write the host and scheme allowlist, the post-resolution address check, the
+bounded or disabled redirects, and the timeout as part of the call rather than
+around it afterwards, because a fetch helper that works is a fetch helper that
+gets reused and the second caller inherits whatever the first one settled for.
+Where the destination does not genuinely need to be dynamic, take it from
+configuration instead and the class of bug disappears rather than being
+defended against.
+
 ## Open redirect
 
 For any user-supplied redirect target (`next`, `return_to`), validate before

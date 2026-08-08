@@ -75,6 +75,15 @@ Notes and gotchas:
   header is deprecated and ignored by modern browsers.
 - `XFrameOptionsMiddleware` must be enabled for `X_FRAME_OPTIONS` to take effect.
 
+**Write-time.** When generating or extending a settings module, read every
+secret and per-environment value from the environment and fail at startup when
+one is missing, because a default left in the settings file is the value
+production quietly runs on. Add the HTTPS redirect, HSTS, and the two secure
+cookie flags in that same edit rather than leaving them for a later hardening
+pass: those four are off by default, they are precisely what `check --deploy`
+warns about, and a settings module that has already been merged is one nobody
+re-opens without a reason to.
+
 ## CSRF settings and trusted origins
 
 - `CSRF_TRUSTED_ORIGINS` must include the scheme, e.g.
@@ -366,6 +375,9 @@ so a clean linter is never evidence of deployment posture.
 ## Review checklist
 
 - [ ] `DEBUG = False` and `ALLOWED_HOSTS` set (not `*`) in production settings.
+- [ ] Secrets and per-environment values are read from the environment and
+      validated at startup, rather than carrying a default in the settings
+      module.
 - [ ] HSTS, SSL redirect, nosniff, `X-Frame-Options`, secure session/CSRF cookies set.
 - [ ] `SECURE_PROXY_SSL_HEADER` matches the actual proxy and isn't client-spoofable.
 - [ ] `CSRF_TRUSTED_ORIGINS` set with scheme; no stray `@csrf_exempt`.

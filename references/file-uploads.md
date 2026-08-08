@@ -92,6 +92,15 @@ No single detector proves a file safe. Select a maintained parser for each forma
 the product actually accepts and run it through the A03 package gate; otherwise
 remove that format from the allowlist.
 
+**Write-time.** When generating an upload field or handler, write the format
+allowlist, the size cap, and the server-generated storage key in the same edit
+as the field itself, because each is separately load-bearing and the one
+deferred is the one that ships. `FileExtensionValidator` belongs in that first
+edit as the cheapest of the signals rather than as the whole gate — it reads
+the name the client chose. Never assemble the stored path from `upload.name`,
+and settle where the bytes will be served from before the first file arrives,
+since changing that afterwards means moving every object already stored.
+
 ## Filenames and storage keys
 
 Do not join `upload.name` to `MEDIA_ROOT`, pass it to `open()`, or reuse it as an

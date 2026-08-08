@@ -176,6 +176,14 @@ Model.objects.filter(name=name)  # prefer the ORM
   tenant's rows. Audit every hit for isolation as well as injection — see
   `data-layer-and-database.md`, "Raw SQL as an isolation bypass".
 
+**Write-time.** When generating a query, express it with ORM methods and let
+the ORM bind the values. Where raw SQL is genuinely required, write the
+statement with unquoted `%s` placeholders and pass the separate `params`
+sequence in the same edit, because a placeholder retrofitted onto a string that
+already interpolates is a rewrite nobody schedules. Do not reach for `.extra()`
+at all, on the reasoning above: a new call there starts life on a SQL layer
+Django has stopped fixing.
+
 Injection is not SQL-only. A document store takes its query as a structured
 object, so a JSON body value that arrives as a dict rather than a scalar becomes
 a query *operator* — no string concatenation and nothing for escaping to fix.
@@ -272,6 +280,16 @@ subprocess.run(
 Bound the call as well as its arguments: pass `timeout=` so a hostile input
 cannot hold a worker, and name the binary by absolute path rather than
 inheriting whatever `PATH` resolves to in the deployed environment.
+
+**Write-time.** When generating a call into another program, write the argument
+list, `shell=False`, the `timeout`, the absolute path, and the `--` separator
+together, because each of them is a thing that gets added after an incident
+rather than during a refactor. Apply the same discipline where there is no
+request in front of the code: a management command's parsed arguments and a
+data migration's inputs reach these same interpreters from a context that
+usually carries more database privilege than a view does, so bind and validate
+them as you would a request body rather than trusting the value because an
+operator supplied it.
 
 ## Template injection and server-side output
 
@@ -380,6 +398,9 @@ that is covered in A08 (Integrity and Deserialization); cross-check there.
 - [ ] No `shell=True`, `os.system`, `eval`, or `exec` on request data; argument
       lists pass `shell=False`, a `timeout`, and `--` ahead of any value that
       could otherwise be read as an option.
+- [ ] Management commands and data migrations hold to the same parameter and
+      argument discipline as request handlers, since they reach the same
+      interpreters with more privilege and no request to blame.
 - [ ] Autoescaping intact; `mark_safe`/`|safe`/Jinja2 autoescape verified; no
       template built from user input.
 - [ ] LDAP filters escape every assertion value with `escape_filter_chars`, DNs
