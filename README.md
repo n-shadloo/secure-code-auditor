@@ -38,8 +38,12 @@ then a deep Django/DRF section with the actual settings, code, and gotchas.
   size/count limits, quotas, private downloads, the choice between proxying
   and signing, and CDN cache keys that turn a signed URL into a cross-user
   read.
-- Injection: SQL/ORM (including the recent column-alias class), command,
-  template, and header injection; server-side output handling.
+- Injection: the sink inventory every other reference defers to — every
+  interpreter a request can reach, and which file owns each one — with the
+  method for tracing a source to it; SQL/ORM (including the
+  dictionary-expansion column-alias class), command and argument injection,
+  template injection and server-side output handling, LDAP/directory
+  injection, and header/email injection.
 - Authentication: sessions, JWT, OAuth2/OIDC and social login, API keys,
   brute-force resistance, MFA, password reset, and enumeration resistance.
 - API/DRF: where the framework runs an object check and every route that skips
@@ -188,7 +192,12 @@ classifiers stop at 5.1, and on an existing install `AWS_S3_CUSTOM_DOMAIN`
 makes `url()` return an unsigned URL unless a CloudFront signer is configured
 alongside it, which silently overrides `AWS_QUERYSTRING_AUTH`. The provider
 object-storage SDKs are recorded as patterns to audit rather than gate
-entries, on the same basis as the cloud KMS SDKs.
+entries, on the same basis as the cloud KMS SDKs. The LDAP packages were checked
+on 8 Aug 2026: `django-auth-ldap` 5.3.0 is recommended where a directory is the
+identity source, because it escapes filter arguments by default and declares
+Django 4.2, 5.2, and 6.0, and `python-ldap` carries an explicit `>=3.4.5` floor
+for CVE-2025-61911 that the integration's own `>=3.1` requirement does not
+enforce.
 
 ## Install
 

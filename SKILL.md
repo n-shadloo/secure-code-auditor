@@ -5,13 +5,13 @@ description: >-
   and API Security Top 10 (2023) foundation. Use when backend code is
   written or reviewed and touches authentication, sessions, JWT,
   OAuth2/OIDC, API keys, password hashing, permissions, access control,
-  object/field authz, impersonation, the ORM, raw SQL, database roles,
-  row-level security, encrypted columns, NoSQL, Redis, file uploads,
-  object storage, S3, buckets, presigned URLs, serializers, API
+  impersonation, the ORM, raw SQL, SQL/command/template injection, XSS,
+  LDAP, row-level security, encrypted columns, NoSQL, Redis, file
+  uploads, object storage, S3, buckets, presigned URLs, serializers, API
   endpoints, OpenAPI schema, GraphQL, Django Ninja, AI agents, MCP
   tools, secrets, payments, webhooks, HMAC, notifications, Celery, race
   conditions, caching, CDN, deserialization, async/ASGI, WebSockets,
-  erasure, retention, personal data, migrations, service-to-service,
+  erasure, retention, personal data, migrations,
   JWKS, mutual TLS, key rotation, SECRET_KEY, Dockerfile,
   X-Forwarded-For, SPF/DKIM/DMARC, or deployment config, even if
   "security" is never used.
@@ -22,7 +22,7 @@ license: MIT
 allowed-tools: Read, Grep, Glob, Bash
 metadata:
   author: n-shadloo
-  version: 1.15.0
+  version: 1.16.0
 ---
 
 # secure-code-auditor
@@ -55,7 +55,7 @@ Load only the file(s) relevant to the concern in front of you.
 | DEBUG/ALLOWED_HOSTS, SECURE_*/SESSION_*/CSRF_* matrix, CORS, headers, mail authentication (SPF/DKIM/DMARC alignment and rollout), CAA and dangling-DNS/subdomain takeover, `check --deploy` and what it cannot see | `references/a02-security-misconfiguration.md` |
 | Dependencies, third-party vetting/maintained-package gate, pinning/hashing, `pip-audit`, EOL frameworks, migrations/data integrity, SBOM | `references/a03-software-supply-chain.md` |
 | Password-hashing family and parameters, upgrade-on-login, randomness and token generation, constant-time comparison, signing and per-purpose salt discipline, TLS-in-transit, data at rest, key lifecycle and envelope encryption, post-quantum posture, secrets | `references/a04-cryptographic-failures.md` |
-| SQL/ORM injection, command injection, template injection, header/email injection, server-side output | `references/a05-injection.md` |
+| The sink inventory every other reference defers to and the method for tracing a source to it, SQL/ORM injection, dictionary-expansion column aliases, command and argument injection, template injection and XSS from server-rendered output, LDAP/directory injection, header/email injection | `references/a05-injection.md` |
 | Rate limiting/anti-automation, business-logic and email/notification abuse, missing limits, insecure defaults | `references/a06-insecure-design.md` |
 | Sessions, JWT/SimpleJWT, OAuth2/OIDC/social login, API keys, brute force, MFA, password reset, allauth/dj-rest-auth/OAuth Toolkit, enumeration | `references/a07-authentication-failures.md` |
 | Insecure deserialization (pickle/yaml), the cache/session/fixture paths Django deserializes without being asked, Celery task-message trust and serializers, signed data, inbound webhook signature/timestamp/replay and event de-duplication, outbound webhook delivery controls, artifact provenance | `references/a08-integrity-and-deserialization.md` |
@@ -168,7 +168,18 @@ A01 keeps the SSRF mechanics of an import-from-URL path and the general
 cache-mediated leak that a CDN cache key dropping the signing parameters is
 one case of; and the data-lifecycle file keeps whether the bytes are gone,
 while the upload reference keeps only the fact that an already-issued signed
-URL is beyond the reach of any erasure.
+URL is beyond the reach of any erasure. A05 is the sink inventory for the whole
+skill: it enumerates every interpreter a request can reach — SQL and its
+identifier positions, the shell and a program's own option parser, the template
+compiler, the directory, headers, log lines, paths, outbound HTTP,
+deserializers, XML — so that a reference deferring to it can rely on the list
+being complete rather than restating a partial copy, and it carries the
+source-to-sink tracing method the other files apply. Its rows point outward
+where another file owns the rules: the data-layer file for the raw-path
+enumeration and document-store shape validation, the upload reference for
+storage keys, A01 for SSRF, A08 for deserialization, and A09 for the log line.
+The three sinks it owns outright and no other file duplicates are SQL, the
+shell, and server-side output.
 
 ## Mode selection
 

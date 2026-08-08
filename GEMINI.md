@@ -49,8 +49,13 @@ configuration and the platform state a code review cannot answer, delegated
 upload URLs and what each unbound constraint permits, direct-to-storage
 uploads held in quarantine until the server verifies them against the store,
 callback trust, private downloads, and CDN cache keys for private objects),
-and a dated maintained-package gate for third-party security
-dependencies.
+injection as one bug at many interpreters (the inventory of every sink a
+request can reach with the file that owns each one, the method for tracing a
+source to one across requests, SQL and the identifier positions the ORM does
+not parameterize, the shell and a program's own option parser, template
+injection and server-rendered output, LDAP filters and distinguished names, and
+response and mail headers), and a dated maintained-package gate for third-party
+security dependencies.
 
 Primary integration is Claude; this file exists so Gemini CLI uses the same
 single source of truth. Modes (review-time / write-time), the severity rubric,

@@ -65,11 +65,18 @@ key lifecycle and envelope encryption with versioned rotation, and post-quantum
 posture), the DNS-published configuration that decides whether the domain
 itself can be forged (SPF lookup limits and alignment, DKIM signing through a
 third-party sender, DMARC rollout under the 2026 specification, CAA, and
-dangling-DNS subdomain takeover), and deployment/runtime hardening including
+dangling-DNS subdomain takeover), deployment/runtime hardening including
 forwarded-header trust and reading the client IP behind proxies, development
 tooling and profilers reachable in production, and the container image as a
 build artifact with a non-root user, a pinned base, and no secret surviving in
-a layer.
+a layer, and injection treated as one bug at many interpreters (the inventory
+of every sink a request can reach and which reference owns each one, the
+method for tracing a source to a sink including the stored-then-used case that
+crosses requests, SQL plus the identifier positions the ORM does not
+parameterize, the shell and the option parser of the program behind it,
+template injection and server-rendered output, LDAP filters and distinguished
+names, response and mail headers, and the log line as a record boundary an
+attacker can forge).
 
 ## Two modes
 - Review-time: audit existing code, produce prioritized findings (severity,
