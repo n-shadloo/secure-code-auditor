@@ -1,20 +1,19 @@
 ---
 name: secure-code-auditor
 description: >-
-  Backend security auditor for Django and DRF on an OWASP Top 10 (2025)
-  and API Security Top 10 (2023) foundation. Use when backend code is
-  written or reviewed and touches authentication, sessions, JWT,
+  Backend security auditor for Django and DRF on an OWASP Top 10 (2025),
+  API Security Top 10 (2023), and ASVS 5.0 foundation. Use when backend
+  code is written or reviewed and touches authentication, sessions, JWT,
   OAuth2/OIDC, API keys, password hashing, permissions, access control,
   impersonation, raw SQL, SQL/command/template injection, XSS, LDAP,
-  row-level security, encrypted columns, NoSQL, Redis, file uploads,
-  S3, presigned URLs, serializers, viewsets, querysets, API endpoints,
-  rate limiting, CSRF/CORS, OpenAPI schema, GraphQL, Django Ninja, AI
-  agents, MCP tools, secrets, payments, webhooks, HMAC, Celery, race
-  conditions, caching, CDN, deserialization, async/ASGI, WebSockets,
-  audit logging, erasure, retention, personal data, migrations, JWKS,
-  mutual TLS, key rotation, SECRET_KEY, Dockerfile, X-Forwarded-For,
-  SPF/DKIM/DMARC, or deployment config, even if "security" is never
-  used.
+  row-level security, encrypted columns, NoSQL, Redis, file uploads, S3,
+  presigned URLs, serializers, viewsets, querysets, API endpoints, rate
+  limiting, CSRF/CORS, OpenAPI schema, GraphQL, Django Ninja, AI agents,
+  MCP tools, secrets, payments, webhooks, Celery, race conditions,
+  caching, deserialization, async/ASGI, WebSockets, audit logging,
+  erasure, retention, personal data, migrations, JWKS, mutual TLS, key
+  rotation, SECRET_KEY, Dockerfile, X-Forwarded-For, SPF/DKIM/DMARC, or
+  deployment config, even if "security" is never used.
   Review-time returns prioritized findings with fixes; write-time
   applies secure defaults. Django/DRF-first; general layer suits any
   stack.
@@ -22,7 +21,7 @@ license: MIT
 allowed-tools: Read, Grep, Glob, Bash
 metadata:
   author: n-shadloo
-  version: 1.18.0
+  version: 1.19.0
 ---
 
 # secure-code-auditor
@@ -55,7 +54,7 @@ decide which file is authoritative.
 
 | Concern | Reference file |
 |---|---|
-| Method & severity model, report format, mode selection, the write-time secure-default contract and the index of which file holds each generation moment's rule, what to do when a secure default conflicts with the request, the security-decisions note write-time returns instead of a findings report, and the two-mode convention every control follows | `references/00-methodology-and-severity.md` |
+| Method & severity model including how a race and a privacy failure are rated, report format, the ASVS 5.0 chapter mapping with the chapters this skill treats as non-goals, mode selection, the write-time secure-default contract and the index of which file holds each generation moment's rule, what to do when a secure default conflicts with the request, the security-decisions note write-time returns instead of a findings report, and the two-mode convention every control follows | `references/00-methodology-and-severity.md` |
 
 ### The OWASP Top 10:2025 spine
 
@@ -95,7 +94,7 @@ you rather than by OWASP number.
 
 | Concern | Reference file |
 |---|---|
-| Vetted security-library choices, compatibility, minimum-safe versions, conditional/existing-install-only/rejected candidates (current as of 17 Jul 2026) | `references/security-hardening-libraries.md` |
+| Vetted security-library choices, compatibility, minimum-safe versions, conditional/existing-install-only/rejected candidates (current as of 8 Aug 2026) | `references/security-hardening-libraries.md` |
 
 ## Ownership and boundaries
 
@@ -276,5 +275,11 @@ real issue to a category file, verify it, and write it up per the methodology.
   defense-in-depth gap.
 - **Low** — hardening / defense-in-depth with limited direct impact.
 
-Report findings you're ≥80% confident are real and reachable. Full rubric and
-report template: `references/00-methodology-and-severity.md`.
+A race is rated on how reliably its window can be won and what the collision
+costs, rather than filed as Medium for being a race, and a failure that leaves
+personal data alive past a promised deletion is rated on that promise as well
+as on attacker value.
+
+Report findings you're ≥80% confident are real and reachable. Full rubric, the
+ASVS 5.0 chapter mapping and when to cite one, and the report template:
+`references/00-methodology-and-severity.md`.

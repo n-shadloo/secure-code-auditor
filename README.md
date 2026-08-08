@@ -18,6 +18,11 @@ time, and points a reviewer straight at the parts that matter.
 It's organized on the OWASP Top 10 (2025) as a spine. Each category has two
 layers: a short, stack-agnostic explanation of the vulnerability and its defense,
 then a deep Django/DRF section with the actual settings, code, and gotchas.
+Findings always carry a CWE and an OWASP mapping; where a project is genuinely
+held to OWASP ASVS 5.0, they can carry an ASVS chapter as well. The methodology
+file maps all seventeen ASVS chapters onto the reference files, and says plainly
+which two are permanent non-goals for a backend skill, where the coverage is
+only partial, and where this skill covers ground ASVS scopes out entirely.
 
 Security topics don't sort cleanly into ten boxes, so the router is grouped —
 the OWASP spine, then cross-cutting surfaces, then package decisions — and
@@ -139,9 +144,9 @@ wrong file first is told where to go.
 - Supply chain: third-party dependency vetting, maintained-package gates,
   pinning, hashing, advisory scanning, SBOMs, and EOL frameworks.
 
-Version baseline is kept current (Django 6.0.7 / 5.2.16 LTS; DRF 3.17.1;
-Channels 4.3.2; django-allauth 65.18.0; dj-rest-auth 7.2.0;
-django-oauth-toolkit 3.3.0; social-auth-app-django 6.0.0, as of 17 Jul 2026).
+Version baseline is kept current (Django 6.1, 6.0.8, and 5.2.17 LTS; DRF
+3.18.0; Channels 4.3.2; django-allauth 65.19.0; dj-rest-auth 7.2.0;
+django-oauth-toolkit 3.4.0; social-auth-app-django 6.0.1, as of 8 Aug 2026).
 Compatibility is checked per package: SimpleJWT 5.5.1 and several optional
 auth/CSP helpers remain conditional on Django 5.2, and projects on end-of-life
 Django are flagged. The authorization and impersonation packages
@@ -190,12 +195,23 @@ cryptography 50.0.0 are recommended and now sit in their own section of the
 index, django-fernet-encrypted-fields 0.4.0 is conditional as the one packaged
 field-encryption library that is still maintained — its condition being that it
 derives its key from SECRET_KEY and a SALT_KEY setting — and application-layer
-post-quantum libraries are not adopted this cycle. Django 6.0.8 and 5.2.17
-LTS were published on 4 Aug 2026, after this baseline was set, fixing
-four security issues; the repository baseline is unchanged until the next
-coordinated re-date, and any project still on 6.0.7 or 5.2.16 should take the
-patch now. Django 6.1 followed on 5 Aug 2026, which makes 6.0 a
-security-fix-only line through April 2027. The object-storage packages were
+post-quantum libraries are not adopted this cycle. The coordinated re-date ran on
+8 Aug 2026 and moved the baseline onto Django 6.1, 6.0.8, and 5.2.17 LTS with
+DRF 3.18.0. Django 6.0.8 and 5.2.17 were the 4 Aug 2026 security releases
+fixing four issues, the most serious a file-write and request-forgery flaw
+reachable through spatial lookups, and 6.1 followed on 5 Aug 2026, which puts
+6.0 on security fixes only through April 2027. On the DRF line the security
+fixes are in 3.17.2 rather than in 3.18.0, so 3.17.2 is the minimum safe
+version while 3.18.0 is a feature release that drops three end-of-life Django
+lines and changes the error shape list serializers return.
+django-oauth-toolkit moved to 3.4.0 and that floor is mandatory rather than
+preferred: below it the authorization endpoint carries an unauthenticated open
+redirect under `prompt=none`, tokens and codes render in cleartext in the
+admin, client secrets reach debug logs, device-flow user codes are predictable,
+and redirect-URI matching deviates from RFC 9700 in four ways. django-allauth
+moved to 65.19.0 and social-auth-app-django to 6.0.1. Most other entries still
+declare support through Django 6.0 rather than 6.1, which days after a feature
+release is packaging lag rather than a compatibility finding. The object-storage packages were
 checked on 7 Aug 2026: `django-storages` 1.14.6 stays rejected as a new
 recommendation and is now recorded with the evidence — its own Django
 classifiers stop at 5.1, and on an existing install `AWS_S3_CUSTOM_DOMAIN`

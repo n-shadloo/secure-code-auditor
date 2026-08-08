@@ -62,9 +62,10 @@ response and mail headers), and a dated maintained-package gate for third-party
 security dependencies.
 
 Primary integration is Claude; this file exists so Gemini CLI uses the same
-single source of truth. Modes (review-time / write-time), the severity rubric,
-the findings format, the write-time secure-default contract with the
-security-decisions note it returns in place of a report, and the rule for a
-default that conflicts with the request are in
-`references/00-methodology-and-severity.md`. The version is recorded in
-`SKILL.md` frontmatter (`metadata.version`).
+single source of truth. Modes (review-time / write-time), the severity rubric
+and how it rates a race and a surviving-personal-data failure, the findings
+format, the ASVS 5.0 chapter mapping and the chapters declared out of scope,
+the write-time secure-default contract with the security-decisions note it
+returns in place of a report, and the rule for a default that conflicts with
+the request are in `references/00-methodology-and-severity.md`. The version is
+recorded in `SKILL.md` frontmatter (`metadata.version`).
