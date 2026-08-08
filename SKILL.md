@@ -7,14 +7,14 @@ description: >-
   OAuth2/OIDC, API keys, password hashing, permissions, access control,
   impersonation, the ORM, raw SQL, SQL/command/template injection, XSS,
   LDAP, row-level security, encrypted columns, NoSQL, Redis, file
-  uploads, object storage, S3, buckets, presigned URLs, serializers, API
-  endpoints, OpenAPI schema, GraphQL, Django Ninja, AI agents, MCP
-  tools, secrets, payments, webhooks, HMAC, notifications, Celery, race
-  conditions, caching, CDN, deserialization, async/ASGI, WebSockets,
-  erasure, retention, personal data, migrations,
-  JWKS, mutual TLS, key rotation, SECRET_KEY, Dockerfile,
-  X-Forwarded-For, SPF/DKIM/DMARC, or deployment config, even if
-  "security" is never used.
+  uploads, object storage, S3, presigned URLs, serializers, viewsets,
+  querysets, API endpoints, OpenAPI schema, GraphQL, Django Ninja, AI
+  agents, MCP tools, secrets, payments, webhooks, HMAC, notifications,
+  Celery, race conditions, caching, CDN, deserialization, async/ASGI,
+  WebSockets, erasure, retention, personal data, migrations, JWKS,
+  mutual TLS, key rotation, SECRET_KEY, Dockerfile, X-Forwarded-For,
+  SPF/DKIM/DMARC, or deployment config, even if "security" is never
+  used.
   Review-time returns prioritized findings with fixes; write-time
   applies secure defaults. Django/DRF-first; general layer suits any
   stack.
@@ -22,7 +22,7 @@ license: MIT
 allowed-tools: Read, Grep, Glob, Bash
 metadata:
   author: n-shadloo
-  version: 1.16.0
+  version: 1.17.0
 ---
 
 # secure-code-auditor
@@ -50,7 +50,7 @@ Load only the file(s) relevant to the concern in front of you.
 
 | Concern | Reference file |
 |---|---|
-| Method & severity model, report format, mode selection | `references/00-methodology-and-severity.md` |
+| Method & severity model, report format, mode selection, the write-time secure-default contract and the index of which file holds each generation moment's rule, what to do when a secure default conflicts with the request, the security-decisions note write-time returns instead of a findings report, and the two-mode convention every control follows | `references/00-methodology-and-severity.md` |
 | Access control, IDOR/BOLA, object- & function-level authz, cache-mediated data leaks, SSRF, open redirect, multi-tenancy, admin access | `references/a01-broken-access-control.md` |
 | DEBUG/ALLOWED_HOSTS, SECURE_*/SESSION_*/CSRF_* matrix, CORS, headers, mail authentication (SPF/DKIM/DMARC alignment and rollout), CAA and dangling-DNS/subdomain takeover, `check --deploy` and what it cannot see | `references/a02-security-misconfiguration.md` |
 | Dependencies, third-party vetting/maintained-package gate, pinning/hashing, `pip-audit`, EOL frameworks, migrations/data integrity, SBOM | `references/a03-software-supply-chain.md` |
@@ -203,10 +203,17 @@ feature. Behavior:
 
 - Apply the secure defaults from the relevant category file(s) as you write —
   parameterized queries, scoped querysets, explicit serializer fields, correct
-  cookie/security flags, safe deserializers, secrets from the environment.
+  cookie/security flags, safe deserializers, secrets from the environment. The
+  standing contract behind those, and the index of which file carries the rule
+  for each generation moment, are in
+  `references/00-methodology-and-severity.md`.
 - Prefer built-in framework mechanisms over add-ons (see the libraries file).
-- Briefly note the security-relevant choices you made. If a requirement forces a
-  risky pattern, say so and describe the residual risk rather than hiding it.
+- Where a secure default conflicts with what was asked for, apply the default
+  and say so in one line naming the risk and the exact opt-out. Never downgrade
+  silently, and never refuse silently.
+- Close with a short **Security decisions** note: the defaults applied,
+  anything the request forced along with its residual risk, and anything left
+  for the caller to do. Write-time does not produce a findings report.
 
 **If it's ambiguous,** default to write-time guardrails while coding and offer to
 run a review afterward.

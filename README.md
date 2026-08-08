@@ -293,7 +293,12 @@ python scripts/dangerous_patterns.py .
 
 Write new code — it applies secure defaults as it goes (parameterized queries,
 scoped querysets, explicit serializer fields, correct cookie flags, secrets from
-the environment) and notes the security-relevant choices it made.
+the environment) and closes with a short "Security decisions" note rather than
+a findings report: the defaults it applied, anything your request forced along
+with the residual risk, and anything left for you to do. Where a secure default
+conflicts with what you asked for, it applies the default and says so in one
+line naming the risk and the opt-out, so nothing is downgraded or refused
+silently.
 
 ## Example finding
 

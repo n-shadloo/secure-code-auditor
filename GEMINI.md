@@ -59,5 +59,8 @@ security dependencies.
 
 Primary integration is Claude; this file exists so Gemini CLI uses the same
 single source of truth. Modes (review-time / write-time), the severity rubric,
-and the findings format are in `references/00-methodology-and-severity.md`. The
-version is recorded in `SKILL.md` frontmatter (`metadata.version`).
+the findings format, the write-time secure-default contract with the
+security-decisions note it returns in place of a report, and the rule for a
+default that conflicts with the request are in
+`references/00-methodology-and-severity.md`. The version is recorded in
+`SKILL.md` frontmatter (`metadata.version`).

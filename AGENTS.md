@@ -81,9 +81,12 @@ attacker can forge).
 ## Two modes
 - Review-time: audit existing code, produce prioritized findings (severity,
   location, CWE + OWASP mapping, concrete fix). Read-only by default.
-- Write-time: apply secure defaults and flag risky patterns while generating code.
-Mode selection and the findings format are defined in
-`references/00-methodology-and-severity.md`.
+- Write-time: apply the standing secure-default contract while generating code,
+  apply the secure default where it conflicts with the request and say so, and
+  close with a short security-decisions note rather than a findings report.
+Mode selection, both output formats, the conflict rule, and the convention that
+every control is stated in a review form and a write-time form together are
+defined in `references/00-methodology-and-severity.md`.
 
 ## How to use the content
 1. Read `SKILL.md` for the router, mode logic, and severity summary.
