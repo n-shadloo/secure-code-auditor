@@ -149,81 +149,28 @@ Version baseline is kept current (Django 6.1, 6.0.8, and 5.2.17 LTS; DRF
 django-oauth-toolkit 3.4.0; social-auth-app-django 6.0.1, as of 8 Aug 2026).
 Compatibility is checked per package: SimpleJWT 5.5.1 and several optional
 auth/CSP helpers remain conditional on Django 5.2, and projects on end-of-life
-Django are flagged. The authorization and impersonation packages
-(django-guardian 3.3.3, django-hijack 3.7.8, rules 3.5, and the external policy
-engines) and the agent/MCP integration packages (django-mcp-server 0.5.7,
-django-rest-framework-mcp 0.1.0a4, and the admin- and shell-exposing
-candidates, none of which are recommended) were checked separately on
-1 Aug 2026. The data-layer packages (django-tenants, the official
-django-mongodb-backend, PyCA cryptography 50.0.0, and the packaged Django
-field-encryption libraries, every one of which is rejected as abandoned) were
-checked on 2 Aug 2026, as were the data-lifecycle packages
-(django-simple-history 3.13.0, django-celery-beat 2.9.0, django-cleanup 9.0.0,
-Faker 40.36.0, the two soft-delete packages, and the dedicated privacy
-packages, none of which is recommended). Django 6.0.7, 5.2.16 LTS, and DRF
-3.17.1 were re-confirmed as current on that date. The runtime and proxy-trust
-packages were checked on 7 Aug 2026: django-ipware 7.0.1 is rejected for new
-use because it has not released since April 2024 and declares no supported
-Django version at all, and django-debug-toolbar 7.0.0 and django-silk 5.5.0 are
-rejected for production as development-only tooling rather than on maintenance
-grounds. The service-identity
-packages were checked on 3 Aug 2026: PyJWT 2.13.0 is recommended with a
-`>=2.13.0` floor, and SimpleJWT was re-checked and confirmed not to cap PyJWT,
-while remaining out of scope as a machine-identity mechanism. The GraphQL and
-non-DRF packages were checked on 4 Aug 2026: strawberry-graphql 0.323.2 with
-strawberry-graphql-django 0.86.8 is conditional and pinned, django-ninja 1.6.2
-is conditional, and graphene-django 3.2.3 is existing-install audit only
-because it declares no support for Django 5.2 or 6.0 and has not released since
-March 2025. The API-surface packages were checked on 5 Aug 2026:
-drf-spectacular 0.30.0 and django-filter 26.1 are recommended (the latter only
-with explicit field allowlists), django-extensions 4.1 is a development-only
-existing-install disposition, and both DRF bulk packages are rejected because
-their bulk paths skip per-object authorization. The concurrency and idempotency
-packages were checked on 7 Aug 2026: google-re2 1.1.20251105 and django-fsm-2
-4.2.4 are conditional, django-fsm 3.0.1 is rejected for new use because PyPI
-classifies it inactive and its own README renames the line to viewflow.fsm, the
-two idempotency-key packages are rejected as stale, and Redis distributed-lock
-packages are rejected as a correctness primitive on design grounds. The
-integrity and webhook packages were checked on the same date: standardwebhooks
-1.1.0 is conditional and only for signing the webhooks you send, PyYAML 6.0.3 is
-conditional on safe_load at every call site, svix 1.99.1 is rejected as a
-verification dependency because it pulls six packages transitively to compute
-one HMAC, and nothing is recommended for verifying an inbound webhook, because
-the standard library's hmac module already covers it. The cryptographic
-primitives were re-checked on the same date: argon2-cffi 25.1.0 and PyCA
-cryptography 50.0.0 are recommended and now sit in their own section of the
-index, django-fernet-encrypted-fields 0.4.0 is conditional as the one packaged
-field-encryption library that is still maintained — its condition being that it
-derives its key from SECRET_KEY and a SALT_KEY setting — and application-layer
-post-quantum libraries are not adopted this cycle. The coordinated re-date ran on
-8 Aug 2026 and moved the baseline onto Django 6.1, 6.0.8, and 5.2.17 LTS with
-DRF 3.18.0. Django 6.0.8 and 5.2.17 were the 4 Aug 2026 security releases
-fixing four issues, the most serious a file-write and request-forgery flaw
-reachable through spatial lookups, and 6.1 followed on 5 Aug 2026, which puts
-6.0 on security fixes only through April 2027. On the DRF line the security
-fixes are in 3.17.2 rather than in 3.18.0, so 3.17.2 is the minimum safe
-version while 3.18.0 is a feature release that drops three end-of-life Django
-lines and changes the error shape list serializers return.
-django-oauth-toolkit moved to 3.4.0 and that floor is mandatory rather than
-preferred: below it the authorization endpoint carries an unauthenticated open
-redirect under `prompt=none`, tokens and codes render in cleartext in the
-admin, client secrets reach debug logs, device-flow user codes are predictable,
-and redirect-URI matching deviates from RFC 9700 in four ways. django-allauth
-moved to 65.19.0 and social-auth-app-django to 6.0.1. Most other entries still
-declare support through Django 6.0 rather than 6.1, which days after a feature
-release is packaging lag rather than a compatibility finding. The object-storage packages were
-checked on 7 Aug 2026: `django-storages` 1.14.6 stays rejected as a new
-recommendation and is now recorded with the evidence — its own Django
-classifiers stop at 5.1, and on an existing install `AWS_S3_CUSTOM_DOMAIN`
-makes `url()` return an unsigned URL unless a CloudFront signer is configured
-alongside it, which silently overrides `AWS_QUERYSTRING_AUTH`. The provider
-object-storage SDKs are recorded as patterns to audit rather than gate
-entries, on the same basis as the cloud KMS SDKs. The LDAP packages were checked
-on 8 Aug 2026: `django-auth-ldap` 5.3.0 is recommended where a directory is the
-identity source, because it escapes filter arguments by default and declares
-Django 4.2, 5.2, and 6.0, and `python-ldap` carries an explicit `>=3.4.5` floor
-for CVE-2025-61911 that the integration's own `>=3.1` requirement does not
-enforce.
+Django are flagged. Each area carries the date it was last checked.
+
+| Date checked | Area | Disposition |
+|---|---|---|
+| 1 Aug 2026 | Authorization and impersonation | django-guardian 3.3.3, django-hijack 3.7.8, rules 3.5, and the external policy engines. |
+| 1 Aug 2026 | Agent and MCP integration | django-mcp-server 0.5.7, django-rest-framework-mcp 0.1.0a4, and the admin- and shell-exposing candidates; none recommended. |
+| 2 Aug 2026 | Data layer | django-tenants, the official django-mongodb-backend, and PyCA cryptography 50.0.0; every packaged Django field-encryption library rejected as abandoned. |
+| 2 Aug 2026 | Data lifecycle | django-simple-history 3.13.0, django-celery-beat 2.9.0, django-cleanup 9.0.0, and Faker 40.36.0; the two soft-delete packages and the dedicated privacy packages not recommended. |
+| 2 Aug 2026 | Framework currency | Django 6.0.7, 5.2.16 LTS, and DRF 3.17.1 re-confirmed current on this date. |
+| 3 Aug 2026 | Service identity | PyJWT 2.13.0 recommended with a `>=2.13.0` floor; SimpleJWT re-checked and confirmed not to cap PyJWT, while remaining out of scope as a machine-identity mechanism. |
+| 4 Aug 2026 | GraphQL and non-DRF | strawberry-graphql 0.323.2 with strawberry-graphql-django 0.86.8 conditional and pinned; django-ninja 1.6.2 conditional; graphene-django 3.2.3 existing-install audit only, declaring no support for Django 5.2 or 6.0 and unreleased since March 2025. |
+| 5 Aug 2026 | API surface and schema | drf-spectacular 0.30.0 and django-filter 26.1 recommended, the latter only with explicit field allowlists; django-extensions 4.1 a development-only existing-install disposition; both DRF bulk packages rejected because their bulk paths skip per-object authorization. |
+| 7 Aug 2026 | Runtime and proxy trust | django-ipware 7.0.1 rejected for new use, unreleased since April 2024 and declaring no supported Django version at all; django-debug-toolbar 7.0.0 and django-silk 5.5.0 rejected for production as development-only tooling rather than on maintenance grounds. |
+| 7 Aug 2026 | Concurrency and idempotency | google-re2 1.1.20251105 and django-fsm-2 4.2.4 conditional; django-fsm 3.0.1 rejected for new use because PyPI classifies it inactive and its own README renames the line to viewflow.fsm; the two idempotency-key packages rejected as stale; Redis distributed-lock packages rejected as a correctness primitive on design grounds. |
+| 7 Aug 2026 | Integrity and webhooks | standardwebhooks 1.1.0 conditional and only for signing the webhooks you send; PyYAML 6.0.3 conditional on safe_load at every call site; svix 1.99.1 rejected as a verification dependency because it pulls six packages transitively to compute one HMAC; nothing recommended for verifying an inbound webhook, because the standard library's hmac module already covers it. |
+| 7 Aug 2026 | Cryptographic primitives | argon2-cffi 25.1.0 and PyCA cryptography 50.0.0 recommended and now in their own section of the index; django-fernet-encrypted-fields 0.4.0 conditional as the one packaged field-encryption library still maintained, its condition being that it derives its key from SECRET_KEY and a SALT_KEY setting; application-layer post-quantum libraries not adopted this cycle. |
+| 7 Aug 2026 | Object storage | `django-storages` 1.14.6 stays rejected as a new recommendation, now recorded with the evidence: its own Django classifiers stop at 5.1, and on an existing install `AWS_S3_CUSTOM_DOMAIN` makes `url()` return an unsigned URL unless a CloudFront signer is configured alongside it, silently overriding `AWS_QUERYSTRING_AUTH`. Provider object-storage SDKs are patterns to audit rather than gate entries, on the same basis as the cloud KMS SDKs. |
+| 8 Aug 2026 | LDAP | `django-auth-ldap` 5.3.0 recommended where a directory is the identity source, because it escapes filter arguments by default and declares Django 4.2, 5.2, and 6.0; `python-ldap` carries an explicit `>=3.4.5` floor for CVE-2025-61911 that the integration's own `>=3.1` requirement does not enforce. |
+| 8 Aug 2026 | Coordinated re-date | Baseline moved onto Django 6.1, 6.0.8, and 5.2.17 LTS with DRF 3.18.0. Django 6.0.8 and 5.2.17 were the 4 Aug 2026 security releases fixing four issues, the most serious a file-write and request-forgery flaw reachable through spatial lookups; 6.1 followed on 5 Aug 2026, which puts 6.0 on security fixes only through April 2027. |
+| 8 Aug 2026 | DRF line | The security fixes are in 3.17.2 rather than in 3.18.0, so 3.17.2 is the minimum safe version, while 3.18.0 is a feature release that drops three end-of-life Django lines and changes the error shape list serializers return. |
+| 8 Aug 2026 | OAuth and social login | django-oauth-toolkit 3.4.0, a mandatory floor rather than a preferred one: below it the authorization endpoint carries an unauthenticated open redirect under `prompt=none`, tokens and codes render in cleartext in the admin, client secrets reach debug logs, device-flow user codes are predictable, and redirect-URI matching deviates from RFC 9700 in four ways. django-allauth moved to 65.19.0 and social-auth-app-django to 6.0.1. |
+| 8 Aug 2026 | Django 6.1 lag | Most other entries still declare support through Django 6.0 rather than 6.1, which days after a feature release is packaging lag rather than a compatibility finding. |
 
 ## Install
 
@@ -254,8 +201,10 @@ For claude.ai or the API, upload the folder as a custom skill in Settings.
 
 ### Codex CLI
 
-Codex CLI discovers Agent Skills from the `.agents/skills/` directory and uses
-the bundled pointer skill to load the canonical `SKILL.md`.
+Codex CLI discovers Agent Skills from the `.agents/skills/` directory. Cloning
+the repository there is the whole mechanism: the clone's own root `SKILL.md` is
+the canonical instruction file, and there is no separate pointer skill to
+install.
 
 One project:
 
@@ -271,8 +220,8 @@ git clone https://github.com/n-shadloo/secure-code-auditor.git \
   ~/.agents/skills/secure-code-auditor
 ```
 
-`AGENTS.md` provides project-wide context, while the pointer skill forwards to
-the canonical instructions in the repository root.
+`AGENTS.md` provides project-wide context and points at the same `SKILL.md` and
+`references/`.
 
 ### Cursor
 

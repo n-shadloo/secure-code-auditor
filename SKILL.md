@@ -5,7 +5,7 @@ description: >-
   API Security Top 10 (2023), and ASVS 5.0 foundation. Use when backend
   code is written or reviewed and touches authentication, sessions, JWT,
   OAuth2/OIDC, API keys, password hashing, permissions, access control,
-  impersonation, raw SQL, SQL/command/template injection, XSS, LDAP,
+  SSRF, impersonation, SQL/command/template injection, XSS, LDAP,
   row-level security, encrypted columns, NoSQL, Redis, file uploads, S3,
   presigned URLs, serializers, viewsets, querysets, API endpoints, rate
   limiting, CSRF/CORS, OpenAPI schema, GraphQL, Django Ninja, AI agents,
@@ -21,7 +21,7 @@ license: MIT
 allowed-tools: Read, Grep, Glob, Bash
 metadata:
   author: n-shadloo
-  version: 1.19.0
+  version: 1.20.0
 ---
 
 # secure-code-auditor
@@ -44,6 +44,11 @@ cross-cutting topic references have two layers:
 2. **Django & DRF implementation** — the specific settings, code patterns,
    correct/incorrect examples, gotchas, and hardening steps. This is where the
    depth lives.
+
+The same split names the two halves of a sub-topic checklist,
+`#### Stack-neutral` and `#### Django & DRF`. A file's final
+`## Review checklist` may stay unsplit; about half of them do, and neither form
+is a defect.
 
 Load only the file(s) relevant to the concern in front of you. The tables below
 group on that spine, so the choice is two steps rather than one: pick the group,
@@ -104,116 +109,128 @@ restating its rules. Each reference file repeats its own half of the rule in
 its opening paragraph, so the decision holds whichever file you opened first.
 
 **Authorization.** A01 owns the per-request failure and how to recognise it.
-The authorization-architecture file owns the privilege model that produces it,
-the field-level model, and the table of which DRF paths invoke the object hook.
-The DRF file owns the call sites — the routes, actions, and defaults where a
-correct model still fails to run. The privileged-access file owns operator
-privilege. The bypass-path table lives only in the authorization-architecture
-file; everything else cross-references it.
+`references/authorization-architecture.md` owns the privilege model that
+produces it, the field-level model, and the table of which DRF paths invoke the
+object hook. `references/api-drf-specific.md` owns the call sites — the routes,
+actions, and defaults where a correct model still fails to run.
+`references/privileged-access-and-impersonation.md` owns operator privilege.
+The bypass-path table lives only in
+`references/authorization-architecture.md`; everything else cross-references it.
 
-**Rate limiting.** A06 owns which flows need a limit in the first place. The
-DRF file owns the throttling mechanics every other file defers to, including
-the reasons a configured rate is not the effective one. A07 owns login lockout,
-the agent file owns per-agent cost and concurrency limits, and A10 owns the race
-and idempotency mechanics that decide whether a limit holds under concurrent
-requests.
+**Rate limiting.** A06 owns which flows need a limit in the first place.
+`references/api-drf-specific.md` owns the throttling mechanics every other file
+defers to, including the reasons a configured rate is not the effective one.
+A07 owns login lockout, `references/agent-and-llm-interfaces.md` owns per-agent
+cost and concurrency limits, and A10 owns the race and idempotency mechanics
+that decide whether a limit holds under concurrent requests.
 
 **Injection sinks.** A05 is the inventory for the whole skill, and it is meant
 to be exhaustive so that no other file keeps a partial copy. It owns SQL, the
-shell, and server-side output outright. Its other rows point outward: the
-data-layer file for raw paths and document-store shape validation, the upload
-file for storage keys, A01 for SSRF, A08 for deserialization, and A09 for the
-log line.
+shell, and server-side output outright. Its other rows point outward:
+`references/data-layer-and-database.md` for raw paths and document-store shape
+validation, `references/file-uploads.md` for storage keys, A01 for SSRF, A08
+for deserialization, and A09 for the log line.
 
-**SSRF.** A01, which absorbed it in the 2025 list. The upload, agent,
-service-identity, and integrity files each reach it and all defer here, as does
-the cloud metadata endpoint a leaked workload credential is reached through.
+**SSRF.** A01, which absorbed it in the 2025 list.
+`references/file-uploads.md`, `references/agent-and-llm-interfaces.md`,
+`references/service-identity-and-secrets.md`, and
+`references/a08-integrity-and-deserialization.md` each reach it and all defer
+here, as does the cloud metadata endpoint a leaked workload credential is
+reached through.
 
 **Secrets and keys.** A04 owns the choice of primitive and its parameters, and
-the life of a key from generation to destruction. The service-identity file
-owns where a secret lives, how it reaches the process, and how it rotates,
-`SECRET_KEY` included. A02 owns the settings module that names it, and the
-deployment file owns how the environment is injected.
+the life of a key from generation to destruction.
+`references/service-identity-and-secrets.md` owns where a secret lives, how it
+reaches the process, and how it rotates, `SECRET_KEY` included. A02 owns the
+settings module that names it, and `references/deployment-and-runtime.md` owns
+how the environment is injected.
 
 **Configuration versus runtime.** Split by where the setting lives rather than
-by topic. A02 owns what a settings module or a DNS zone declares. The
-deployment file owns what the proxy, the process, and the image do with a
-request once it arrives, including forwarded-header trust and the client IP
-that every rate limit and audit record depends on. Mail authentication is A02 —
-whether your domain can be forged — while whether your mailer can be driven is
-A06.
+by topic. A02 owns what a settings module or a DNS zone declares.
+`references/deployment-and-runtime.md` owns what the proxy, the process, and
+the image do with a request once it arrives, including forwarded-header trust
+and the client IP that every rate limit and audit record depends on. Mail
+authentication is A02 — whether your domain can be forged — while whether your
+mailer can be driven is A06.
 
 **Failure behaviour.** A10 owns what happens when the expected sequence does
 not hold: the concurrency mechanics, idempotency-key design, and fail-closed
 error handling. A09 owns what must be recorded and what must never be. A06
 catalogues the flows worth attacking, A08's event de-duplication is the same
-design as A10's idempotency key, and the DRF, migration, and data-lifecycle
-files carry one-line uses that name A10 rather than restating it.
+design as A10's idempotency key, and `references/api-drf-specific.md`,
+`references/a03-software-supply-chain.md`, and
+`references/data-lifecycle-and-privacy.md` carry one-line uses that name A10
+rather than restating it.
 
 **Human versus machine identity.** A07 owns the human principal and every
 credential issued to one, including the API-key discipline a static service key
-still has to meet. The service-identity file owns the machine principal —
-mechanism choice, inbound machine-token validation, JWKS caching and rotation,
-proxy-set certificate identity, and downstream token exchange. The agent file
-owns the tool-call threat model and the passthrough prohibition itself, and A04
-owns the primitives all of it is built on.
+still has to meet. `references/service-identity-and-secrets.md` owns the
+machine principal — mechanism choice, inbound machine-token validation, JWKS
+caching and rotation, proxy-set certificate identity, and downstream token
+exchange. `references/agent-and-llm-interfaces.md` owns the tool-call threat
+model and the passthrough prohibition itself, and A04 owns the primitives all
+of it is built on.
 
 **Cross-system trust.** A08 owns the receiving end: the inbound webhook end to
 end, every path that turns bytes back into live objects including the ones the
 framework runs without being asked, and the task message a worker will execute
 for anyone who can reach the broker. A01 keeps the SSRF mechanics an outbound
-delivery worker has to satisfy, the deployment file keeps broker and cache
-exposure, the service-identity file keeps where signing secrets live, and A03
-keeps dependency vetting while A08 keeps only the integrity of what the project
-itself produces and consumes.
+delivery worker has to satisfy, `references/deployment-and-runtime.md` keeps
+broker and cache exposure, `references/service-identity-and-secrets.md` keeps
+where signing secrets live, and A03 keeps dependency vetting while A08 keeps
+only the integrity of what the project itself produces and consumes.
 
-**Uploads and object storage.** The upload file owns the file from the request
-to the reader, including the architecture where the bytes never reach the
-application at all: what a delegated upload URL binds, the quarantine prefix an
-object waits in until the server has verified it against the store rather than
-against the uploader's claims, and the choice between proxying a private
-download and signing a URL for it. A08 keeps the signature, timestamp, and
-replay rules a callback has to satisfy. A01 keeps import-from-URL SSRF and the
-cache-mediated leak that a CDN cache key dropping its signing parameters is one
-case of. The data-lifecycle file keeps whether the bytes are gone, while the
-upload file keeps only the fact that an already-issued signed URL is beyond the
-reach of any erasure.
+**Uploads and object storage.** `references/file-uploads.md` owns the file from
+the request to the reader, including the architecture where the bytes never
+reach the application at all: what a delegated upload URL binds, the quarantine
+prefix an object waits in until the server has verified it against the store
+rather than against the uploader's claims, and the choice between proxying a
+private download and signing a URL for it. A08 keeps the signature, timestamp,
+and replay rules a callback has to satisfy. A01 keeps import-from-URL SSRF and
+the cache-mediated leak that a CDN cache key dropping its signing parameters is
+one case of. `references/data-lifecycle-and-privacy.md` keeps whether the bytes
+are gone, while `references/file-uploads.md` keeps only the fact that an
+already-issued signed URL is beyond the reach of any erasure.
 
-**The database as a boundary.** The data-layer file owns roles, row-level
-security, connection verification, encrypted columns, and pooling. It defers to
-A05 for injection mechanics, A04 for the cryptographic principle, the
-authorization-architecture file for the tenant model those mechanisms enforce,
-and the deployment file for the network, cache, broker, and secrets operations
-around them.
+**The database as a boundary.** `references/data-layer-and-database.md` owns
+roles, row-level security, connection verification, encrypted columns, and
+pooling. It defers to A05 for injection mechanics, A04 for the cryptographic
+principle, `references/authorization-architecture.md` for the tenant model
+those mechanisms enforce, and `references/deployment-and-runtime.md` for the
+network, cache, broker, and secrets operations around them.
 
-**The record over time.** The data-lifecycle file owns deletion completeness,
-what a soft-delete flag fails to hide, retention, anonymization, and every copy
-an erasure has to reach. The authorization-architecture file owns who may read
-a denormalised copy while the data-lifecycle file owns whether that copy still
-exists once the source row is gone. A09 owns what must be logged while the
-data-lifecycle file owns the log and the history table as retained copies of
-personal data. The data-layer file keeps backups, replicas, and the encryption
-substrate that crypto-shredding depends on, and the upload file keeps storage
-and delivery of the files whose deletion the data-lifecycle file owns.
+**The record over time.** `references/data-lifecycle-and-privacy.md` owns
+deletion completeness, what a soft-delete flag fails to hide, retention,
+anonymization, and every copy an erasure has to reach.
+`references/authorization-architecture.md` owns who may read a denormalised
+copy while `references/data-lifecycle-and-privacy.md` owns whether that copy
+still exists once the source row is gone. A09 owns what must be logged while
+`references/data-lifecycle-and-privacy.md` owns the log and the history table
+as retained copies of personal data. `references/data-layer-and-database.md`
+keeps backups, replicas, and the encryption substrate that crypto-shredding
+depends on, and `references/file-uploads.md` keeps storage and delivery of the
+files whose deletion `references/data-lifecycle-and-privacy.md` owns.
 
-**Client-composed requests.** The GraphQL file owns the surface where the
-client composes the request — resolver-edge authorization, document cost
-limits, schema exposure, and the non-DRF framework defaults. It defers to A01
-for the access-control failure itself, the authorization-architecture file for
-the field-level model, the DRF file for the serializer and throttling patterns
-it generalises, the upload and async files for uploads and subscriptions, and
-A03 for the stale-library finding a graphene-django install raises.
+**Client-composed requests.** `references/graphql-and-alternative-api-surfaces.md`
+owns the surface where the client composes the request — resolver-edge
+authorization, document cost limits, schema exposure, and the non-DRF framework
+defaults. It defers to A01 for the access-control failure itself,
+`references/authorization-architecture.md` for the field-level model,
+`references/api-drf-specific.md` for the serializer and throttling patterns it
+generalises, `references/file-uploads.md` and `references/async-and-channels.md`
+for uploads and subscriptions, and A03 for the stale-library finding a
+graphene-django install raises.
 
-**Agent and MCP surfaces.** The agent file owns the tool-call threat model and
-the MCP-specific controls, and defers to the files above for the authorization
-mechanics, token rules, injection sinks, and audit machinery it reuses rather
-than restating them.
+**Agent and MCP surfaces.** `references/agent-and-llm-interfaces.md` owns the
+tool-call threat model and the MCP-specific controls, and defers to the files
+above for the authorization mechanics, token rules, injection sinks, and audit
+machinery it reuses rather than restating them.
 
-**The container image.** The deployment file stops at the artifact the
-repository produces — base image, `USER`, `.dockerignore`, and secrets baked
-into layers. Orchestrator enforcement is named as a cross-team recommendation
-rather than a repository finding, and where a secret comes from at run time
-belongs to the service-identity file.
+**The container image.** `references/deployment-and-runtime.md` stops at the
+artifact the repository produces — base image, `USER`, `.dockerignore`, and
+secrets baked into layers. Orchestrator enforcement is named as a cross-team
+recommendation rather than a repository finding, and where a secret comes from
+at run time belongs to `references/service-identity-and-secrets.md`.
 
 ## Mode selection
 
