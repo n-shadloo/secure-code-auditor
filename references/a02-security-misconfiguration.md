@@ -4,6 +4,17 @@ The settings surface: debug/hosts, the SECURE_*/SESSION_*/CSRF_* matrix, CORS,
 security headers, the DNS records that authenticate your mail and constrain
 certificate issuance, and the deploy check. Maps to OWASP API8:2023.
 
+This file and `deployment-and-runtime.md` split the configuration surface by
+where the setting lives rather than by topic. This file owns what a settings
+module or a DNS zone **declares**. The deployment file owns what the proxy, the
+process, and the image **do** with a request once it arrives, including
+forwarded-header trust and the client IP that every rate limit and audit record
+depends on. Mail authentication here asks whether your domain can be
+impersonated; `a06-insecure-design.md` asks whether your mailer can be driven.
+The secret *values* these settings name belong to
+`service-identity-and-secrets.md`, and `a10-exceptional-conditions.md` owns
+what a `DEBUG` error view discloses when a request fails.
+
 ## Contents
 - [Principle](#principle)
 - [DEBUG and ALLOWED_HOSTS](#debug-and-allowed_hosts)

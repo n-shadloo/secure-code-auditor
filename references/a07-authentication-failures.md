@@ -3,6 +3,17 @@
 Password, session, token, federated-login, API-key, recovery, and anti-automation
 controls. API mappings include API2:2023 (Broken Authentication).
 
+This file owns the **human principal** — proving a person is who they claim to
+be, and the lifecycle of every credential issued to one. A machine principal is
+a different problem: `service-identity-and-secrets.md` owns machine-token
+validation, JWKS rotation, mutual TLS, and workload identity, while the API-key
+discipline here stays the bar a static service key still has to meet.
+`a04-cryptographic-failures.md` owns the hashing family, its parameters, and
+the generation of every token this file then stores;
+`a06-insecure-design.md` owns which flows need anti-automation; and
+`authorization-architecture.md` takes over the moment identity is established,
+because authentication ends where authorization begins.
+
 ## Contents
 
 - [Principle](#principle)

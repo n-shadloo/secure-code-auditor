@@ -5,6 +5,18 @@ into A01 in 2025), open redirect, multi-tenancy isolation, admin exposure, and
 cache-mediated authorization leaks. Maps to OWASP API1:2023 (BOLA) and
 API5:2023 (BFLA).
 
+This file owns the **per-request failure** — the request that reached data it
+should not have, and how to recognise it in code. It does not own the model
+behind that failure: `authorization-architecture.md` owns the privilege model
+and field-level authorization, `api-drf-specific.md` owns the DRF call sites
+where a correct model still fails to run, and
+`privileged-access-and-impersonation.md` owns operator privilege. Two topics
+are owned here outright and every other file defers to them: SSRF, including
+the cloud metadata endpoint a leaked workload credential is reached through,
+and the cache-mediated leak of which a CDN cache key dropping its signing
+parameters is one case. `deployment-and-runtime.md` owns the infrastructure
+side of caching; the rule about who may read a cached response is here.
+
 ## Contents
 - [Principle](#principle)
 - [Django & DRF: object-level authorization](#django--drf-object-level-authorization)

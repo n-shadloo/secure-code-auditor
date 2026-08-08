@@ -5,6 +5,15 @@ limits and anti-automation, business-logic and notification abuse, and unsafe
 defaults. Overlaps OWASP API4:2023 (Unrestricted Resource Consumption) and
 API6:2023 (Unrestricted Access to Sensitive Business Flows).
 
+This file owns **which flows need a limit, and why** — the catalogue of what is
+worth attacking when nothing caps it. It does not own the mechanism that
+enforces one: `api-drf-specific.md` owns DRF throttling and the reasons a
+configured rate is not the effective one, `a07-authentication-failures.md` owns
+login lockout, `agent-and-llm-interfaces.md` owns per-agent cost and
+concurrency limits, and `a10-exceptional-conditions.md` owns the race and
+idempotency mechanics that decide whether a limit holds under concurrent
+requests.
+
 ## Contents
 - [Principle](#principle)
 - [Rate limiting and anti-automation](#rate-limiting-and-anti-automation)

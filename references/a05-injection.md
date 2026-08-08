@@ -4,6 +4,16 @@ The sink inventory for the whole skill: SQL/ORM, OS command, template,
 directory, header/email injection, and server-side output handling (XSS from
 server-rendered content), plus the method for tracing a source to any of them.
 
+The inventory is meant to be exhaustive, so a file that defers to it can rely
+on the list being complete instead of keeping a partial copy. Three sinks are
+owned here outright and duplicated nowhere: SQL, the shell, and server-side
+output. The rest point outward to the file that owns the rules —
+`data-layer-and-database.md` for the raw-path enumeration and document-store
+shape validation, `file-uploads.md` for storage keys,
+`a01-broken-access-control.md` for SSRF,
+`a08-integrity-and-deserialization.md` for deserialization, and
+`a09-logging-and-alerting.md` for the log line.
+
 ## Contents
 - [Principle](#principle)
 - [Tracing input to a sink](#tracing-input-to-a-sink)

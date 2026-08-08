@@ -4,6 +4,15 @@ Enough logging to detect and investigate, without logging the secrets and PII
 that turn a log store into a second breach. Also covers lifecycle hooks whose
 ordering or bypass can silently omit security events and side effects.
 
+This file owns **what must be recorded and what must never be** — the event
+set, the fields that may not appear in it, and the ordering guarantees that
+decide whether a record exists at all. It does not own the failure being
+recorded: `a10-exceptional-conditions.md` owns fail-closed behaviour and the
+concurrency mechanics, `data-lifecycle-and-privacy.md` owns the log and the
+history table as retained copies of personal data, `a05-injection.md` owns the
+forged log line as a sink, and `privileged-access-and-impersonation.md` owns
+the operator identity an audit record has to carry.
+
 ## Contents
 - [Principle](#principle)
 - [Don't log secrets](#dont-log-secrets)
