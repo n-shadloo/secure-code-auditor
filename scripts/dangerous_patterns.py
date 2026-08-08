@@ -48,6 +48,16 @@ PATTERNS = [
     (re.compile(r"pickle\.loads?\s*\("), "deser", "HIGH", "pickle on untrusted data is RCE"),
     (re.compile(r"yaml\.load\s*\((?!.*(SafeLoader|safe_load))"), "deser", "HIGH", "yaml.load without SafeLoader"),
     (re.compile(r"CELERY_TASK_SERIALIZER\s*=\s*[\"']pickle[\"']"), "deser", "HIGH", "Celery pickle serializer"),
+    # a08-integrity-and-deserialization.md: accept_content decides what a worker
+    # will execute; one "pickle" entry re-opens it whatever the producers send.
+    (re.compile(r"(?i)accept_content.*pickle"), "deser", "HIGH", "Celery accept_content admits pickle"),
+    # a04-cryptographic-failures.md: Mersenne Twister, not a CSPRNG.
+    (re.compile(r"\brandom\.(random|randint|choice)\s*\("), "crypto", "LOW",
+     "random.* is a statistical PRNG - verify this value is not a secret, token, or id (use secrets)"),
+    # graphql-and-alternative-api-surfaces.md: the decorator makes traversal skip
+    # get_queryset, so the resolver opts out of every scope its type declares.
+    (re.compile(r"bypass_get_queryset"), "graphql", "HIGH",
+     "graphene bypass_get_queryset disables type-level queryset scoping"),
     (re.compile(r"fields\s*=\s*[\"']__all__[\"']"), "drf", "MEDIUM", "serializer fields='__all__' over-exposes model fields"),
     (re.compile(r"CORS_ALLOW_ALL_ORIGINS\s*=\s*True"), "config", "MEDIUM", "open CORS - use an allowlist"),
     (re.compile(r"DEBUG\s*=\s*True"), "config", "HIGH", "DEBUG=True (verify this is not production)"),
