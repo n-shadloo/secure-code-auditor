@@ -41,8 +41,10 @@ succeeded.
 
 - Rotate the session identifier on login and privilege change; invalidate it on
   logout and password reset/change where the product's threat model requires it.
-- Use `Secure`, `HttpOnly`, and an appropriate `SameSite` value. Cookie-authenticated
-  state changes still need CSRF protection; `SameSite` is defense in depth.
+- Use `Secure`, `HttpOnly`, and an appropriate `SameSite` value; the full
+  `SESSION_*`/`CSRF_*` matrix and the setting behind each flag are in
+  `a02-security-misconfiguration.md`. Cookie-authenticated state changes still
+  need CSRF protection; `SameSite` is defense in depth.
 - Bound idle and absolute lifetime for sensitive applications. Do not place
   secrets or authorization decisions in client-readable session data.
 - Review custom backends and login views for inactive-user handling. Django's

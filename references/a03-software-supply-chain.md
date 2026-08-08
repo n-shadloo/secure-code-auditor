@@ -4,6 +4,17 @@ New/expanded category in 2025 (absorbs "Vulnerable and Outdated Components").
 Covers dependencies, pinning and integrity, vulnerability scanning, EOL
 frameworks, and the integrity of versioned schema/data migrations.
 
+This file owns **the dependency as a decision** — the gate a third-party
+package has to pass before it is added, pinning and hash integrity, advisory
+scanning, the end-of-life framework, the SBOM, and the versioned migration as
+a change to data nobody can simply re-run. The recorded output of that gate for
+the current baseline is `security-hardening-libraries.md`, which holds the tier
+and the minimum-safe floor for each named package and is dated rather than
+permanent. `a08-integrity-and-deserialization.md` owns the integrity of what
+the project itself produces and consumes, `a04-cryptographic-failures.md` owns
+the signing primitive underneath both, and each topic file owns the control the
+dependency was chosen to implement.
+
 ## Contents
 - [Principle](#principle)
 - [Run a supported Django](#run-a-supported-django)

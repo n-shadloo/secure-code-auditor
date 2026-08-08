@@ -1,5 +1,16 @@
 # Methodology, Severity, and Report Format
 
+This file owns **how a review is conducted and how its output is written** —
+mode selection, the severity rubric and the confidence score beside it, the
+finding schema and report structure, the ASVS 5.0 chapter mapping and when to
+cite one, the standing write-time contract, and the convention that every
+control in this skill is stated in a review form and a write-time form
+together. It owns no vulnerability and no control. Each per-task rule lives
+beside the control it governs, in the reference that owns it, and the
+write-time table below is an index to those files rather than a copy of them.
+`SKILL.md` owns the router that chooses between them and the ownership rules
+that settle a topic more than one file could claim.
+
 ## Contents
 - [Operating principles](#operating-principles)
 - [Choosing the mode](#choosing-the-mode)

@@ -6,6 +6,17 @@ WebSocket origin checks, and per-connection authentication and authorization.
 Maps primarily to CWE-362, CWE-400, CWE-488, and CWE-862; relevant OWASP
 categories include A01:2025 and API1, API4, and API5:2023.
 
+This file owns the **long-lived or concurrent connection** — the sync/async
+boundary and what crosses it, per-request context that must not become
+per-process state, the blocked event loop, and the WebSocket from handshake to
+close, including the origin check, the authentication, and the per-message
+authorization and limits that no HTTP middleware runs on its behalf. The rules
+those controls express belong elsewhere: `authorization-architecture.md` owns
+the privilege model, `a01-broken-access-control.md` owns the access-control
+failure itself, `api-drf-specific.md` owns the ordinary request/response
+surface, `a10-exceptional-conditions.md` owns the race mechanics, and
+`deployment-and-runtime.md` owns the ASGI server and the proxy in front of it.
+
 ## Contents
 - [Principle](#principle)
 - [Django, DRF & Channels implementation](#django-drf--channels-implementation)

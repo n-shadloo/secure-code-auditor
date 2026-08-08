@@ -11,6 +11,19 @@ primarily to CWE-250, CWE-269, CWE-284, CWE-295, CWE-311, CWE-89, CWE-943,
 CWE-400, and CWE-200; relevant OWASP categories include A01:2025, A02:2025,
 A04:2025, A05:2025, and A06:2025, and API1:2023.
 
+This file owns **the database as a boundary of its own** — privilege
+separation between the migration role and the runtime role, row-level
+security, the tenant context that has to survive a pooled connection, verified
+transport, the encrypted column and the blind index over it, and the copies of
+production data that are allowed to travel. It defers for the rules those
+mechanisms carry out: `a05-injection.md` owns injection mechanics including
+the raw paths enumerated here, `a04-cryptographic-failures.md` owns the
+cryptographic principle and the key lifecycle,
+`authorization-architecture.md` owns the tenant model this isolation enforces,
+`data-lifecycle-and-privacy.md` owns whether a row is really gone, and
+`deployment-and-runtime.md` owns the network, cache, broker, and secret
+delivery around all of it.
+
 ## Contents
 - [Principle](#principle)
 - [Database roles and privilege separation](#database-roles-and-privilege-separation)

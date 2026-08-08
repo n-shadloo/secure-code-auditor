@@ -14,6 +14,34 @@ point a project actually moves to 6.1. A package declaring no currently
 supported line at all is a different matter, and each one is called out where
 it appears.
 
+This file owns the **disposition of a named package** — its tier, its
+minimum-safe floor, and the vetting fields behind both, each carrying the date
+it was checked. It does not own the gate that produces a disposition:
+`a03-software-supply-chain.md` owns dependency vetting, pinning and hashing,
+advisory scanning, and SBOM as a method, and this file is that method's
+recorded output for one baseline. Nor does it own the controls these packages
+implement — every entry defers to the reference that owns the concern, and each
+section names it. A platform SDK a project already runs is audited there as a
+pattern rather than tiered here.
+
+## Contents
+- [Recommendation gate](#recommendation-gate)
+- [Recommended or conditional choices](#recommended-or-conditional-choices)
+- [Existing-install audit only or rejected candidates](#existing-install-audit-only-or-rejected-candidates)
+- [Authorization, object permissions, and impersonation](#authorization-object-permissions-and-impersonation)
+- [Agent and MCP interfaces](#agent-and-mcp-interfaces)
+- [Service identity and secrets](#service-identity-and-secrets)
+- [Data layer and database](#data-layer-and-database)
+- [Data lifecycle and privacy](#data-lifecycle-and-privacy)
+- [GraphQL and alternative API surfaces](#graphql-and-alternative-api-surfaces)
+- [API surface, schema, and bulk operations](#api-surface-schema-and-bulk-operations)
+- [Concurrency, idempotency, and regular expressions](#concurrency-idempotency-and-regular-expressions)
+- [Integrity, webhooks, and deserialization](#integrity-webhooks-and-deserialization)
+- [Cryptographic primitives and password hashing](#cryptographic-primitives-and-password-hashing)
+- [Runtime, proxy trust, and operational endpoints](#runtime-proxy-trust-and-operational-endpoints)
+- [Use in a review](#use-in-a-review)
+- [Review checklist](#review-checklist)
+
 ## Recommendation gate
 
 Before recommending a dependency, record: the control and built-in alternative;
@@ -349,10 +377,33 @@ spoofable throttle key or a SQL console answering on a production host.
 
 ## Use in a review
 
-- Report the installed version and actual configuration, not merely the package name.
-- A package below its minimum safe version or outside declared compatibility is a
-  finding even when the application appears to work.
-- Secure defaults can change; trace adapters, pipelines, middleware order, proxy
-  trust, token persistence, callbacks, and failure behavior in the target project.
-- Re-vet after a framework/Python upgrade, relevant advisory, ownership change,
-  long release gap, or change in the package's security-sensitive defaults.
+This index supplies the disposition; the finding is still written against the
+project in front of you, whose Python, Django, and DRF versions are the ones
+that decide whether an entry applies. Work through it in the order below.
+
+## Review checklist
+
+- [ ] The tier was read as a disposition rather than a score: **recommend** is
+      the default choice for this baseline, **conditional** names a condition
+      that has to hold in the target project before the choice is sound,
+      **existing-install audit only** means audit what is installed and do not
+      newly adopt it, and **reject for new use** means the entry is a finding
+      waiting to be written up.
+- [ ] The installed version and the actual configuration were reported, not
+      merely the package name.
+- [ ] The version recorded here was checked against the versions the project
+      itself declares — its Python, its Django, its DRF — because a tier is
+      granted against this file's baseline, not against that project.
+- [ ] An install below a stated minimum-safe floor, or outside the
+      compatibility a package declares, was written up as a finding on its own
+      weight even where the application appears to work.
+- [ ] Secure defaults were traced in the target project rather than assumed:
+      adapters, pipelines, middleware order, proxy trust, token persistence,
+      callbacks, and failure behavior.
+- [ ] A re-vet was triggered where one is due — a framework or Python upgrade,
+      a relevant advisory, an ownership change, a long release gap, or a change
+      in the package's security-sensitive defaults.
+- [ ] Every claim taken from this file was read against the date stated above
+      it. A date records when the entry was checked and guarantees nothing
+      about today, so an entry older than the package's own release cadence is
+      re-checked before it is quoted in a finding.

@@ -15,6 +15,19 @@ Agentic Applications (ASI), Top 10 for LLM Applications, and MCP Top 10 — are
 used here as secondary mappings only, and the MCP Top 10 is a beta document at
 the time of writing; cite it as such rather than as a settled standard.
 
+This file owns the **tool-call threat model** — what changes when the caller is
+a program driving the backend on someone's behalf — together with the
+MCP-specific controls, the prohibition on passing an inbound token through to a
+downstream service, and the per-agent cost and concurrency limits no other file
+carries. It restates none of the machinery it reuses:
+`a01-broken-access-control.md` and `authorization-architecture.md` own the
+authorization a tool boundary has to re-run,
+`service-identity-and-secrets.md` owns inbound machine-token validation and
+audience binding, `a05-injection.md` owns the sink that model output or
+retrieved text eventually reaches, `a06-insecure-design.md` owns which flows
+need a limit at all, and `a09-logging-and-alerting.md` owns the audit record a
+tool call has to leave behind.
+
 ## Contents
 - [Principle](#principle)
 - [Django & DRF implementation](#django--drf-implementation)

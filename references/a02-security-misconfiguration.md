@@ -98,8 +98,10 @@ re-opens without a reason to.
 ## CSRF settings and trusted origins
 
 - `CSRF_TRUSTED_ORIGINS` must include the scheme, e.g.
-  `["https://app.example.com"]`. It's required to avoid 403s on cross-origin
-  form/login POSTs and for correct Origin checking on modern Django.
+  `["https://app.example.com"]` — an origin literal this setting requires, not
+  a hyperlink, and the one standing exemption from the rule that these files
+  carry no links. It's required to avoid 403s on cross-origin form/login POSTs
+  and for correct Origin checking on modern Django.
 - Under HTTPS, CSRF also checks the Referer is same-origin; a reverse proxy that
   strips Referer or rewrites Host can break this — fix the proxy, don't disable
   the check.
@@ -109,7 +111,9 @@ re-opens without a reason to.
 
 ## CORS
 
-Use `django-cors-headers` with an explicit allowlist:
+Use `django-cors-headers` with an explicit allowlist. The origin below is a
+required config value rather than a hyperlink, and carries the same exemption
+as the CSRF literal above:
 
 ```python
 CORS_ALLOWED_ORIGINS = ["https://app.example.com"]

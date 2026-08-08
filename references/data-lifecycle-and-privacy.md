@@ -9,6 +9,18 @@ nobody listed. Maps primarily to CWE-212, CWE-359, CWE-459, CWE-200, and
 CWE-532; relevant OWASP categories include A01:2025, A06:2025, and A09:2025,
 and API1:2023 and API3:2023.
 
+This file owns **the record over time** — deletion completeness, what a
+soft-delete flag fails to hide, retention and the schedule that has to be shown
+to have run, when anonymization is real, and every copy an erasure must reach.
+The boundary with its neighbours is existence rather than access:
+`authorization-architecture.md` owns who may read a denormalised copy while
+this file owns whether that copy still exists once the source row is gone, and
+`a09-logging-and-alerting.md` owns what must be recorded while this file owns
+the log and the history table as retained personal data. `file-uploads.md`
+owns storage and delivery of the files whose deletion belongs here, and
+`data-layer-and-database.md` owns backups, replicas, and the encryption
+substrate that crypto-shredding depends on.
+
 ## Contents
 - [Principle](#principle)
 - [Django & DRF implementation](#django--drf-implementation)

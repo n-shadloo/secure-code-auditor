@@ -8,6 +8,20 @@ authorization for private files. Maps primarily to CWE-434, CWE-22, CWE-79,
 CWE-400, CWE-409, CWE-284, and CWE-770; relevant OWASP categories include
 A01:2025, A02:2025, A05:2025, A06:2025, A08:2025, and API4:2023.
 
+This file owns **the file from the request to the reader**, including the
+architecture where the bytes never reach the application at all: what a
+delegated upload URL binds, the quarantine prefix an object waits in until the
+server has verified it against the store rather than against the uploader's
+claims, and the choice between proxying a private download and signing a URL
+for it. `a08-integrity-and-deserialization.md` owns the signature, timestamp,
+and replay rules a storage callback has to satisfy;
+`a01-broken-access-control.md` owns import-from-URL SSRF and the
+cache-mediated leak that a CDN cache key dropping its signing parameters is
+one case of; `a05-injection.md` owns the sink a storage key or a filename
+reaches; and `data-lifecycle-and-privacy.md` owns whether the bytes are gone,
+leaving this file only the fact that an already-issued signed URL is beyond
+the reach of any erasure.
+
 ## Contents
 - [Principle](#principle)
 - [Django & DRF implementation](#django--drf-implementation)

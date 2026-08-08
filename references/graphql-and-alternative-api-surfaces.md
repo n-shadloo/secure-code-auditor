@@ -14,6 +14,18 @@ The spine is unchanged. GraphQL is a transport and a query language, not a new
 vulnerability class: every finding here is an existing category expressed
 through a schema.
 
+This file owns **the surface where the client composes the request** —
+authorization at every resolved edge rather than at the route, document depth,
+alias, token, and cost limits, schema and type over-exposure, and the defaults
+of the non-DRF frameworks a DRF engineer will assume are present.
+`a01-broken-access-control.md` owns the access-control failure itself,
+`authorization-architecture.md` owns the field-level model,
+`api-drf-specific.md` owns the serializer and throttling patterns generalised
+here with the unit of measurement changed, `file-uploads.md` and
+`async-and-channels.md` own uploads and subscriptions, and
+`a03-software-supply-chain.md` owns the stale-library finding a
+graphene-django install raises on its own weight.
+
 ## Contents
 - [Principle](#principle)
 - [Django implementation: choosing a stack](#django-implementation-choosing-a-stack)

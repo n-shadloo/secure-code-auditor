@@ -6,6 +6,19 @@ hardening, the container image as a build artifact, static/media serving, the
 database connection, and caching/queue exposure. Nginx + Gunicorn + systemd,
 optionally containerised, optionally behind Cloudflare.
 
+This file and `a02-security-misconfiguration.md` split the configuration
+surface by where the setting lives rather than by topic. This file owns what
+the proxy, the process, and the image **do** with a request once it arrives:
+TLS termination and which layer owns each header, forwarded-header trust and
+the client IP that every rate limit and audit record depends on, operational
+endpoints left reachable in production, and the Gunicorn or systemd unit that
+runs the code. A02 owns what a settings module or a DNS zone declares. On the
+container this file stops at the artifact the repository produces — base
+image, `USER`, `.dockerignore`, and secrets baked into layers — with
+orchestrator enforcement named as a cross-team recommendation rather than a
+repository finding, and `service-identity-and-secrets.md` owning where a
+secret comes from at run time.
+
 ## Contents
 - [Principle](#principle)
 - [TLS and HSTS](#tls-and-hsts)
@@ -148,8 +161,9 @@ compute:
 - **Django owns anything that varies per request or per view.** A nonce-based
   CSP is the clear case — the nonce has to be minted for the response that
   carries it, and a proxy cannot mint one, so a CSP with `CSP.NONCE` must come
-  from Django (A02). Cookie flags, `X-Frame-Options` where it differs by view,
-  and `Referrer-Policy` belong here for the same reason.
+  from Django, where `a02-security-misconfiguration.md` owns the setting that
+  declares it. Cookie flags, `X-Frame-Options` where it differs by view, and
+  `Referrer-Policy` belong here for the same reason.
 - **The edge owns what is uniform across the site and what has to happen before
   Django sees the request.** Stripping and re-setting inbound `X-Forwarded-*` is
   the important one: it is the precondition for everything in the previous

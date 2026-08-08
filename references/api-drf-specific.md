@@ -162,6 +162,10 @@ class UserViewSet(viewsets.ModelViewSet):
 
 ```python
 # Correct: the action states its own requirement, base check restated
+class UserViewSet(viewsets.ModelViewSet):
+    queryset = User.objects.all()
+    permission_classes = [IsAuthenticated]
+
     @action(detail=True, methods=["post"],
             permission_classes=[IsAuthenticated, IsAdminUser])
     def promote_to_staff(self, request, pk=None):
@@ -361,6 +365,10 @@ a URLconf-enumerating audit test — see `authorization-architecture.md`.
   users. Login views should always apply CSRF.
 - Don't paper over CSRF errors with `@csrf_exempt` on cookie-authenticated,
   state-changing endpoints; confirm the auth model first.
+
+This section owns the DRF interaction only. The settings behind it —
+`CSRF_TRUSTED_ORIGINS`, the cookie matrix, and CORS — are declared in
+`a02-security-misconfiguration.md`.
 
 ## Throttling as quota, not security (API4)
 
