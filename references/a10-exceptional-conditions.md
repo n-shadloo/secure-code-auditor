@@ -196,14 +196,16 @@ Isolation level decides what the locked read sees. Django defaults to
 locked read re-reads the latest committed row once it acquires the lock, which
 is what makes the balance pattern above correct. Raising the isolation level is
 a data-layer decision with its own retry requirements, not something to change
-from a view (`data-layer-and-database.md`).
+from a view (`data-layer-and-database.md`, "Transaction isolation and
+serialization failures").
 
 `ATOMIC_REQUESTS` wraps every view in a transaction, which removes a whole
 class of "the check committed but the write did not" bugs. Understand the
 trade-off before enabling it: it holds a connection and an open transaction for
 the whole of every view, so exclude long-running, streaming, and
 external-call views (`data-layer-and-database.md`, "Connection exhaustion and
-query timeouts").
+query timeouts"). It also has no retry of its own, so it does not combine with
+a raised isolation level without one.
 
 #### Push the invariant into a constraint
 
@@ -515,12 +517,10 @@ whose presence in this table is itself a disclosure.
 Maps to CWE-1333 (inefficient regular expression complexity), with CWE-400 and
 CWE-770 where the resource is simply unbounded. OWASP API4:2023 Unrestricted
 Resource Consumption is the API-security mapping; the Top 10:2025 has no
-denial-of-service category, so the resource controls live with the surfaces
-that own them — `file-uploads.md` for upload size and count,
-`async-and-channels.md` for long-lived connections, `a06-insecure-design.md`
-for body and field caps, `api-drf-specific.md` for pagination, and
-`graphql-and-alternative-api-surfaces.md` for document cost. This section owns
-the regular expression itself.
+denial-of-service category, so the general class — which caller-controlled
+inputs need a bound, and the table of which surface enforces each one — is
+owned by `a06-insecure-design.md`, "Algorithmic resource exhaustion". This
+section owns the regular expression itself.
 
 A backtracking engine can take time exponential in the length of its input on a
 pattern with nested or overlapping quantifiers, so one request costs a CPU core

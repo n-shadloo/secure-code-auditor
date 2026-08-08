@@ -354,6 +354,19 @@ Review notes:
 - Severity: High, and Critical where the spoofed identity is a privileged
   service principal.
 
+The same termination is worth requiring in front of a webhook receiver, which
+is otherwise an unauthenticated public route by construction. A client
+certificate demanded at the proxy narrows who can even open the connection
+from the whole internet to the holders of a certificate you issued, so a
+forged-signature attempt has to get past the transport before it reaches the
+comparison. It is defence in depth and not a replacement: the certificate
+authenticates a connection while the HMAC authenticates a message, an
+intermediary that terminates TLS is trusted by the first and not by the
+second, and most third-party providers cannot present a certificate at all.
+Require it where the sender is first-party or the provider supports it, and
+keep every step of the receiver in `a08-integrity-and-deserialization.md`
+unchanged either way.
+
 ## "Internal" is not an authentication mechanism
 
 **Principle: remove the network assumption and ask what is left.** For each

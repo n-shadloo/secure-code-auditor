@@ -37,6 +37,11 @@ without alerting is a diary; alerting without redaction is a leak.
   secondary-breach vector (CWE-532).
 - Be careful with request/response logging middleware and third-party log
   shippers — they capture headers and bodies by default; filter them.
+- A secret already written to a log store is an incident rather than a cleanup
+  task, and the order matters: rotate first, scrub last. The full ordered
+  response is in `service-identity-and-secrets.md`, "Responding to a leaked
+  secret"; purging the log lines while the credential still works is the
+  common and costly inversion.
 
 ## Scrub error reports
 

@@ -14,9 +14,10 @@ A04:2025, A05:2025, and A06:2025, and API1:2023.
 This file owns **the database as a boundary of its own** — privilege
 separation between the migration role and the runtime role, row-level
 security, the tenant context that has to survive a pooled connection, verified
-transport, the encrypted column and the blind index over it, and the copies of
-production data that are allowed to travel. It defers for the rules those
-mechanisms carry out: `a05-injection.md` owns injection mechanics including
+transport, the encrypted column and the blind index over it, the isolation
+level the connection runs at, and the copies of production data that are
+allowed to travel. It defers for the rules those mechanisms carry out:
+`a05-injection.md` owns injection mechanics including
 the raw paths enumerated here, `a04-cryptographic-failures.md` owns the
 cryptographic principle and the key lifecycle,
 `authorization-architecture.md` owns the tenant model this isolation enforces,
@@ -34,6 +35,7 @@ delivery around all of it.
 - [Raw SQL as an isolation bypass](#raw-sql-as-an-isolation-bypass)
 - [NoSQL and key-value injection](#nosql-and-key-value-injection)
 - [Read replicas and stale authorization](#read-replicas-and-stale-authorization)
+- [Transaction isolation and serialization failures](#transaction-isolation-and-serialization-failures)
 - [Connection exhaustion and query timeouts](#connection-exhaustion-and-query-timeouts)
 - [Copies of production data](#copies-of-production-data)
 - [Review checklist](#review-checklist)
@@ -445,6 +447,139 @@ state; the general treatment is in `authorization-architecture.md`, "Search
 indexes and denormalised copies". Severity is typically High, because the
 observable effect is access continuing after revocation.
 
+## Transaction isolation and serialization failures
+
+**Principle: raising the isolation level moves an invariant out of application
+code and into the database's concurrency control, and it is only a control if
+the application retries what the database aborts to hold it.**
+
+Django runs on `READ COMMITTED`. That is PostgreSQL's own default and, on
+MySQL, a deliberate override of the server's `REPEATABLE READ` — Django's
+databases reference gives the reason, which is that `get_or_create()`'s
+`IntegrityError` retry can fail to see the row that just committed under the
+server default. Under `READ COMMITTED` every statement sees the latest
+committed data, which is also what makes a `select_for_update()` re-read
+correct in `a10-exceptional-conditions.md`, "Races, TOCTOU, and adversarial
+sequencing".
+
+`SERIALIZABLE`, and PostgreSQL's `REPEATABLE READ` snapshot isolation
+underneath it, buy the invariants a row lock cannot express: an aggregate over
+many rows, or a predicate over rows that do not exist yet and so cannot be
+locked. They buy them by aborting transactions rather than by blocking them.
+PostgreSQL raises a serialization failure — SQLSTATE `40001` — at commit on
+any transaction whose outcome no serial ordering could have produced. So a
+raised isolation level with no retry loop is not a stronger guarantee. It is
+the same guarantee plus a new class of runtime error, and it surfaces as a
+500 under exactly the concurrency it was introduced to survive.
+
+### Configuring it
+
+Isolation is a property of the connection, so it is set in `DATABASES` and not
+chosen by a view:
+
+```python
+from django.db.backends.postgresql.psycopg_any import IsolationLevel
+
+DATABASES = {
+    "default": {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": "app",
+    },
+    # A second alias onto the same database, so the raised level applies to
+    # the flows that need it instead of to every query the project runs.
+    "serializable": {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": "app",
+        "OPTIONS": {"isolation_level": IsolationLevel.SERIALIZABLE},
+    },
+}
+```
+
+On MySQL and MariaDB the same `OPTIONS` key takes a string — `"read
+committed"`, `"repeatable read"`, `"serializable"` — and `None` means "use
+whatever the server is configured for", which makes the effective level
+invisible to the repository. Prefer naming it.
+
+Django has no per-transaction isolation, which is why the second alias is the
+usual shape: `transaction.atomic(using="serializable")` and `.using(...)` on
+the queryset put one flow at the higher level while the rest of the
+application stays on `READ COMMITTED`. Two aliases onto one database are two
+connections and count twice against the pool sizing below.
+
+### The retry loop is not optional
+
+```python
+# Correct: the whole transaction re-runs, because a serialization failure
+# invalidates everything the aborted attempt read as well as everything it
+# wrote. The retry is outside atomic(), since a transaction that has raised
+# cannot be used further.
+import time
+
+from django.db import DatabaseError, transaction
+
+RETRYABLE_SQLSTATES = {"40001", "40P01"}  # serialization failure, deadlock
+MAX_ATTEMPTS = 5
+
+
+def is_retryable(exc):
+    return getattr(exc.__cause__, "sqlstate", None) in RETRYABLE_SQLSTATES
+
+
+def rebalance(*, account_id):
+    for attempt in range(MAX_ATTEMPTS):
+        try:
+            with transaction.atomic(using="serializable"):
+                return post_entries(account_id=account_id)
+        except DatabaseError as exc:
+            if not is_retryable(exc) or attempt == MAX_ATTEMPTS - 1:
+                raise
+            time.sleep(0.05 * 2**attempt)
+```
+
+- **Retry from the top, reads included.** Re-running only the write re-applies
+  a decision computed from a snapshot the database has just rejected, which is
+  the original defect wearing a retry loop.
+- **Catch outside the `atomic()` block.** Handling the error inside it leaves
+  the transaction marked for rollback, and every subsequent query raises
+  `TransactionManagementError`.
+- **Everything the block does must be safe to run more than once.** External
+  calls, mail, and task dispatch belong in `transaction.on_commit()`;
+  `a10-exceptional-conditions.md` owns that ordering and the idempotency it
+  implies.
+- **Bound the attempts and back off.** An uncapped retry loop under contention
+  is a caller-triggered load multiplier of its own
+  (`a06-insecure-design.md`, "Algorithmic resource exhaustion").
+- **Deadlocks retry on the same path** and occur at every isolation level, so
+  the loop is worth having wherever lock ordering is not provably consistent.
+
+### The judgment: constraints before isolation
+
+For most invariants a raised isolation level is an expensive answer to a
+question `READ COMMITTED` plus a constraint has already settled. Uniqueness,
+value bounds, and non-overlap are properties of the data, so a
+`UniqueConstraint`, a `CheckConstraint`, or an `ExclusionConstraint` enforces
+them on every path — admin, shell, migration, raw SQL — at no concurrency
+cost, and fails deterministically with an `IntegrityError` rather than
+load-dependently at commit. That is the ordering
+`a10-exceptional-conditions.md` already applies between a constraint and a row
+lock, extended by one step: constraint, then lock, then isolation.
+
+`SERIALIZABLE` earns its place where the invariant belongs to a set rather
+than to a row — a balance that must hold across many entries, a scheduling
+rule over rows not yet inserted, a report that has to be internally consistent
+— and where the retry loop will genuinely be written on every path that writes
+through that alias. Raising the level globally to fix one flow imposes aborts
+on every other flow, and a project that has raised it has also changed what
+`get_or_create()` guarantees underneath it.
+
+**Write-time.** When generating code that runs under a raised isolation level,
+write the bounded retry loop around the `atomic()` block in the same change,
+because a serialization failure is an ordinary outcome of `SERIALIZABLE`
+rather than an exceptional one, and code that ships without the loop turns a
+routine abort into a 500 the first time two callers overlap. Where the
+invariant is uniqueness, a value bound, or non-overlap, generate the database
+constraint instead and leave the connection on `READ COMMITTED`.
+
 ## Connection exhaustion and query timeouts
 
 **Principle: connections are a bounded, exhaustible resource. Cap concurrency
@@ -552,6 +687,9 @@ destruction that covers stores which cannot delete in place — is in
 - [ ] Query input is validated for shape as well as value, so a client cannot
       substitute an operator object for a scalar.
 - [ ] Authorization state is never read from an eventually consistent copy.
+- [ ] Any isolation level above the backend default is paired with a bounded
+      retry of the whole transaction, and was chosen only after a database
+      constraint was ruled out.
 - [ ] Connection concurrency is capped by a pool, and every query is
       time-bounded server-side.
 - [ ] No raw production data in lower environments; export and report features
@@ -576,6 +714,10 @@ destruction that covers stores which cannot delete in place — is in
       server-side JavaScript and `$where` are not reachable from input.
 - [ ] A database router pins authorization, session, and token reads to the
       primary.
+- [ ] `OPTIONS["isolation_level"]` is named rather than left to the server,
+      a raised level is scoped to its own alias rather than applied globally,
+      and side effects inside a retried `atomic()` block are deferred to
+      `transaction.on_commit()`.
 - [ ] `OPTIONS` sets a pool `max_size` and a `statement_timeout`;
       `CONN_MAX_AGE = 0` accompanies pooling; `ATOMIC_REQUESTS` excludes
       long-running and streaming views.

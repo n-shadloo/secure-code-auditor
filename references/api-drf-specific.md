@@ -316,6 +316,11 @@ class PatientViewSet(viewsets.ModelViewSet):
   total, at the cost of ordering on a stable field and no random access.
 - Ids in a paginated response are still a disclosure: a listing that includes
   identifiers of records the caller cannot open tells them those records exist.
+- A page size the client raises without a ceiling, and the `count()` scan a
+  paginator issues per request, are the cost half of the same controls. The
+  design rule behind them and the surfaces it spans are in
+  `a06-insecure-design.md`, "Algorithmic resource exhaustion"; the DRF
+  attributes that enforce it are `max_page_size` and `PAGE_SIZE`.
 
 OWASP API1:2023 and API3:2023, A01:2025. Severity: medium to high depending on
 what the ordering or count discloses.

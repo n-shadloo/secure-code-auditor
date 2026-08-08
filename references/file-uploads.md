@@ -555,6 +555,11 @@ principals need different policies. Use `upload.size` only as an early signal;
 enforce a counted byte limit while streaming when the storage or transport does
 not guarantee it.
 
+Size, count, and expansion ratio are this file's instances of a rule that runs
+across every surface — every caller-controlled value that multiplies work
+carries a server-enforced ceiling. The design rule and the table of surfaces
+are in `a06-insecure-design.md`, "Algorithmic resource exhaustion".
+
 ## Private downloads
 
 Resolve the file through a requester-scoped queryset before opening storage:

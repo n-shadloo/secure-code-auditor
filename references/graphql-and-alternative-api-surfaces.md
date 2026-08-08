@@ -298,7 +298,11 @@ not enough.
 
 The database-side backstop — statement timeouts and pool limits, so an
 expensive document cannot hold connections indefinitely — is in
-`data-layer-and-database.md`, "Connection exhaustion and query timeouts".
+`data-layer-and-database.md`, "Connection exhaustion and query timeouts". The
+four limits here are this surface's instance of a rule that spans all of them:
+every caller-controlled value that multiplies work carries a server-enforced
+ceiling, stated in `a06-insecure-design.md`, "Algorithmic resource
+exhaustion".
 
 ## Introspection, field suggestions, and error masking
 
@@ -438,9 +442,10 @@ needs the whole of `file-uploads.md`, "Type and content validation", applied
 to it.
 
 **Subscriptions** run over a WebSocket and are owned by
-`async-and-channels.md`: origin checks, per-connection authentication, per-
-message authorization, and backpressure apply to a subscription exactly as to
-any other socket.
+`async-and-channels.md`, "Subscriptions as long-lived queries", which maps
+origin checks, per-connection authentication, per-message authorization,
+revocation, and limits onto the subscribe and publish paths. This file keeps
+the schema, the resolver, and the document limits.
 
 ## Django Ninja: nothing is authenticated by default
 

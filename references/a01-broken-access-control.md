@@ -326,9 +326,53 @@ write the host and scheme allowlist, the post-resolution address check, the
 bounded or disabled redirects, and the timeout as part of the call rather than
 around it afterwards, because a fetch helper that works is a fetch helper that
 gets reused and the second caller inherits whatever the first one settled for.
-Where the destination does not genuinely need to be dynamic, take it from
-configuration instead and the class of bug disappears rather than being
-defended against.
+Write the allowlist as the set of destinations the feature actually needs
+rather than as a list of ranges to refuse, because the refusal list is the one
+that has to be complete and it never is. Where the destination does not
+genuinely need to be dynamic, take it from configuration instead and the class
+of bug disappears rather than being defended against.
+
+### Egress control
+
+The controls above stop one call from reaching somewhere it should not. Egress
+control asks the next question: once a process is compromised — through
+deserialization, a dependency, a template sink, or a prompt-injected agent —
+what can it still reach? A service that may open a connection to any host on
+the internet turns every foothold into an exfiltration channel and a
+command-and-control path, whatever the fetch helper does.
+
+**Allowlist by destination; do not enumerate what to refuse.** A denylist of
+private ranges is a list that must be complete, and it is defeated by a DNS
+name that resolves into the range after the check, a redirect to it, an
+IPv6-mapped or alternative-notation form of the address, and by every internal
+service and cloud metadata endpoint added after the list was written. An
+allowlist of the few hosts a feature legitimately calls fails closed against
+all of them at once, and it is short enough to review.
+
+**Default to deny for the processes with the narrowest needs.** A webhook
+delivery worker, a link-preview or import-from-URL worker, a media fetcher,
+and an agent tool runner each talk to a small, enumerable set of destinations
+that is known before the code ships. Those are the processes where
+deny-by-default egress costs least and buys most, and they are also the ones
+most exposed, because their whole job is to fetch what someone else named.
+
+**The platform and the application enforce different halves and neither
+substitutes for the other.** The platform — an egress gateway, a network
+policy, a forward proxy the process must use — is the half that survives code
+that never went through the fetch helper: a library's own HTTP client, a
+subprocess, a debug shell. The application-side check is the half that sees
+what the platform cannot: which user asked, which redirect the response
+carried, and whether the resolved address changed between the check and the
+connection. Report the platform half as a cross-team recommendation and the
+application half as a repository finding, in the same split
+`deployment-and-runtime.md` uses for orchestrator enforcement.
+
+An outbound webhook sender is the worked example, and its delivery-side
+controls — registered destinations re-validated at send time, bounded
+redirects, capped retries — are in `a08-integrity-and-deserialization.md`,
+"Sending webhooks of your own". An agent's tool egress is in
+`agent-and-llm-interfaces.md`, "Retrieved content and indirect prompt
+injection", which reaches the same conclusion from the exfiltration side.
 
 ## Open redirect
 
@@ -376,4 +420,8 @@ break-glass elevation are in `privileged-access-and-impersonation.md`.
 - [ ] Every server-side URL fetch is allowlisted and blocks internal ranges;
       the cloud metadata endpoint is both denied in the application and
       hardened at the instance.
+- [ ] Processes whose destinations are enumerable — webhook senders, fetch and
+      preview workers, agent tool runners — are denied egress by default at
+      the platform, with the application-side allowlist kept as the half that
+      sees the redirect and the caller.
 - [ ] Redirect targets validated with `url_has_allowed_host_and_scheme`.

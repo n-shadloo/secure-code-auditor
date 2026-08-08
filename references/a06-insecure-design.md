@@ -6,17 +6,19 @@ defaults. Overlaps OWASP API4:2023 (Unrestricted Resource Consumption) and
 API6:2023 (Unrestricted Access to Sensitive Business Flows).
 
 This file owns **which flows need a limit, and why** — the catalogue of what is
-worth attacking when nothing caps it. It does not own the mechanism that
-enforces one: `api-drf-specific.md` owns DRF throttling and the reasons a
-configured rate is not the effective one, `a07-authentication-failures.md` owns
-login lockout, `agent-and-llm-interfaces.md` owns per-agent cost and
-concurrency limits, and `a10-exceptional-conditions.md` owns the race and
-idempotency mechanics that decide whether a limit holds under concurrent
-requests.
+worth attacking when nothing caps it, and the design rule that every input
+which multiplies work carries a server-enforced bound. It does not own the
+mechanism that enforces one: `api-drf-specific.md` owns DRF throttling and the
+reasons a configured rate is not the effective one,
+`a07-authentication-failures.md` owns login lockout,
+`agent-and-llm-interfaces.md` owns per-agent cost and concurrency limits, and
+`a10-exceptional-conditions.md` owns the race and idempotency mechanics that
+decide whether a limit holds under concurrent requests.
 
 ## Contents
 - [Principle](#principle)
 - [Rate limiting and anti-automation](#rate-limiting-and-anti-automation)
+- [Algorithmic resource exhaustion](#algorithmic-resource-exhaustion)
 - [Business-logic abuse](#business-logic-abuse)
 - [Email and notification abuse](#email-and-notification-abuse)
 - [Secure defaults and limits](#secure-defaults-and-limits)
@@ -62,6 +64,105 @@ money, tokens, or heavy database work per call, cap the resource itself and the
 concurrency, per principal identity, in addition to the request rate. See
 `agent-and-llm-interfaces.md`, "Cost and concurrency limits, not only request
 rate".
+
+## Algorithmic resource exhaustion
+
+Maps to CWE-400 (Uncontrolled Resource Consumption) and CWE-770 (Allocation of
+Resources Without Limits), with CWE-674 (Uncontrolled Recursion) wherever the
+input nests. OWASP API4:2023 Unrestricted Resource Consumption is the
+API-security mapping. The Top 10:2025 has no denial-of-service category, so
+this file owns the design question — which inputs need a bound — while each
+file named in the table below owns the mechanics of enforcing one.
+
+A rate limit counts requests. This is about the cost of a single one. Where
+the work a request performs grows with a number the caller chose, the request
+rate never sees it: `?page_size=100000` on a list endpoint, a serializer that
+queries once per row over a queryset with no ceiling, a selection set whose
+depth the client picks, a `count()` over a client-filtered table on every page
+of a scan, an archive that expands to a thousand times its compressed size.
+Each is a valid request costing the server orders of magnitude more than the
+attacker spent making it, and that asymmetry is the vulnerability. It is also
+why the defect survives review: nothing looks wrong at the size the developer
+tested with.
+
+**The design rule is that every unbounded input to an algorithm gets a bound
+the server enforces.** Not a bound the client is asked to respect, not a
+default the client may override upward, and not one that holds only on the
+path that was benchmarked. Three questions settle whether a flow has one:
+
+- What does the caller control that multiplies work — a count, a depth, a page
+  size, a date range, a compression ratio, a number of nested items?
+- What is the ceiling, and which layer enforces it: the edge, the framework,
+  the application, or nothing?
+- What happens at the ceiling — a rejection, a truncation the caller is told
+  about, or an out-of-memory kill that takes the worker's other requests with
+  it?
+
+### Django & DRF
+
+- **A page-size query parameter without `max_page_size` removes the ceiling
+  rather than adding one.** `PageNumberPagination` ships with
+  `page_size_query_param = None`, so the client cannot change the page size at
+  all; setting it hands the client control bounded only by `max_page_size`,
+  which is also `None` and therefore no bound. Set the two together or neither.
+  `LimitOffsetPagination` is the sharper default because it accepts a client
+  `limit` out of the box with `max_limit = None` behind it.
+- **No `PAGE_SIZE` means no pagination at all.** `DEFAULT_PAGINATION_CLASS`
+  is `None` out of the box, and a list view without a paginator returns every
+  row the queryset matched. The failure is an absence, so it is invisible in a
+  diff and shows up only under production data volumes.
+- **Serialization cost is per row and it compounds.** A
+  `SerializerMethodField` that runs a query, or a nested serializer over a
+  reverse relation, multiplies by the page size, and a page size the client
+  raised multiplies it again. `depth` on a `ModelSerializer` walks relations
+  automatically to the depth given, which is the form of this that no one
+  reads back off the class body.
+- **A large read is streamed and value-scoped rather than materialized.**
+  `.iterator()` keeps the whole result set out of the queryset cache, `.only()`
+  and `.values()` cut the per-row payload, and a server-side statement timeout
+  bounds what either can cost when the estimate is wrong
+  (`data-layer-and-database.md`, "Connection exhaustion and query timeouts").
+- **`count()` is a scan the caller triggers.** `PageNumberPagination` and
+  `LimitOffsetPagination` issue one per request over whatever the filters
+  produced, so on a large table under a client-controlled filter it is an
+  expensive query available on demand. `CursorPagination` issues none, which
+  is a resource argument for it independent of the disclosure argument in
+  `api-drf-specific.md`, "Pagination and filter leakage".
+- **Recursion depth is an input like any other.** Parsed structures nest —
+  request bodies, selection sets, XML entities, archive members, and any
+  self-referential model walked in Python. Bound the depth at the parser or
+  the validator, before the recursion runs; catching `RecursionError`
+  afterwards has already paid the cost and leaves the interpreter in a state
+  no security decision should be made from.
+
+Each surface enforces its own version of the bound, and the mechanics are not
+restated here:
+
+| Surface | The bound that applies | Owner |
+|---|---|---|
+| Request body, field count, file count | Edge body cap plus the Django `DATA_UPLOAD_*` thresholds | This file, "Secure defaults and limits" |
+| Uploaded files and their expansion | Per-file and aggregate size, count, quota, and decompression ratio | `file-uploads.md`, "Size, count, and quota limits" |
+| List responses | An enforced `PAGE_SIZE`, `max_page_size`, and filter and ordering allowlists | `api-drf-specific.md`, "Pagination and filter leakage" |
+| Client-composed documents | Depth, alias, token, and cost limits applied before execution, and batch size | `graphql-and-alternative-api-surfaces.md`, "Bounding the document: depth, aliases, tokens, and cost" |
+| Long-lived connections | Message size and rate, queued work, fan-out, idle and absolute lifetime | `async-and-channels.md`, "Long-lived consumers and resource limits" |
+| Database connections and query time | Pool `max_size` and a server-side statement timeout | `data-layer-and-database.md`, "Connection exhaustion and query timeouts" |
+| A pattern run over input | An input length cap before the regex, and no pattern compiled from input | `a10-exceptional-conditions.md`, "Regular expressions and algorithmic cost" |
+| Model tokens and tool calls | Per-agent cost and concurrency budgets | `agent-and-llm-interfaces.md`, "Cost and concurrency limits, not only request rate" |
+
+Severity is rated on what one request costs and how repeatable it is, not on
+the word "denial of service": a single call that pins a worker for minutes or
+exhausts the connection pool is High, while a bound that is merely generous is
+a hardening finding.
+
+**Write-time.** When generating an endpoint, a serializer, or a parser whose
+work scales with something in the request, write the ceiling into the same
+declaration — `max_page_size` beside `page_size_query_param`, a depth or count
+limit beside the field that accepts the nested input, `.iterator()` and an
+explicit field list on the read that is expected to grow — because the value
+that makes the bound obviously necessary only exists in production, and by
+then the endpoint has callers relying on its absence. Where the caller does
+not need to choose the size at all, do not expose the parameter, since a
+bound that is never reachable cannot be tuned wrong.
 
 ## Business-logic abuse
 
@@ -262,6 +363,10 @@ throttle class; the distinction and the mechanics behind it are in
       not just DRF throttles.
 - [ ] Expensive flows cap cost and concurrency per principal identity, not only
       requests per minute, and do not key the limit on IP for machine callers.
+- [ ] Every caller-controlled value that multiplies work — page size, depth,
+      nesting, date range, batch or expansion factor — has a ceiling the
+      server enforces, and the ceiling is reached by a rejection rather than
+      by an out-of-memory kill.
 - [ ] Money/quantity/discount resolved server-side; idempotency enforced, with
       a unique constraint actually behind the key rather than a Python check.
 - [ ] Replayable/self-referable business flows are constrained.

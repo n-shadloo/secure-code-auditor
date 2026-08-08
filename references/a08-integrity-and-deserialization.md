@@ -212,7 +212,10 @@ finding here is always a later widening and an explicit `["json"]` is the line
 a reviewer can watch being changed. When generating a task, validate its
 arguments inside the task body and pass identifiers rather than objects,
 secrets, or an already-authorized token, because whatever can reach the broker
-can call that task with arguments of its own choosing.
+can call that task with arguments of its own choosing. Where a sensitive value
+genuinely has to travel in the message, encrypt it in the producer and decrypt
+it in the task rather than relying on the signed serializer, which
+authenticates the message without concealing it.
 
 - **The result backend is a second exposure with the same reach.** Results are
   written to the broker or an equivalent store and are readable and writable by
@@ -224,6 +227,20 @@ can call that task with arguments of its own choosing.
   authenticates the producer. Its own documentation is explicit that it does not
   encrypt the contents, so it addresses forgery and not disclosure; a broker
   that can read the payload still reads it.
+- **Confidentiality is therefore a separate decision, and Celery ships no
+  option that makes it.** A message sits on the broker in the clear for as long
+  as it is queued and the result sits in the backend for as long as it is
+  retained, so anything sensitive in either is readable by whatever reaches
+  that store — its operator, its snapshots, and its own logs included. Two
+  answers exist and they defend against different things. TLS to the broker
+  and the result backend plus at-rest encryption of their storage covers the
+  network and the disk, and is the right default; it does not cover the broker
+  itself. Where the broker is outside the trust boundary — a managed service, a
+  shared cluster — encrypt the sensitive argument in the producer and decrypt
+  it in the task, so the message carries ciphertext, with the key handled per
+  `a04-cryptographic-failures.md`, "Key lifecycle and envelope encryption".
+  Neither is needed for an argument that is only an identifier the task
+  resolves for itself, which is why that remains the default.
 - Broker authentication, network placement, and the standing severity of a
   reachable unauthenticated Redis are in `deployment-and-runtime.md`, "Queue and
   broker exposure". A worker's own database and network privileges are part of
@@ -379,7 +396,11 @@ def stripe_webhook(request):
 
 `csrf_exempt` belongs on this route and nowhere else, and it is only safe
 because the MAC replaces what CSRF was protecting. A CSRF-exempt webhook route
-with no signature check is an unauthenticated write endpoint.
+with no signature check is an unauthenticated write endpoint. Where the sender
+is first-party or the provider supports client certificates, requiring mutual
+TLS at the proxy narrows who can reach this route at all without changing any
+step above it (`service-identity-and-secrets.md`, "Client-certificate identity
+behind a proxy").
 
 In DRF the same ordering has to be won against the parsers rather than assumed;
 that mechanic, and the DRF-shaped correct form, are in `api-drf-specific.md`,
@@ -526,6 +547,10 @@ platform recommendations, not as repository findings.
 - [ ] Task-queue messages are treated as unauthenticated input: arguments are
       validated inside the task, and no secret or capability token is passed as
       an argument.
+- [ ] A signed task serializer is credited with integrity only; anything
+      sensitive that has to travel in a message or a result is protected by
+      transport and at-rest encryption, or encrypted at the application layer
+      where the broker is outside the trust boundary.
 - [ ] Webhook receivers verify a MAC over the exact received bytes with a
       per-endpoint secret, using a constant-time comparison and the provider's
       own encoding.

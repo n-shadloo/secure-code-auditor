@@ -25,6 +25,7 @@ surface, `a10-exceptional-conditions.md` owns the race mechanics, and
 - [WebSocket authentication and origin validation](#websocket-authentication-and-origin-validation)
 - [Per-connection authorization](#per-connection-authorization)
 - [Long-lived consumers and resource limits](#long-lived-consumers-and-resource-limits)
+- [Subscriptions as long-lived queries](#subscriptions-as-long-lived-queries)
 - [Review checklist](#review-checklist)
 
 ## Principle
@@ -282,6 +283,57 @@ Use bounded queues and reject or shed load when full. Do not create one
 untracked task per message or allow a slow client to retain unbounded outbound
 data.
 
+Those caps are this file's instance of a general rule — every caller-controlled
+value that multiplies work carries a server-enforced ceiling — stated with the
+table of surfaces it spans in `a06-insecure-design.md`, "Algorithmic resource
+exhaustion".
+
+## Subscriptions as long-lived queries
+
+A subscription is a query the client registers once and the server answers
+many times, so every rule above applies to it without amendment. The mapping
+is worth stating because the code doing the subscribing is usually a GraphQL
+or messaging library rather than a consumer someone wrote, and that library's
+documentation covers its protocol rather than this boundary.
+`graphql-and-alternative-api-surfaces.md` owns the schema, the resolver, and
+the document limits; the socket underneath belongs here.
+
+- **Origin.** The handshake is a cross-origin request that no CSRF token
+  covers, and the browser sends cookies with it. A subscription route takes
+  the same origin allowlist as any other socket route.
+- **Connection authentication.** Subscription protocols typically carry
+  credentials in an initialization message sent after the socket opens.
+  Validate it before acknowledging the connection and close on failure, rather
+  than acknowledging first and checking when the first operation arrives; the
+  ticket rule above applies, so no long-lived token in the query string.
+- **Authorize the subscribe, not only the connect.** The operation names a
+  root field and its arguments — a channel, a document, a tenant — and that is
+  an object-level decision made at registration. An authenticated connection
+  is not a subscription to anything in particular.
+- **Authorize every published event.** The grant that existed at registration
+  may be gone by the time event N is produced, and a stream is precisely the
+  shape a revocation lands in the middle of. Re-check current state before each
+  publish and build the payload for the receiving principal, rather than
+  broadcasting one payload to a group: a group name is routing metadata, not
+  an authorization boundary.
+- **Revocation ends the subscription.** Logout, deactivation, tenant removal,
+  a permission change, and an application-defined maximum lifetime each close
+  the socket rather than merely withholding the next event.
+- **Limits are per subscription, not per connection.** One socket can hold
+  many subscriptions, and one write can fan out to every subscriber of a
+  channel, so cap subscriptions per connection and per principal, event rate
+  and payload size per subscription, and total fan-out per publish. Unsubscribe
+  and cancel the backing tasks on disconnect, or a client that reconnects in a
+  loop leaves server-side state behind that nothing is reading.
+
+**Write-time.** When generating a subscription, put the object-level check on
+the subscribe path, where the root field's arguments are first known, and
+repeat it on the publish path before each event, because the two run at
+different moments under different grants and only the first one is visible in
+the schema. Register the unsubscribe and the task cancellation in the same
+edit that registers the subscription, since a stream that outlives its client
+is both a disclosure path and a fan-out cost no limit is counting.
+
 ## Review checklist
 
 ### Stack-neutral
@@ -296,6 +348,9 @@ data.
       message, fan-out, idle, and lifetime limits are designed and tested.
 - [ ] Connection tokens are short-lived and purpose-bound and do not leak in
       URLs or logs.
+- [ ] A subscription is authorized when it is registered and again before each
+      published event, is closed by revocation, and is counted against
+      per-principal subscription, fan-out, and lifetime limits.
 
 ### Django, DRF & Channels
 
