@@ -84,7 +84,10 @@ attacker can forge).
   is actually held to that standard, concrete fix). Read-only by default.
 - Write-time: apply the standing secure-default contract while generating code,
   apply the secure default where it conflicts with the request and say so, and
-  close with a short security-decisions note rather than a findings report.
+  close with a short security-decisions note rather than a findings report. The
+  rule for each generation moment sits beside the control it completes, in the
+  reference the router already sends you to, so opening a file for the concern
+  loads the rule for writing it.
 Mode selection, both output formats, the severity rubric including how a race
 and a surviving-personal-data failure are rated, the ASVS 5.0 chapter mapping
 with the chapters this skill treats as non-goals, the conflict rule, and the

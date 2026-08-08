@@ -21,7 +21,7 @@ license: MIT
 allowed-tools: Read, Grep, Glob, Bash
 metadata:
   author: n-shadloo
-  version: 1.20.0
+  version: 1.21.0
 ---
 
 # secure-code-auditor
@@ -49,6 +49,14 @@ The same split names the two halves of a sub-topic checklist,
 `#### Stack-neutral` and `#### Django & DRF`. A file's final
 `## Review checklist` may stay unsplit; about half of them do, and neither form
 is a defect.
+
+Every control is stated in both grammars — a review form saying what to flag,
+and a write-time form saying what to write — and the second is a paragraph
+opening `**Write-time.**` directly under the control it completes, never
+collected into a list of its own. All twenty-one references that own a control
+carry at least one. The two that do not are the methodology file, which indexes
+them by generation moment, and the library index, which owns package
+dispositions rather than controls.
 
 Load only the file(s) relevant to the concern in front of you. The tables below
 group on that spine, so the choice is two steps rather than one: pick the group,

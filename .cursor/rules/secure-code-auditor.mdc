@@ -14,9 +14,11 @@ Review-time produces prioritized findings (severity,
 location, CWE + OWASP mapping, an optional ASVS 5.0 chapter where the project
 is held to that standard, fix); write-time applies the secure-default
 contract and closes with a short security-decisions note rather than a findings
-report. The methodology, both output formats, the severity rubric including how
-a race and a surviving-personal-data failure are rated, the ASVS chapter mapping
-and its declared non-goals, and the rule for a secure default
+report. Each write-time rule sits beside the control it completes in the
+reference file, so the file you opened for the concern already carries the rule
+for writing it. The methodology, both output formats, the severity rubric
+including how a race and a surviving-personal-data failure are rated, the ASVS
+chapter mapping and its declared non-goals, and the rule for a secure default
 that conflicts with the request are in
 `references/00-methodology-and-severity.md`.
 

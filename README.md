@@ -34,6 +34,14 @@ rather than keeping its own copy of the rules. Each reference file restates its
 own half of that boundary in its opening paragraph, so an agent that opened the
 wrong file first is told where to go.
 
+Every control is written twice, in two grammars: a review form that says what
+to flag in code that exists, and a write-time form that says what to write
+before it does. Agreeing that views should be authorized and emitting a viewset
+with no permission class are different operations, so the second form is not
+left to follow from the first. It sits directly under the control it completes,
+in the same file, which means opening a reference for a concern also loads the
+rule for generating that code.
+
 ## What it covers
 
 - Access control: object- and function-level authorization, IDOR/BOLA,

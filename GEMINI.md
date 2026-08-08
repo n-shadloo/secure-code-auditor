@@ -67,5 +67,7 @@ and how it rates a race and a surviving-personal-data failure, the findings
 format, the ASVS 5.0 chapter mapping and the chapters declared out of scope,
 the write-time secure-default contract with the security-decisions note it
 returns in place of a report, and the rule for a default that conflicts with
-the request are in `references/00-methodology-and-severity.md`. The version is
-recorded in `SKILL.md` frontmatter (`metadata.version`).
+the request are in `references/00-methodology-and-severity.md`. That file also
+indexes which reference carries the write-time rule for each generation moment;
+every rule itself lives beside the control it completes rather than in a list.
+The version is recorded in `SKILL.md` frontmatter (`metadata.version`).
