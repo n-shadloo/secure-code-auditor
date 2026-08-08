@@ -48,7 +48,7 @@ Package choices do not replace layered design. `django-axes==8.3.1` passes the
 maintained-package gate for login-attempt monitoring and lockout on Django 6.0,
 provided proxy trust and client-IP extraction are correct; use account plus
 network/device signals and avoid attacker-triggered permanent denial of service.
-`django-ratelimit==4.1.0` and `django-defender==0.9.8` do not pass the 17 Jul 2026
+`django-ratelimit==4.1.0` and `django-defender==0.9.8` do not pass the 8 Aug 2026
 maintenance gate for new use. For general endpoints and business flows, combine
 maintained edge/platform limits with application-level, account/tenant-aware
 quotas and transactional invariants. Fail closed on sensitive flows, but define

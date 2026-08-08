@@ -160,8 +160,11 @@ Keep provider client secrets, signing keys, authorization codes, and tokens out 
 source and logs. Request minimal scopes. Store refresh/access tokens only when the
 application needs ongoing provider API access; encrypt them, restrict access,
 rotate/revoke them, and delete them on disconnect. Re-authenticate before linking
-or unlinking a provider. ASVS 5.0 anchors include V10.1.2, V10.4.1, V10.4.6,
-V10.5.1–V10.5.4, V9.2.2, V13.3.1, and V14.2.1.
+or unlinking a provider. ASVS 5.0 covers this flow in V10, where V10.2 and
+V10.5 carry the client and relying-party duties above while V10.4 carries the
+authorization-server duties a client depends on rather than implements, and
+ID-token claim validation sits in V9. `00-methodology-and-severity.md` holds
+the chapter mapping and the rule for when to cite one at all.
 
 ### Django and DRF implementation layer
 
@@ -171,7 +174,7 @@ and linking, token persistence, logout/disconnect, and logs. Test swapped-provid
 state replay, nonce replay, redirect confusion, wrong issuer, wrong audience,
 expired token, unverified email, duplicate email, and account-linking takeover.
 
-**django-allauth.** `django-allauth==65.18.0` passes the gate; require
+**django-allauth.** `django-allauth==65.19.0` passes the gate; require
 `>=65.16.1` on its current line. Preserve these fail-closed defaults and enable
 PKCE in each OAuth/OIDC provider configuration that supports it:
 
@@ -195,15 +198,21 @@ used only for its defined protocol purpose, and an access token alone must not b
 accepted as identity proof. Apply CSRF/CORS/session controls to the chosen browser
 architecture rather than assuming a REST wrapper removes them.
 
-**django-oauth-toolkit.** `django-oauth-toolkit==3.3.0` passes the gate when the
-application is an OAuth authorization/resource server. PKCE is required by
+**django-oauth-toolkit.** `django-oauth-toolkit==3.4.0` passes the gate when the
+application is an OAuth authorization/resource server, and `>=3.4.0` is a floor
+rather than a preference: 3.4.0 fixed an unauthenticated open redirect from the
+authorization endpoint under `prompt=none`, HS256 ID tokens signed with the
+hashed instead of the plaintext client secret, cleartext tokens and codes
+rendered in the admin, client secrets written to debug logs, predictable
+device-flow `user_code` values, and four redirect-URI matching deviations from
+RFC 9700. Treat an install at 3.3.0 or earlier as a finding. PKCE is required by
 default; keep it required, use authorization code rather than implicit/password
 grants, register exact redirect URIs, hash client secrets, issue narrow scopes and
 short lifetimes, and enable OIDC only when its signing/claim/key lifecycle has been
 reviewed. Older installations must include `oauthlib>=3.2.2` because that release
 fixed CVE-2022-36087.
 
-**social-auth-app-django.** `social-auth-app-django==6.0.0` passes the gate; require
+**social-auth-app-django.** `social-auth-app-django==6.0.1` passes the gate; require
 `>=5.6.0`. Review the pipeline order, state validation, redirect allowlist, backend
 selection, and the stable provider UID. Do not add `associate_by_email` unless the
 specific provider guarantees verified email and the product has an explicit

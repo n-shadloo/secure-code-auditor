@@ -25,9 +25,15 @@ is code you never chose directly.
 
 ## Run a supported Django
 
-As of 17 Jul 2026 the supported lines are **Django 6.0.7** and **5.2.16 LTS**.
-**Django 4.2 is end-of-life** (final release 4.2.30 on 7 Apr 2026); 5.1 is EOL
-too. Running an unsupported release means security fixes stop reaching you —
+As of 8 Aug 2026 the supported lines are **Django 6.1**, **6.0.8**, and
+**5.2.17 LTS**. Django 6.1 was released on 5 Aug 2026, which moved 6.0 onto
+security and data-loss fixes only through April 2027; 5.2 LTS runs to April
+2028. The current patch level matters as much as the line: 6.0.8 and 5.2.17
+were security releases on 4 Aug 2026 fixing four issues, the most serious being
+CVE-2026-15307, a file-write and request-forgery flaw reachable through spatial
+lookups. **Django 4.2 is end-of-life** (final release 4.2.30 on 7 Apr 2026);
+5.1 is EOL too. Running an unsupported release means security fixes stop
+reaching you —
 flag unsupported lines and supported lines below the current security patch
 (severity scales with exposure). The same applies to the language runtime and
 to DRF/SimpleJWT/Channels/allauth versions; see the libraries file for current

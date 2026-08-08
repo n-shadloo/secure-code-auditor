@@ -68,7 +68,7 @@ position is reset before later parsing or storage. Validate with multiple
 independent signals and a maintained format-specific parser, then decode the
 complete bounded file; canonical re-encoding is stronger than a magic-byte match.
 Do not newly recommend `python-magic` or `filetype`: their release/maintenance
-signals do not pass the 17 Jul 2026 dependency gate. Existing use must be re-vetted.
+signals do not pass the 8 Aug 2026 dependency gate. Existing use must be re-vetted.
 
 ## Type and content validation
 

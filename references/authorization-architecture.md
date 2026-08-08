@@ -10,7 +10,7 @@ authorization model so the suite is worth trusting. Read alongside
 `privileged-access-and-impersonation.md` (operator privilege), and
 `data-layer-and-database.md` (database-enforced isolation as a mechanism under
 this model). Maps to OWASP
-A01:2025 and API1/API3/API5:2023, ASVS v5.0.0 V8, and CWE-862, CWE-863,
+A01:2025 and API1/API3/API5:2023, ASVS 5.0 V8, and CWE-862, CWE-863,
 CWE-639, CWE-269, and CWE-284.
 
 ## Contents
@@ -44,7 +44,7 @@ separate a model that holds up from one that decays:
    unmapped state denies. Anything that defaults to allow eventually gets
    reached by a path nobody reviewed.
 
-ASVS v5.0.0 V8 splits authorization into three levels, and a model that answers
+ASVS 5.0 V8 splits authorization into three levels, and a model that answers
 only the first is incomplete:
 
 | Level | Question | Failure |

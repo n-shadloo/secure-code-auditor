@@ -1,9 +1,18 @@
 # Security-hardening libraries — vetted decisions
 
 This is a dated decision index, not an install-all list. It is current as of
-**17 Jul 2026** for the repository baseline (Django 6.0.7 / 5.2.16 LTS and DRF
-3.17.1). Re-run the A03 dependency gate for the project's actual Python/Django
-versions and whenever maintenance, advisories, or compatibility changes.
+**8 Aug 2026** for the repository baseline (Django 6.1, 6.0.8, and 5.2.17 LTS,
+with DRF 3.18.0). Re-run the A03 dependency gate for the project's actual
+Python/Django versions and whenever maintenance, advisories, or compatibility
+changes.
+
+Django 6.1 was released on 5 Aug 2026, so most entries below still declare
+support through 6.0 and not yet 6.1. Days after a feature release that is the
+normal packaging lag rather than a compatibility finding, and it is recorded
+here once so that no entry has to repeat it; it becomes a gate question at the
+point a project actually moves to 6.1. A package declaring no currently
+supported line at all is a different matter, and each one is called out where
+it appears.
 
 ## Recommendation gate
 
@@ -24,10 +33,10 @@ Advisory scanning alone is not vetting.
 | TOTP/MFA primitives | `django-otp==1.7.0` | **Recommend.** Maintained; Django 6.0 compatible. Enrollment/removal/recovery still need re-authentication and audit controls. |
 | MFA workflow | `django-two-factor-auth==1.18.1` | **Conditional** for compatible Django 5.2 projects; not advertised for Django 6. Re-vet before upgrading. |
 | JWT | SimpleJWT `5.5.1` | **Conditional** for supported Django 5.2 projects; not advertised for Django 6. Minimum `5.5.1` includes the CVE-2024-22513 fix. Configure algorithm/issuer/audience/lifetimes/rotation/denylisting. |
-| Social/OIDC client | `django-allauth==65.18.0` | **Recommend; require >=65.16.1.** MIT; Python >=3.10; Django 6 supported. Keep automatic email auth/connection and login-on-GET off; enable PKCE per provider; avoid token storage unless needed. |
+| Social/OIDC client | `django-allauth==65.19.0` (6 Aug 2026) | **Recommend; require >=65.16.1.** MIT; Python >=3.10; declares Django 4.2 through 6.1, which makes it one of the few entries here already carrying the new line. Keep automatic email auth/connection and login-on-GET off; enable PKCE per provider; avoid token storage unless needed. |
 | REST auth wrapper | `dj-rest-auth==7.2.0` | **Recommend only with reviewed allauth/provider settings.** MIT; Python >=3.10. Prefer code flow/fixed callback and audit which token artifact each endpoint accepts. |
-| OAuth/OIDC provider | `django-oauth-toolkit==3.3.0` | **Recommend.** BSD; Python >=3.10; Django 6 supported. Keep PKCE required, exact redirects, narrow scopes, hashed client secrets; OIDC is opt-in. Older installs require `oauthlib>=3.2.2`. |
-| Alternate social-auth client | `social-auth-app-django==6.0.0` | **Recommend; require >=5.6.0.** BSD-3-Clause; Django 5.2/6 supported. Review pipeline/state/redirects; never add `associate_by_email` without a proven provider-specific verified-email policy. |
+| OAuth/OIDC provider | `django-oauth-toolkit==3.4.0` (23 Jul 2026) | **Recommend; require `>=3.4.0`.** BSD; Python >=3.10; declares Django 4.2 through 6.0. The floor is not a formality: 3.4.0 is a security release, and below it an unauthenticated open redirect is reachable from the authorization endpoint with `prompt=none`, HS256 ID tokens are signed with the hashed rather than the plaintext client secret, cleartext tokens and authorization codes are rendered in the Django admin, client secrets reach debug logs, device-flow `user_code` values are not drawn from a CSPRNG, and redirect-URI matching deviates from RFC 9700 in four ways that accept unregistered query parameters, path segments, credentials, and fragments. An install on 3.3.0 or earlier is a finding on its own weight. Keep PKCE required, exact redirects, narrow scopes, hashed client secrets; OIDC is opt-in. Older installs require `oauthlib>=3.2.2`. |
+| Alternate social-auth client | `social-auth-app-django==6.0.1` (24 Jul 2026) | **Recommend; require >=5.6.0.** BSD-3-Clause; declares Django 5.2 and 6.0. Review pipeline/state/redirects; never add `associate_by_email` without a proven provider-specific verified-email policy. |
 | WebSockets/ASGI | Channels `4.3.2` | **Recommend.** Django-project maintained; Django 6 supported. Still implement origin checks, per-message authz, bounds, backpressure, and cleanup. |
 | Dependency advisories | `pip-audit==2.10.1` | **Recommend as one input.** PyPA-maintained, Apache-2.0. It does not prove maintenance, provenance, compatibility, configuration, or safety. |
 | Rich-HTML sanitization | `nh3==0.3.6` | **Recommend when rich HTML is required.** MIT; actively released. Centralize a minimal allowlist and URL-scheme policy; prefer plain text/structured markup. |
@@ -51,7 +60,7 @@ Advisory scanning alone is not vetting.
 ## Authorization, object permissions, and impersonation
 
 Versions and classifiers in this section were checked against PyPI on
-**1 Aug 2026**; the rest of this file carries the 17 Jul 2026 baseline above.
+**1 Aug 2026**; the rest of this file carries the 8 Aug 2026 baseline above.
 Read with `authorization-architecture.md` and
 `privileged-access-and-impersonation.md`.
 
@@ -76,7 +85,7 @@ per-object rule is being hand-written across more than a handful of views.
 ## Agent and MCP interfaces
 
 Versions and defaults in this section were checked on **1 Aug 2026**; the rest
-of this file carries the 17 Jul 2026 baseline above. Read with
+of this file carries the 8 Aug 2026 baseline above. Read with
 `agent-and-llm-interfaces.md`.
 
 **No package in this area clears the gate for a `recommend` tier.** The default
@@ -95,14 +104,21 @@ server. Every entry below is a disposition for something already installed.
 
 The MCP authorization requirements themselves — OAuth 2.1, RFC 9728 protected-
 resource metadata, RFC 8707 audience-bound tokens, and the prohibition on token
-passthrough — are properties of the specification, not of any package. A
-package that implements transport does not implement those.
+passthrough — are properties of the specification rather than of any transport
+package, and none of the three entries above implements them. One package now
+does implement part of it: `django-oauth-toolkit` 3.4.0 added first-class MCP
+authorization-server support, with RFC 9728 protected-resource metadata,
+RFC 8707 resource indicators, and RFC 7591/7592 dynamic client registration.
+That is the issuing half only. Validating the audience on the way in is still
+the resource server's own work — `service-identity-and-secrets.md`,
+"Validating an inbound machine token" — and the passthrough prohibition remains
+an architectural rule that no package enforces for you.
 
 ## Service identity and secrets
 
 Versions and defaults in this section were checked against PyPI and the
 projects' own release notes on **3 Aug 2026**; the rest of this file carries
-the 17 Jul 2026 baseline above. Read with `service-identity-and-secrets.md`.
+the 8 Aug 2026 baseline above. Read with `service-identity-and-secrets.md`.
 
 Most of this area is not a dependency at all. `django.core.signing`,
 `SECRET_KEY_FALLBACKS`, `salted_hmac`, and the standard library's `secrets`
@@ -121,7 +137,7 @@ a pattern to audit rather than a package to tier.
 ## Data layer and database
 
 Versions in this section were checked on **2 Aug 2026**; the rest of this file
-carries the 17 Jul 2026 baseline above. Read with
+carries the 8 Aug 2026 baseline above. Read with
 `data-layer-and-database.md`.
 
 Most of this domain is configuration rather than dependency: role separation,
@@ -141,7 +157,7 @@ password hashing" below, re-checked 7 Aug 2026.
 ## Data lifecycle and privacy
 
 Versions in this section were checked against PyPI and the projects' own
-repositories on **2 Aug 2026**; the rest of this file carries the 17 Jul 2026
+repositories on **2 Aug 2026**; the rest of this file carries the 8 Aug 2026
 baseline above. Read with `data-lifecycle-and-privacy.md`.
 
 The dedicated privacy packages are the weakest category in this index: the
@@ -172,7 +188,7 @@ classification convention cover the area without a dependency.
 
 Versions and defaults in this section were checked against PyPI and the
 packages' own source on **4 Aug 2026**; the rest of this file carries the
-17 Jul 2026 baseline above. Read with
+8 Aug 2026 baseline above. Read with
 `graphql-and-alternative-api-surfaces.md`.
 
 No package in this area ships the controls that make a GraphQL endpoint safe.
@@ -198,11 +214,18 @@ footguns you inherit, not whether you still have to do the work.
 ## API surface, schema, and bulk operations
 
 Versions and classifiers in this section were checked against PyPI on
-**5 Aug 2026**; the rest of this file carries the 17 Jul 2026 baseline above.
-Read with `api-drf-specific.md`. Note that DRF `3.17.2` was published on
-5 Aug 2026, after the repository baseline of `3.17.1` was set; it has not been
-through the gate here, so treat the baseline as unchanged and re-vet before
-moving a project onto it.
+**5 Aug 2026**; the rest of this file carries the 8 Aug 2026 baseline above.
+Read with `api-drf-specific.md`. The DRF baseline moved to `3.18.0` (7 Aug
+2026) in this pass, and two things about that line matter more than the number.
+The security fixes are in `3.17.2` (5 Aug 2026) and not in `3.18.0`: it stopped
+`AdminRenderer` disclosing GET-protected data through a validation-error
+response, and made `request.data` parsing honour Django's
+`DATA_UPLOAD_MAX_MEMORY_SIZE` rather than reading past it. `3.17.2` is
+therefore the minimum safe version, and a project that cannot take `3.18.0`
+should still be on it. `3.18.0` itself is a feature release: it drops Django
+4.2, 5.0, and 5.1 — all end-of-life — adds Django 6.1 support, and changes the
+error format that list serializers return to a dict, which is a breaking change
+for any client parsing those responses.
 
 The controls that make a DRF surface safe — scoped querysets, allow-listed
 serializer fields and filters, per-object authorization on every route — are
@@ -227,7 +250,7 @@ already installed when a bulk endpoint turns out to skip every object check.
 
 Versions and classifiers in this section were checked against PyPI and the
 projects' own repositories on **7 Aug 2026**; the rest of this file carries the
-17 Jul 2026 baseline above. Read with `a10-exceptional-conditions.md`.
+8 Aug 2026 baseline above. Read with `a10-exceptional-conditions.md`.
 
 This is the area where the built-ins win most clearly. `transaction.atomic()`,
 `select_for_update()`, `F()`, `UniqueConstraint`, `CheckConstraint`,
@@ -255,7 +278,7 @@ entries are for the narrow cases the built-ins genuinely do not reach.
 
 Versions and classifiers in this section were checked against PyPI and the
 projects' own repositories on **7 Aug 2026**; the rest of this file carries the
-17 Jul 2026 baseline above. Read with `a08-integrity-and-deserialization.md`.
+8 Aug 2026 baseline above. Read with `a08-integrity-and-deserialization.md`.
 
 Nothing is recommended here, and that is the finding. A conformant inbound
 webhook verifier is `hmac.new`, `hmac.compare_digest`, and a model with a unique
@@ -280,7 +303,7 @@ a package only for the outbound interop problem, if at all.**
 
 Versions and defaults in this section were checked against PyPI and the
 projects' own source on **7 Aug 2026**; the rest of this file carries the
-17 Jul 2026 baseline above. Read with `a04-cryptographic-failures.md`. The
+8 Aug 2026 baseline above. Read with `a04-cryptographic-failures.md`. The
 `argon2-cffi` entry moved here from the table above and was re-checked on this
 date.
 
@@ -306,7 +329,7 @@ Django's hasher and the primitives behind an encrypted column.
 
 Versions and classifiers in this section were checked against PyPI and the
 projects' own repositories on **7 Aug 2026**; the rest of this file carries the
-17 Jul 2026 baseline above. Read with `deployment-and-runtime.md`.
+8 Aug 2026 baseline above. Read with `deployment-and-runtime.md`.
 
 Nothing is recommended here, for the same reason as the webhook section above:
 both controls in scope are already built in. Reading the client IP correctly is

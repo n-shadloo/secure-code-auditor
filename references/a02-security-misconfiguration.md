@@ -116,7 +116,7 @@ CORS_ALLOWED_ORIGINS = ["https://app.example.com"]
 # CorsMiddleware must sit high in MIDDLEWARE, above CommonMiddleware.
 ```
 
-**Package decision (17 Jul 2026):** `django-cors-headers==4.9.0` passes the
+**Package decision (8 Aug 2026):** `django-cors-headers==4.9.0` passes the
 maintained-package gate and supports Django 6.0. Keep origins explicit; package
 installation does not justify wildcard origins or credentialed reflection. See
 `security-hardening-libraries.md` for the recorded vetting fields.
@@ -151,7 +151,7 @@ On pre-6.0 projects the equivalent is the `django-csp` package. CSP is mainly an
 XSS mitigation for server-rendered HTML; for pure JSON APIs it matters less, but
 it's cheap defense in depth.
 
-**Package decision (17 Jul 2026):** prefer Django 6's built-in CSP support.
+**Package decision (8 Aug 2026):** prefer Django 6's built-in CSP support.
 `django-csp==4.0` is a conditional choice only for supported pre-6.0 projects
 through Django 5.2; re-check compatibility before a framework upgrade.
 
