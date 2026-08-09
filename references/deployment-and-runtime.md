@@ -49,6 +49,74 @@ proxy actually sets, drop privileges, and serve untrusted content inertly.
   avoid redirect loops.
 - Set HSTS (see A02). Roll it out with a short max-age first; it's hard to undo.
 
+### Hybrid post-quantum key exchange
+
+Hybrid key exchange is the one post-quantum change that is already deployed
+rather than pending, and it is what answers the harvest-now-decrypt-later
+exposure that `a04-cryptographic-failures.md`, "Post-quantum posture", tells
+you to inventory. It runs X25519 and ML-KEM-768 together and derives the
+session key from both, so a recorded handshake stays secret unless *both*
+halves fall — which is why adopting it costs nothing in confidence rather than
+being a bet on the newer primitive.
+
+The state of it as of 8 Aug 2026:
+
+- **OpenSSL 3.5.0, April 2025, is the line that turns it on**, and it turned it
+  on by default in the same release that added it: the default supported-groups
+  list changed to include and prefer hybrid PQC KEM groups, and the default
+  keyshares offered became `X25519MLKEM768` and `X25519`. An edge linked
+  against 3.5 or later negotiates the hybrid with no configuration at all.
+- **The client side is already there.** Chrome 131 and Firefox 132 each enabled
+  ML-KEM hybrid key exchange by default, so a current browser reaching a
+  current OpenSSL negotiates `X25519MLKEM768` today whether or not anyone
+  decided that it should.
+- **The group name is settled; the specification is not finished.** The TLS
+  hybrid document is an IESG-approved Internet-Draft in the RFC Editor queue,
+  not yet an RFC. Its IANA codepoint is permanent — 4588 for `X25519MLKEM768`,
+  now marked Recommended — and the pre-standard `X25519Kyber768Draft00` at
+  25497 is obsolete. So a config still pinning the Kyber draft group is stale,
+  and a report calling the hybrid a finished standard is overclaiming.
+
+Nginx expresses the group list through `ssl_ecdh_curve`, which despite the name
+sets every key-exchange group the server offers rather than only ECDH curves.
+It has accepted a colon-separated list since 1.11.0 and defaults to `auto`,
+meaning OpenSSL's own built-in list:
+
+```nginx
+# `auto` on OpenSSL 3.5 already prefers the hybrid, so pin the order only when
+# you need to. Whatever you write, the hybrid group has to be in it.
+ssl_ecdh_curve X25519MLKEM768:X25519:prime256v1:secp384r1;
+```
+
+Two placement rules travel with that line. Set it in the `http` context or on
+the `default_server`: nginx ticket #2542 records that under TLS 1.3 the
+directive is silently ignored in a non-default `server` block sharing an
+address and port, so a value written into one virtual host does nothing and
+says nothing about having done nothing. And write a single colon-separated
+list — nginx rejects OpenSSL's space-separated multi-tier prioritization syntax
+as an invalid argument count.
+
+**The finding is a group list that excludes the hybrid, not its absence.**
+A modern edge already negotiates it, so this is rarely a change anyone has to
+make; it is a change someone made years ago and never revisited. A hardening
+snippet copied from a pre-2025 guide pins
+`ssl_ecdh_curve X25519:prime256v1:secp384r1;` and, on an OpenSSL that would
+otherwise have offered ML-KEM, turns the default back off — the config looks
+more secure than the default it replaced and is less. Confirm what is actually
+negotiated against the deployed host rather than reading the file, because the
+effective list depends on which OpenSSL the edge is linked against and, per the
+ticket above, on which server block the value landed in.
+
+**Write-time.** When generating an nginx TLS block, either leave
+`ssl_ecdh_curve` out entirely and let `auto` stand, or write a list with
+`X25519MLKEM768` first — never a curve list carried over from an older
+hardening template, because on OpenSSL 3.5 that line is a downgrade and the
+config reads as though it were an improvement. Put it in the `http` context in
+the same edit, so the value is not silently dropped by the virtual-host rule
+above. CWE-327 (broken or risky cryptographic algorithm) is the mapping when a
+pinned list excludes what the platform would have offered. Severity: low today
+and rising with the retention period of whatever the connection carries.
+
 ## Reverse proxy and forwarded headers
 
 This is the subtle one. Behind Nginx/Cloudflare:
@@ -484,6 +552,9 @@ critical by blast radius.
 ## Review checklist
 
 - [ ] TLS enforced; HSTS set; no redirect loop with the proxy.
+- [ ] Any pinned key-exchange group list includes `X25519MLKEM768` rather than
+      overriding a current OpenSSL's hybrid default with a classical-only list
+      inherited from an older hardening template.
 - [ ] Forwarded headers trusted only from the proxy; client IP for lockout is
       correct; `SECURE_PROXY_SSL_HEADER` not client-spoofable; any forwarded
       client-certificate identity is stripped inbound and the application port

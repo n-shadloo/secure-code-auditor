@@ -195,6 +195,145 @@ yours in front of Django's, and record the benchmark that produced the
 parameters. See `security-hardening-libraries.md`, "Cryptographic primitives
 and password hashing".
 
+### Migrating a hasher family
+
+Point 7 above names a residue and stops there: upgrade-on-login fires only for
+accounts whose owner logs in, so dormant ones hold the legacy algorithm
+indefinitely, and reordering `PASSWORD_HASHERS` does nothing for them. Django
+documents the way out, and the useful property is that it needs no plaintext —
+re-encode the **stored digest** under the preferred hasher, and every row moves
+in one pass whether or not its owner ever comes back.
+
+The wrapper hashes the legacy digest in place of the password. Three parts:
+
+1. A hasher subclassing the target, with its own `algorithm` string and an
+   `encode_<legacy>_hash` helper that the migration calls with the digest read
+   out of the column.
+2. A one-way data migration that splits each stored value, re-wraps it, and
+   writes it back.
+3. Both the wrapper and the legacy hasher left in `PASSWORD_HASHERS`, so
+   `identify_hasher` can still read what is stored.
+
+**Django's own example wraps into PBKDF2, and that recipe does not transfer to
+Argon2 unchanged.** `PBKDF2PasswordHasher.verify` re-derives through
+`self.encode`, so overriding `encode` is enough to carry verification with it.
+`Argon2PasswordHasher.verify` does not — it hands the raw password straight to
+the argon2 library — so a wrapper that overrides only `encode` migrates every
+row and then rejects every correct password, which is a lockout that passes
+code review because the migration half works. An Argon2 target needs `verify`
+overridden too, recovering the reused salt through the inherited `decode()`:
+
+```python
+# Correct: the stored digest is re-encoded under Argon2 with no plaintext in
+# play, so the dormant rows move along with everyone else's.
+
+# myproject/hashers.py
+from django.contrib.auth.hashers import Argon2PasswordHasher, MD5PasswordHasher
+
+
+class Argon2WrappedMD5PasswordHasher(Argon2PasswordHasher):
+    algorithm = "argon2_wrapped_md5"
+
+    def _legacy_digest(self, password, salt):
+        legacy = MD5PasswordHasher().encode(password, salt)
+        _, _, md5_hash = legacy.split("$", 2)
+        return md5_hash
+
+    def encode_md5_hash(self, md5_hash, salt):
+        # What the migration calls. It wraps a digest already sitting in the
+        # column, which is the whole reason the pass needs nobody to log in.
+        return super().encode(md5_hash, salt)
+
+    def encode(self, password, salt):
+        return self.encode_md5_hash(self._legacy_digest(password, salt), salt)
+
+    def verify(self, password, encoded):
+        # Mandatory for an Argon2 target, unlike Django's PBKDF2 example. The
+        # inherited verify would check the raw password against a hash taken
+        # over the MD5 digest and fail every migrated login.
+        salt = self.decode(encoded)["salt"]
+        return super().verify(self._legacy_digest(password, salt), encoded)
+```
+
+```python
+# Correct: one-way, and it reads the legacy salt back out of the stored value
+# rather than minting a new one -- the wrapper needs that same salt at login
+# to rebuild the inner digest.
+
+# accounts/migrations/0007_wrap_md5_into_argon2.py
+from django.db import migrations
+
+from myproject.hashers import Argon2WrappedMD5PasswordHasher
+
+
+def wrap_md5_hashes(apps, schema_editor):
+    User = apps.get_model("auth", "User")
+    hasher = Argon2WrappedMD5PasswordHasher()
+    legacy = User.objects.filter(password__startswith="md5$").order_by("pk")
+    for user in legacy.iterator(chunk_size=500):
+        _, salt, md5_hash = user.password.split("$", 2)
+        user.password = hasher.encode_md5_hash(md5_hash, salt)
+        user.save(update_fields=["password"])
+
+
+class Migration(migrations.Migration):
+    dependencies = [("accounts", "0006_previous")]
+    operations = [migrations.RunPython(wrap_md5_hashes)]
+```
+
+After the pass a row reads `argon2_wrapped_md5$...` — Argon2 over an MD5
+digest, so a guess now costs an Argon2 evaluation rather than an MD5 one. At
+the owner's next login `check_password` sees a stored algorithm that is not the
+preferred one, re-hashes the plaintext it was just handed, and the row lands on
+plain `argon2$...`. Nobody is prompted and nothing is reset. Four things to
+know before running it:
+
+- **Every live session ends the moment the migration lands.**
+  `get_session_auth_hash()` is an HMAC of the password field and `get_user()`
+  compares it on each request, so rewriting every row invalidates every session
+  at once. There is no request in flight to call `update_session_auth_hash()`
+  for, so this is scheduled and announced rather than avoided.
+- **A short legacy salt is a hard stop for an Argon2 target.** Argon2 rejects a
+  salt under 8 bytes outright, so rows whose salt is shorter cannot be wrapped
+  into it — they need a different target or the reset path below.
+- **The data-migration form is fine here** in a way the key-rotation pass
+  earlier in this file is not, because it depends on no key that will later be
+  destroyed. The resumability argument still holds at scale: a user table large
+  enough to time out a deploy wants the same chunked management command.
+- **Wrapping raises the cost of future cracking and undoes no past exposure.**
+  It protects the copy in your database. A copy already taken is still
+  crackable at the legacy cost.
+
+**When to force a reset instead.** Django documents the wrap and does not say
+when to give up on it, so these are engineering criteria rather than doctrine.
+Each makes wrapping insufficient rather than merely slower:
+
+- **The legacy hashes have been exposed.** Only a password the leaked digests
+  no longer describe devalues them.
+- **The legacy scheme is unsalted.** Precomputation against exposed unsalted
+  digests is cheap enough that the first criterion is effectively already met.
+- **No verifier can be reconstructed** — truncated, foreign-format, or
+  short-salted values that will not re-encode into a wrapper. There is nothing
+  to wrap.
+- **A compliance obligation mandates rotation** on deprecation of the
+  algorithm.
+
+Reset costs what wrapping does not: every user is interrupted at once, support
+absorbs the ones who no longer control the registered address, and the reset
+mail is a phishing template in the same week you told everyone to expect one.
+Where none of the four holds, wrap — it closes the dormant gap immediately,
+including the timing difference point 7 leaves open, and expiring a chosen
+subset stays available as a separate decision.
+
+**Write-time.** When moving a project onto a different hasher family, write the
+wrapper and its data migration in the same change as the `PASSWORD_HASHERS`
+reorder, because the reorder alone reaches only the accounts that log in and
+leaves the rest on the old algorithm with nothing reporting that it did.
+Override `verify` alongside `encode` whenever the target is Argon2, and check
+the pair against a real legacy hash before the migration runs rather than
+after — a wrapper that encodes correctly and verifies wrongly looks right in
+review and locks out everyone it just migrated.
+
 ## Password validators
 
 Configure `AUTH_PASSWORD_VALIDATORS` (length, common-password, numeric,
@@ -586,6 +725,113 @@ condition being its key derivation — it derives the Fernet key from
 above warns against. See `security-hardening-libraries.md`, "Cryptographic
 primitives and password hashing".
 
+### Envelope encryption against a KMS
+
+The `MultiFernet` example above is the fallback, and it is worth being precise
+about what it falls short of. It versions keys correctly, but every version is
+in `settings.FIELD_KEYS`, so the process holds the material that decrypts the
+whole table for its entire lifetime, a configuration leak is a plaintext leak,
+and nothing anywhere records which rows were read. Envelope encryption moves
+each of those: the KEK stays in the KMS, the only key in the process is a
+per-row DEK that lives for one request, and each unwrap is a call somebody can
+audit and revoke.
+
+Three details carry the pattern, and the middle one is the one projects leave
+out. `generate_data_key` returns both halves at once — `Plaintext`, the DEK you
+encrypt with, and `CiphertextBlob`, the same DEK wrapped under the KEK, which
+is what the row stores. `EncryptionContext` is non-secret additional
+authenticated data, and `decrypt` fails with `InvalidCiphertextException`
+unless it is supplied again as a case-sensitive exact match — so binding it to
+the table and row is what stops a wrapped DEK lifted out of one row from being
+unwrapped against another. And the context has to be **stable from the first
+write**, which means it cannot be derived from a primary key the row does not
+have yet.
+
+```python
+# Correct: the KEK never leaves the KMS, each row carries its own wrapped DEK,
+# and the encryption context ties that DEK to the row it belongs to.
+import os
+
+import boto3
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from django.db import models
+
+kms = boto3.client("kms")
+KEK_ALIAS = "alias/app-dek"
+
+
+class Patient(models.Model):
+    # The wrapped DEK travels beside the ciphertext, so a row carries
+    # everything needed to read it except the KEK -- which is exactly the one
+    # thing a stolen dump or a replica does not come with.
+    ssn_ciphertext = models.BinaryField()
+    ssn_nonce = models.BinaryField()
+    wrapped_dek = models.BinaryField()
+
+    def _encryption_context(self):
+        # Not secret, but authenticated. KMS refuses the unwrap unless decrypt
+        # supplies this same dict, so the DEK is useless against another row.
+        return {"table": "accounts_patient", "row_id": str(self.pk)}
+
+    def set_ssn(self, ssn):
+        if self.pk is None:
+            # The context is part of the ciphertext's identity, so it has to
+            # be stable from the first write. Wrapping under an unsaved pk
+            # binds the DEK to "None" and every later unwrap fails.
+            raise ValueError("save the row before encrypting a field into it")
+        response = kms.generate_data_key(
+            KeyId=KEK_ALIAS,
+            KeySpec="AES_256",
+            EncryptionContext=self._encryption_context(),
+        )
+        dek = response["Plaintext"]
+        nonce = os.urandom(12)
+        self.wrapped_dek = response["CiphertextBlob"]
+        self.ssn_nonce = nonce
+        self.ssn_ciphertext = AESGCM(dek).encrypt(nonce, ssn.encode(), None)
+
+    def get_ssn(self):
+        # KeyId is optional for a symmetric KEK because KMS reads it from the
+        # blob; naming it anyway means a swapped blob is rejected rather than
+        # decrypted under whatever key it happens to point at.
+        dek = kms.decrypt(
+            CiphertextBlob=bytes(self.wrapped_dek),
+            EncryptionContext=self._encryption_context(),
+            KeyId=KEK_ALIAS,
+        )["Plaintext"]
+        return AESGCM(dek).decrypt(
+            bytes(self.ssn_nonce), bytes(self.ssn_ciphertext), None
+        ).decode()
+```
+
+Two review notes on the shape. The plaintext DEK is a local and nothing else —
+not an attribute on the instance, not a cache entry, not a log field — because
+its short lifetime is the only property that distinguishes this from holding
+the key in settings; Python cannot actually zero an immutable `bytes`, so
+"never stored" is the achievable guarantee rather than "erased." And a DEK per
+row makes `get_ssn` one KMS call per row, which turns any list view over the
+model into a per-row round trip and a per-row bill — scope the pattern to
+narrow, rarely-listed, high-sensitivity columns, or widen the DEK to a tenant
+or a batch and accept the coarser blast radius deliberately.
+
+The equivalents, named rather than tiered: GCP Cloud KMS wraps and unwraps a
+locally-generated DEK through `encrypt` and `decrypt` on the key path, with
+Tink's `KmsEnvelopeAead` automating the generate-and-wrap step, and Azure Key
+Vault uses `wrapKey` and `unwrapKey`. These are platform SDKs a project already
+runs, not security packages being chosen against alternatives, so
+`security-hardening-libraries.md`, "Cryptographic primitives and password
+hashing", records all three as patterns rather than giving a provider a
+disposition.
+
+**Write-time.** When generating field encryption against a KMS, pass an
+`EncryptionContext` on `generate_data_key` in the same edit that writes the
+`decrypt` call, because a wrapped DEK created without one can never acquire the
+binding afterwards without re-encrypting the column, and the pair only works if
+both sides carry the identical dict. Bind it to a value the row already has
+rather than to a pk it is about to be assigned, add the `wrapped_dek` column in
+the same migration as the ciphertext column so no row can exist without its
+key, and keep the plaintext DEK in a local rather than on the model instance.
+
 ## Post-quantum posture
 
 The sober version, because this area attracts more urgency than it currently
@@ -607,7 +853,10 @@ What that means for a Django backend right now:
   matter; a session cookie is not. Feed the result into the personal-data
   inventory in `data-lifecycle-and-privacy.md`.
 - **Hybrid TLS key exchange is a deployment decision, not application code.**
-  It is negotiated by the TLS terminator; see `deployment-and-runtime.md`.
+  It is negotiated by the TLS terminator, and on a current OpenSSL it is
+  already the default rather than something to adopt — which makes the finding
+  a group list that pins it out, not a missing feature. See
+  `deployment-and-runtime.md`, "Hybrid post-quantum key exchange".
 - **Symmetric primitives are not the urgent case.** A quantum adversary gets at
   most a quadratic speedup against a well-chosen symmetric cipher or hash, and
   AES-256 and SHA-256 carry margin for that. The pressure is on public-key key
@@ -647,6 +896,10 @@ needs.
       held in a KMS or HSM rather than sitting in configuration, rotatable
       without downtime, and destroyed only after an audit shows no ciphertext
       references them.
+- [ ] Where a KMS holds the KEK, every data key is generated and unwrapped
+      under an encryption context bound to the row it belongs to, and the
+      plaintext data key lives in a local rather than on an instance, in a
+      cache, or in a log line.
 - [ ] Re-encryption after a key rotation exists as a chunked, resumable,
       idempotent job rather than as an intention.
 - [ ] Data whose confidentiality must outlive the post-quantum migration
@@ -662,6 +915,10 @@ needs.
       `must_update()` re-hashes users at their next login; `BCryptSHA256`
       rather than `BCrypt` is listed; any scrypt use is subclassed above
       Django's default `work_factor`.
+- [ ] A change of hasher *family* is carried by a wrapped-hasher data
+      migration rather than by reordering `PASSWORD_HASHERS` alone, so dormant
+      accounts move too, and an Argon2 target overrides `verify` as well as
+      `encode` or every migrated login fails.
 - [ ] `AUTH_PASSWORD_VALIDATORS` configured.
 - [ ] Tokens use `secrets.token_urlsafe`, `get_random_secret_key()`, or
       `PasswordResetTokenGenerator` — not `get_random_string` at its short
