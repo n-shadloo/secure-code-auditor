@@ -21,7 +21,7 @@ license: MIT
 allowed-tools: Read, Grep, Glob, Bash
 metadata:
   author: n-shadloo
-  version: 1.28.0
+  version: 1.29.0
 ---
 
 # secure-code-auditor
@@ -97,7 +97,7 @@ you rather than by OWASP number.
 | GraphQL endpoints and schemas, resolver-level authorization and nested traversal, all-fields types, query depth/alias/token/cost limits, introspection and error masking, mutation inputs and nested writes, batching, persisted queries, N+1 as resource exhaustion, Strawberry and graphene-django defaults, Django Ninja routes with no `auth=` | `references/graphql-and-alternative-api-surfaces.md` |
 | Async/ASGI boundaries, sync ORM access, task/request context, WebSocket/Channels origin, authentication, authorization, and limits, subscriptions on the subscribe and publish paths | `references/async-and-channels.md` |
 | File uploads, type/content validation, safe names and storage-key design, object-storage configuration and bucket exposure, per-tenant bucket vs shared prefix, delegated upload URLs across S3 presigned POST, GCS V4 signed URLs, and Azure SAS — what each binds, what caps its size, and what it takes to withdraw one, quarantine and promotion, scan verdict caching and CDR, callback trust, SVG, image/archive bombs, size/count/quotas, metadata reflected on serve, private downloads, proxy vs signed URL, CDN caching of private objects | `references/file-uploads.md` |
-| AI agents and MCP tool surfaces, DRF viewsets republished as tools, agent tokens and audience validation, tool scope vs user permissions, model output and retrieved content as untrusted input, prompt injection reaching a backend sink, per-agent cost/concurrency limits, tool-call confirmation and audit | `references/agent-and-llm-interfaces.md` |
+| AI agents and MCP tool surfaces, DRF viewsets republished as tools, agent tokens and audience validation, tool scope vs user permissions, model output and retrieved content as untrusted input, prompt injection reaching a backend sink, per-agent cost/concurrency limits, tool-call confirmation and audit, the entry-token mapping to the OWASP LLM Top 10 2026 and Agentic Top 10 with the entries a backend skill declares non-goals | `references/agent-and-llm-interfaces.md` |
 | Database roles and privilege separation, row-level security, tenant context on pooled connections, verified DB TLS, field-level encryption and blind indexes, raw-SQL isolation bypass, NoSQL/Redis injection, read-replica staleness, transaction isolation and the serialization-failure retry a raised level requires, connection exhaustion, backups and production-data copies | `references/data-layer-and-database.md` |
 | Deletion completeness and erasure, soft-delete tombstones leaking through related-object/admin/serializer/raw paths, files left after a row is deleted, retention and scheduled purges, anonymization vs pseudonymization, personal-data inventory and model-layer classification, data export/DSAR endpoints, copies in indexes, caches, history tables, and lower environments | `references/data-lifecycle-and-privacy.md` |
 | Service-to-service identity, machine-token validation (algorithm pinning, `iss`/`aud`, required claims), JWKS caching and key rotation, OAuth client credentials, mutual TLS and certificate-bound tokens, proxy-set client-certificate identity, platform workload identity, network-position-as-authentication on internal endpoints, downstream token exchange, secret storage/delivery/rotation, `SECRET_KEY` rotation, leaked-secret response | `references/service-identity-and-secrets.md` |

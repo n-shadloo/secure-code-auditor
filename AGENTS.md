@@ -38,8 +38,11 @@ caching, migrations, signals, email/notification abuse, algorithmic resource
 exhaustion and the server-enforced bound every caller-controlled input that
 multiplies work has to carry,
 agent- and LLM-facing interfaces (MCP tool surfaces, agent token audience
-validation, tool scope versus user permissions, model output and retrieved
-content as untrusted input, per-agent cost limits, and tool-call audit), the
+validation and the protected-resource metadata the current MCP authorization
+revision made mandatory, tool scope versus user permissions, model output and
+retrieved content as untrusted input, per-agent cost limits, tool-call audit,
+and the entry-token mapping onto the OWASP LLM Top 10 2026 and Agentic Top 10
+with the entries a backend skill declares non-goals), the
 database as a boundary of its own (migration versus runtime roles, row-level
 security and tenant context on pooled connections, verified database TLS,
 field-level encryption and blind indexes, NoSQL injection, transaction
@@ -104,8 +107,9 @@ attacker can forge).
 
 ## Two modes
 - Review-time: audit existing code, produce prioritized findings (severity,
-  location, CWE + OWASP mapping, an optional ASVS 5.0 chapter where the project
-  is actually held to that standard, concrete fix). Read-only by default.
+  location, CWE + OWASP mapping, an optional ASVS 5.0 chapter or LLM/Agentic
+  Top 10 entry token where the project is actually held to that standard,
+  concrete fix). Read-only by default.
 - Write-time: apply the standing secure-default contract while generating code,
   apply the secure default where it conflicts with the request and say so, and
   close with a short security-decisions note rather than a findings report. The

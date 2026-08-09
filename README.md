@@ -22,7 +22,11 @@ Findings always carry a CWE and an OWASP mapping; where a project is genuinely
 held to OWASP ASVS 5.0, they can carry an ASVS chapter as well. The methodology
 file maps all seventeen ASVS chapters onto the reference files, and says plainly
 which two are permanent non-goals for a backend skill, where the coverage is
-only partial, and where this skill covers ground ASVS scopes out entirely.
+only partial, and where this skill covers ground ASVS scopes out entirely. ASVS
+has no chapter for agent and MCP tool surfaces, so that file carries a spine of
+its own: the OWASP LLM Top 10 2026 and Agentic Top 10, mapped section by section
+at entry-token level, with the entries a backend skill declares non-goals named
+rather than stretched to fit.
 
 Security topics don't sort cleanly into ten boxes, so the router is grouped —
 the OWASP spine, then cross-cutting surfaces, then package decisions — and
@@ -117,7 +121,9 @@ rule for generating that code.
   the controls that silently drop, agent token audience validation and the
   no-passthrough rule, tool scope intersected with the user's own permissions,
   model output and retrieved content as untrusted input, per-agent cost and
-  concurrency limits, server-enforced confirmation, and tool-call audit.
+  concurrency limits, server-enforced confirmation, tool-call audit, and the
+  file's own standards mapping onto the OWASP LLM Top 10 2026 and Agentic
+  Top 10.
 - Abuse-resistant notifications: reset/magic-link, invite/share throttling,
   idempotency, anti-enumeration, and SSRF-safe previews.
 - Data layer and database: separate migration and runtime roles, row-level

@@ -19,7 +19,10 @@ entries — with passkeys and WebAuthn audited at the configuration surface
 because Django ships no native support to audit, agent- and LLM-facing
 interfaces (MCP tool surfaces, agent token audience validation, tool scope
 versus user permissions, model output and retrieved content as untrusted
-input), the database as a security boundary (migration versus runtime roles,
+input, and the mapping onto the OWASP LLM Top 10 2026 and Agentic Top 10 —
+cited at entry-token level with the LLM edition pinned, because the 2026
+edition renumbered against 2025 and an unpinned token now names a different
+entry), the database as a security boundary (migration versus runtime roles,
 row-level security and tenant context on pooled connections, verified database
 TLS, field-level encryption, NoSQL injection, transaction isolation and the
 retry a raised level requires, and connection exhaustion), the data lifecycle
