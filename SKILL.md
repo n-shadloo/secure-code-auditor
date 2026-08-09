@@ -21,7 +21,7 @@ license: MIT
 allowed-tools: Read, Grep, Glob, Bash
 metadata:
   author: n-shadloo
-  version: 1.29.0
+  version: 1.30.0
 ---
 
 # secure-code-auditor
@@ -107,7 +107,7 @@ you rather than by OWASP number.
 
 | Concern | Reference file |
 |---|---|
-| Vetted security-library choices, compatibility, minimum-safe versions, conditional/existing-install-only/rejected candidates (current as of 8 Aug 2026) | `references/security-hardening-libraries.md` |
+| Vetted security-library choices, compatibility, minimum-safe versions, conditional/existing-install-only/rejected candidates (current as of 9 Aug 2026) | `references/security-hardening-libraries.md` |
 
 ## Ownership and boundaries
 
