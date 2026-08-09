@@ -118,7 +118,10 @@ the second.
 Carry an ASVS identifier only where the project is genuinely being held to the
 standard — a regulated environment, a customer security review, a contracted
 verification level. Everywhere else it is a third identifier for a reader with
-no use for it. CWE and the OWASP mapping are not optional; this one is.
+no use for it. CWE and the OWASP mapping are not optional; this one is. An LLM
+Top 10 2026 or Agentic Top 10 entry token is admissible in the same optional
+position on the same only-where-held-to-it terms, mapped section by section in
+`agent-and-llm-interfaces.md`.
 
 **Cite the chapter, and a section only where one sub-chapter is the whole
 subject** — `V8` for an authorization finding, `V15.4` for a concurrency one.
@@ -164,9 +167,10 @@ Say this rather than stretching a mapping to hide it.
   operational configuration, while `a02-security-misconfiguration.md` owns the
   DNS records that decide whether the domain can be forged and
   `deployment-and-runtime.md` owns the proxy, the process, and the image.
-- **ASVS 5.0 has no chapter for agent and MCP tool surfaces.**
-  `agent-and-llm-interfaces.md` has no mapping and does not need one; the
-  standard predates the surface.
+- **ASVS 5.0 has no chapter for agent and MCP tool surfaces.** That still
+  holds — the standard predates the surface — so `agent-and-llm-interfaces.md`
+  carries no ASVS mapping and needs none. It now carries a spine of its own
+  instead: the LLM and Agentic Top 10s, mapped in that file.
 
 ## Report structure
 

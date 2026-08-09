@@ -12,7 +12,8 @@ A03:2025, A05:2025, A06:2025, and API1, API2, API4, and API5:2023.
 
 The spine is unchanged. The agent-specific taxonomies — OWASP's Top 10 for
 Agentic Applications (ASI), Top 10 for LLM Applications, and MCP Top 10 — are
-used here as secondary mappings only, and the MCP Top 10 is a beta document at
+used here as secondary mappings only, stated section by section in "Mapping to
+the LLM and Agentic Top 10s" below, and the MCP Top 10 is a beta document at
 the time of writing; cite it as such rather than as a settled standard.
 
 This file owns the **tool-call threat model** — what changes when the caller is
@@ -30,6 +31,7 @@ tool call has to leave behind.
 
 ## Contents
 - [Principle](#principle)
+- [Mapping to the LLM and Agentic Top 10s](#mapping-to-the-llm-and-agentic-top-10s)
 - [Django & DRF implementation](#django--drf-implementation)
 - [What survives when a DRF view is republished as a tool](#what-survives-when-a-drf-view-is-republished-as-a-tool)
 - [Inbound token validation and the passthrough prohibition](#inbound-token-validation-and-the-passthrough-prohibition)
@@ -83,6 +85,98 @@ General defenses:
 - Record each invocation so the episode can be reconstructed afterwards:
   acting identity, principal, tool, argument shape, granted scope, decision,
   and outcome.
+
+## Mapping to the LLM and Agentic Top 10s
+
+Two OWASP lists cover this surface, and they answer different questions. The
+**Top 10 for LLM Applications 2026**, published 3 August 2026, ranks what goes
+wrong when a model is a *component* of an application — what it is fed, what
+it emits, and what it costs to run. The **Top 10 for Agentic Applications
+2026**, published 9 December 2025, ranks what goes wrong when a model is an
+*actor* — what it may invoke, under whose identity, and how far the damage
+travels. A backend that publishes tools to an agent is in scope of both, so
+where both apply, cite both.
+
+Neither displaces the spine. The OWASP Top 10:2025 and API Security Top 10
+2023 identifiers each section already carries are what decide severity and
+routing; these two lists name which agent-specific failure a finding is an
+instance of, which is the thing a reader of an agent design wants and the 2025
+spine has no token for.
+
+Carry one of these tokens only where the project is genuinely being held to
+that framing — an AI-specific security review, a customer questionnaire built
+on one of these lists, an internal standard that names them. The rule
+`00-methodology-and-severity.md` states for ASVS applies here unchanged: CWE
+and the OWASP mapping are not optional, and this one is.
+
+**Cite the entry token, and pin the edition on the LLM one** — `LLM03:2026`,
+`ASI03`. Below the entry token these documents are prose: prevention
+checklists and example scenarios rewritten between editions, with no stable
+identifier to cite. The token itself is not stable either. The 2026 LLM
+edition renumbered against 2025, moving Excessive Agency from LLM06 to LLM03
+and Improper Output Handling from LLM05 to LLM10, so an unpinned `LLM06` now
+names a different entry than it did when it was written. The Agentic list
+publishes no year inside its tokens; `ASI01` through `ASI10` are cited bare
+and dated by the edition named above.
+
+| Section in this file | LLM Top 10 2026 | Agentic Top 10 2026 |
+|---|---|---|
+| What survives when a DRF view is republished as a tool | LLM03:2026 Excessive Agency | ASI02 Tool Misuse and Exploitation |
+| Inbound token validation and the passthrough prohibition | — | ASI03 Identity and Privilege Abuse |
+| Effective authority: tool scope intersected with user permissions | LLM03:2026 | ASI03 |
+| Model output as an injection source | LLM10:2026 Improper Output Handling | ASI05 Unexpected Code Execution |
+| Retrieved content and indirect prompt injection | LLM01:2026 Prompt Injection | ASI06 Memory and Context Poisoning |
+| Cost and concurrency limits, not only request rate | LLM06:2026 Unbounded Consumption | ASI08 Cascading Failures |
+| Server-enforced confirmation for irreversible actions | LLM03:2026 | ASI09 Human-Agent Trust Exploitation |
+| Runtime-discovered tools and servers | LLM04:2026 Supply Chain | ASI04 Agentic Supply Chain Vulnerabilities |
+| Tool-call audit records | — | ASI10 Rogue Agents, in the one part a backend owns |
+
+**The overlaps are corroboration, not conflict.** LLM03:2026 is the LLM entry
+for three of the rows, because that list treats every failure to bound an
+agent's authority as one entry while the Agentic list separates it into tool
+misuse, identity abuse, and trust exploitation. That is where citing both
+earns its place: the LLM token names the class, the ASI token names which half
+of it failed. ASI03 covers both the token check and the intersection rule and
+has no counterpart at all on the LLM list, which carries no identity entry —
+the largest single gap between the two for a backend. Cost and concurrency is
+the one clean pair, LLM06:2026 against ASI08.
+
+**Three entries hold on this surface without owning a section here.**
+LLM02:2026 Sensitive Information Disclosure is the impact behind several rows
+above rather than a defect of its own; the controls are the queryset scoping
+and serializer field sets in `api-drf-specific.md`, "Serializer exposure and
+mass assignment (API3)", and the personal-data rules in
+`data-lifecycle-and-privacy.md`. LLM08:2026 Hidden Context Exposure — the 2026
+rename and rescope of what 2025 called System Prompt Leakage — is a design
+principle rather than a control: treat everything placed in a model's context,
+system prompt and tool schemas included, as discoverable by anyone who can
+prompt the model, which is why no credential belongs in any of it
+(`service-identity-and-secrets.md`, "Where secrets live and how they reach the
+process"). ASI01 Agent Goal Hijack is the outcome the retrieved-content
+section defends against rather than a control of its own: the hijack happens
+at the model layer, and every backend instrument against it is already a row
+above — the intersection rule bounds what a hijacked agent reaches, and egress
+allowlisting bounds what leaves.
+
+**Named and excluded rather than mapped**, extending "Out of backend scope"
+below to both lists:
+
+- **LLM05:2026 Data and Model Poisoning** — training, fine-tuning, and
+  embedding integrity.
+- **LLM07:2026 Misinformation** — output correctness is a model property. A
+  backend can require verification before acting on model output; it cannot
+  make the output true.
+- **LLM09:2026 Vector and Embedding Weaknesses** — the authorization boundary
+  around retrieval is in scope and mapped above; embedding behaviour and
+  retrieval quality are not.
+- **ASI07 Insecure Inter-Agent Communication** — multi-agent transport. Where
+  the Django application is itself one endpoint, it is ordinary API security.
+- **ASI10 Rogue Agents** — behavioural monitoring and fleet governance are
+  operational, which is why the audit record is the only row it appears on.
+
+The MCP Top 10 tokens some sections below also carry are a third list and a
+beta document. They stay secondary, as the opening says, and are not part of
+this mapping.
 
 ## Django & DRF implementation
 
@@ -173,17 +267,24 @@ is the client asserting its own approval.
 Severity is Critical where the tool spans tenants: the failure is BOLA at the
 scale of the whole table rather than one object
 (`a01-broken-access-control.md`, "IDOR / BOLA"). Maps to CWE-862, CWE-1220;
-API1, API3, and API4:2023; ASI02 Tool Misuse and Exploitation.
+API1, API3, and API4:2023; LLM03:2026 Excessive Agency; ASI02 Tool Misuse and
+Exploitation.
 
 ## Inbound token validation and the passthrough prohibition
 
 A bearer token presented by an agent is not a session. Validate it on every
 invocation — signature, algorithm, `iss`, `exp`, and `aud` — and reject any
 token whose audience does not name this server. The MCP authorization
-specification (revision 2025-11-25) requires both: a server accepts only tokens
-issued for itself, and it must not pass through the token it received from the
-client. Audience binding follows RFC 8707; the protected-resource metadata a
-client uses to discover the correct audience follows RFC 9728.
+specification (revision 2026-07-28, which superseded 2025-11-25 on 28 July
+2026) requires both, unchanged across the two revisions: a server accepts only
+tokens issued for itself, and it must not pass through the token it received
+from the client. Audience binding follows RFC 8707. The current revision adds
+one duty the previous one did not place on the resource server: publishing
+RFC 9728 protected-resource metadata — the document a client reads to discover
+the authorization server and the audience to ask for — is now mandatory rather
+than optional. A token that is insufficient rather than invalid is refused
+with a 403 naming the scope required and where that metadata lives, and scope
+hierarchies count when deciding whether a token is sufficient.
 
 Passthrough is a confused-deputy vulnerability (CWE-441). The downstream
 service sees a valid token, cannot tell that the caller is an intermediary, and
@@ -219,9 +320,9 @@ in `a07-authentication-failures.md`, "JWT"; the ordered claim-by-claim
 verification, JWKS caching and rotation, and the RFC 8693 exchange mechanics
 are in `service-identity-and-secrets.md`. Both apply unchanged. What is
 specific here is the audience check on every call and the passthrough
-prohibition. Maps to CWE-287, CWE-345, CWE-441; API2:2023; MCP01 Token
-Mismanagement and Secret Exposure, MCP07 Insufficient Authentication and
-Authorization.
+prohibition. Maps to CWE-287, CWE-345, CWE-441; API2:2023; ASI03 Identity and
+Privilege Abuse; MCP01 Token Mismanagement and Secret Exposure, MCP07
+Insufficient Authentication and Authorization.
 
 ## Effective authority: tool scope intersected with user permissions
 
@@ -261,7 +362,7 @@ human's own account, and the episode is reconstructable afterwards. The
 machinery for scope embedding, time-boxing, and audit identity is in
 `privileged-access-and-impersonation.md`, "Impersonation: design requirements"
 and is not restated here. Maps to CWE-862, CWE-863; API1 and API5:2023; ASI03
-Identity and Privilege Abuse; LLM06 Excessive Agency.
+Identity and Privilege Abuse; LLM03:2026 Excessive Agency.
 
 ## Model output as an injection source
 
@@ -301,7 +402,7 @@ than ordinary request handlers do:
   deserialization").
 
 Maps to CWE-89, CWE-78, CWE-94, CWE-1336, CWE-22, CWE-918, CWE-502; A05:2025;
-LLM05 Improper Output Handling; ASI05 Unexpected Code Execution.
+LLM10:2026 Improper Output Handling; ASI05 Unexpected Code Execution.
 
 ## Retrieved content and indirect prompt injection
 
@@ -340,10 +441,9 @@ server-derived filter at query time, and reindexing when permissions change —
 is in `authorization-architecture.md`, "Search indexes and denormalised
 copies". What is agent-specific here is that a tool republishing retrieval must
 also intersect the tool's scope with the invoking user's own permissions.
-Maps to CWE-77; A01:2025; LLM01 Prompt
-Injection; ASI06 Memory and Context Poisoning. Assign severity by what the
-injected instruction can reach — Critical when it can reach a privileged tool
-or an unrestricted egress path.
+Maps to CWE-77; A01:2025; LLM01:2026 Prompt Injection; ASI06 Memory and
+Context Poisoning. Assign severity by what the injected instruction can reach —
+Critical when it can reach a privileged tool or an unrestricted egress path.
 
 ## Cost and concurrency limits, not only request rate
 
@@ -370,7 +470,8 @@ throttling — a quota tool, not a security control — is unchanged
 
 Return HTTP 429 with `Retry-After` when a limit is hit, and fail closed on the
 cost check specifically: a cache outage must not silently remove a spend cap.
-Maps to CWE-770, CWE-400; API4:2023; LLM10 Unbounded Consumption.
+Maps to CWE-770, CWE-400; API4:2023; LLM06:2026 Unbounded Consumption; ASI08
+Cascading Failures.
 
 ## Server-enforced confirmation for irreversible actions
 
@@ -403,7 +504,7 @@ issue_refund(order)
 The token is short-lived, single-use, bound to the action and its parameters,
 and stored as a digest like any other credential
 (`a07-authentication-failures.md`, "API keys"). Absence of a valid token fails
-closed. Maps to CWE-306, CWE-841; A06:2025; LLM06 Excessive Agency; ASI09
+closed. Maps to CWE-306, CWE-841; A06:2025; LLM03:2026 Excessive Agency; ASI09
 Human-Agent Trust Exploitation.
 
 ## Runtime-discovered tools and servers
@@ -426,8 +527,9 @@ decision to a point none of the build-time machinery reaches.
   a crafted response from the server being connected to, not by anything the
   connecting client sent.
 
-Maps to CWE-1357; A03:2025; LLM03 Supply Chain; ASI04 Agentic Supply Chain
-Vulnerabilities; MCP04 Software Supply Chain Attacks, MCP09 Shadow MCP Servers.
+Maps to CWE-1357; A03:2025; LLM04:2026 Supply Chain; ASI04 Agentic Supply
+Chain Vulnerabilities; MCP04 Software Supply Chain Attacks, MCP09 Shadow MCP
+Servers.
 
 ## Tool-call audit records
 
@@ -446,7 +548,7 @@ field names, and digests rather than values, redact known-sensitive fields, and
 neutralize control characters in any model-supplied string before it reaches a
 log line ("Log injection and integrity"). Denials are the more valuable half of
 the record — log the refused call, not only the executed one. Maps to CWE-778,
-CWE-532; A09:2025; MCP08 Lack of Audit and Telemetry.
+CWE-532; A09:2025; ASI10 Rogue Agents; MCP08 Lack of Audit and Telemetry.
 
 ## Out of backend scope
 
@@ -472,6 +574,9 @@ backend code for these, and do not report their absence as a backend finding:
 - [ ] Inbound tokens are validated on every invocation for signature, issuer,
       expiry, audience against this server's own resource identifier, and
       scope; no inbound token is forwarded to a downstream service.
+- [ ] The server publishes RFC 9728 protected-resource metadata, and a token
+      that is insufficient rather than invalid is refused with a 403 naming
+      the required scope and that metadata location.
 - [ ] Every control the equivalent HTTP endpoint carried is explicitly
       re-applied on the tool path, and the enumeration was done against the
       republishing layer's source rather than its documentation.
