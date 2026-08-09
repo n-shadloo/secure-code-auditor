@@ -74,11 +74,16 @@ dangling-DNS subdomain takeover), deployment/runtime hardening including
 forwarded-header trust and reading the client IP behind proxies, development
 tooling and profilers reachable in production, and the container image as a
 build artifact with a non-root user, a pinned base, and no secret surviving in
-a layer, and injection treated as one bug at many interpreters (the inventory
-of every sink a request can reach and which reference owns each one, the
-method for tracing a source to a sink including the stored-then-used case that
-crosses requests, SQL plus the identifier positions the ORM does not
-parameterize, the shell and the option parser of the program behind it,
+a layer, path traversal on a file read whose path the request named -- what
+`safe_join` and the storage API reject, what `FileResponse` and the
+development static view do not, and the identifier-not-a-path pattern that
+removes the class -- and injection treated as one bug at many interpreters (the
+inventory of every sink a request can reach and which reference owns each one,
+the method for tracing a source to a sink, worked end to end on the
+stored-then-used case that crosses requests, SQL plus the identifier positions
+the ORM does not parameterize, GeoDjango's raster band index and the spatial
+lookup that reads its value as a raster source,
+the shell and the option parser of the program behind it,
 template injection and server-rendered output, LDAP filters and distinguished
 names, response and mail headers, and the log line as a record boundary an
 attacker can forge).

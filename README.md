@@ -48,8 +48,11 @@ rule for generating that code.
   cache-mediated data leaks, SSRF and the egress control behind it —
   allowlist-by-destination, deny-by-default egress for the workers whose
   destinations are known in advance, and the split between what the platform
-  enforces and what the application checks — open redirect, multi-tenancy,
-  admin exposure.
+  enforces and what the application checks — path traversal as the same
+  failure against the filesystem, where `os.path.join` reads like a
+  containment function and is not one, `FileResponse` validates nothing, and
+  the fix is to let the client name an identifier rather than a path — open
+  redirect, multi-tenancy, admin exposure.
 - Authorization architecture: the privilege model (RBAC/ABAC/ReBAC), what
   Django's permission layer actually does, the DRF and admin enforcement
   surfaces, default-deny with a URLconf audit test, field-level authorization,
@@ -67,8 +70,12 @@ rule for generating that code.
   read.
 - Injection: the sink inventory every other reference defers to — every
   interpreter a request can reach, and which file owns each one — with the
-  method for tracing a source to it; SQL/ORM (including the
-  dictionary-expansion column-alias class), command and argument injection,
+  method for tracing a source to it, worked end to end on the stored field
+  whose writer and reader sit in different requests; SQL/ORM (including the
+  dictionary-expansion column-alias class, and the two GeoDjango positions the
+  ORM does not parameterize — a raster band index PostGIS inlines as syntax,
+  and a spatial-lookup value read as a raster source to open rather than as a
+  value to bind), command and argument injection,
   template injection and server-side output handling, LDAP/directory
   injection, and header/email injection.
 - Authentication: sessions, JWT, OAuth2/OIDC and social login, API keys,

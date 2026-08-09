@@ -5,9 +5,9 @@ description: >-
   API Security Top 10 (2023), and ASVS 5.0 foundation. Use when backend
   code is written or reviewed and touches authentication, sessions, JWT,
   OAuth2/OIDC, API keys, password hashing, permissions, access control,
-  SSRF, impersonation, SQL/command/template injection, XSS, LDAP,
-  row-level security, encrypted columns, NoSQL, Redis, file uploads, S3,
-  presigned URLs, serializers, viewsets, API endpoints, pagination, rate
+  SSRF, path traversal, impersonation, SQL/command/template injection,
+  XSS, LDAP, row-level security, encrypted columns, NoSQL, Redis, file
+  uploads, S3, serializers, viewsets, API endpoints, pagination, rate
   limiting, CSRF/CORS, OpenAPI schema, GraphQL, Django Ninja, AI agents,
   MCP tools, secrets, payments, webhooks, Celery, race conditions,
   caching, deserialization, async/ASGI, WebSockets, audit logging,
@@ -21,7 +21,7 @@ license: MIT
 allowed-tools: Read, Grep, Glob, Bash
 metadata:
   author: n-shadloo
-  version: 1.24.0
+  version: 1.25.0
 ---
 
 # secure-code-auditor
@@ -73,11 +73,11 @@ decide which file is authoritative.
 
 | Concern | Reference file |
 |---|---|
-| **A01** Access control, IDOR/BOLA, object- & function-level authz, cache-mediated data leaks, SSRF, open redirect, multi-tenancy, admin access | `references/a01-broken-access-control.md` |
+| **A01** Access control, IDOR/BOLA, object- & function-level authz, cache-mediated data leaks, SSRF and egress control, path traversal on a file read the request names, open redirect, multi-tenancy, admin access | `references/a01-broken-access-control.md` |
 | **A02** DEBUG/ALLOWED_HOSTS, SECURE_*/SESSION_*/CSRF_* matrix, CORS, headers, mail authentication (SPF/DKIM/DMARC alignment and rollout), CAA and dangling-DNS/subdomain takeover, `check --deploy` and what it cannot see | `references/a02-security-misconfiguration.md` |
 | **A03** Dependencies, third-party vetting/maintained-package gate, a development-only package reaching the production requirements file, pinning/hashing, `pip-audit`, EOL frameworks, migrations/data integrity, SBOM | `references/a03-software-supply-chain.md` |
 | **A04** Password-hashing family and parameters, upgrade-on-login, randomness and token generation, constant-time comparison, signing and per-purpose salt discipline, TLS-in-transit, data at rest, key lifecycle and envelope encryption, post-quantum posture | `references/a04-cryptographic-failures.md` |
-| **A05** The sink inventory every other reference defers to and the method for tracing a source to it, SQL/ORM injection, dictionary-expansion column aliases, command and argument injection, template injection and XSS from server-rendered output, LDAP/directory injection, header/email injection | `references/a05-injection.md` |
+| **A05** The sink inventory every other reference defers to and the method for tracing a source to it, including the stored-then-used path worked end to end, SQL/ORM injection, dictionary-expansion column aliases, GeoDjango raster band indexes and spatial-lookup raster sources, command and argument injection, template injection and XSS from server-rendered output, LDAP/directory injection, header/email injection | `references/a05-injection.md` |
 | **A06** Which flows need a rate limit or anti-automation in the first place, algorithmic resource exhaustion and the bound every caller-controlled input needs, business-logic and email/notification abuse, missing limits, insecure defaults | `references/a06-insecure-design.md` |
 | **A07** Human authentication: sessions, JWT/SimpleJWT, OAuth2/OIDC/social login, API keys, brute force, MFA, password reset, allauth/dj-rest-auth/OAuth Toolkit, enumeration | `references/a07-authentication-failures.md` |
 | **A08** Insecure deserialization (pickle/yaml), the cache/session/fixture paths Django deserializes without being asked, Celery task-message trust and serializers, signed data, inbound webhook signature/timestamp/replay and event de-duplication, outbound webhook delivery controls, artifact provenance | `references/a08-integrity-and-deserialization.md` |
@@ -144,10 +144,13 @@ for the regular expression alone.
 
 **Injection sinks.** A05 is the inventory for the whole skill, and it is meant
 to be exhaustive so that no other file keeps a partial copy. It owns SQL, the
-shell, and server-side output outright. Its other rows point outward:
-`references/data-layer-and-database.md` for raw paths and document-store shape
-validation, `references/file-uploads.md` for storage keys, A01 for SSRF, A08
-for deserialization, and A09 for the log line.
+shell, and server-side output outright, and with SQL it owns the GeoDjango
+positions the ORM does not parameterize — the raster band index and the
+spatial-lookup value that is read as a raster source rather than as a value.
+Its other rows point outward: `references/data-layer-and-database.md` for raw
+paths and document-store shape validation, A01 for SSRF and for the filesystem
+path a request names, `references/file-uploads.md` for the storage key an
+upload lands under, A08 for deserialization, and A09 for the log line.
 
 **SSRF.** A01, which absorbed it in the 2025 list.
 `references/file-uploads.md`, `references/agent-and-llm-interfaces.md`,
@@ -155,6 +158,17 @@ for deserialization, and A09 for the log line.
 `references/a08-integrity-and-deserialization.md` each reach it and all defer
 here, as does the cloud metadata endpoint a leaked workload credential is
 reached through.
+
+**Path traversal.** A01, on the same reasoning as SSRF: a request reaching a
+resource it should not, with nothing in the code that looks like an
+authorization decision. The split against `references/file-uploads.md` is by
+direction rather than by file type. A01 owns the read whose path the request
+named — the report download, the export, the artifact or log viewer, flows
+with no upload in them at all — along with what Django does and does not
+protect there. `references/file-uploads.md` owns the name an upload brings,
+the key it lands under, and the private download of a file the application
+stored. A05's inventory row for the filesystem path points at A01 and names
+`references/file-uploads.md` for the storage-key half.
 
 **Secrets and keys.** A04 owns the choice of primitive and its parameters, and
 the life of a key from generation to destruction.
@@ -204,9 +218,10 @@ reach the application at all: what a delegated upload URL binds, the quarantine
 prefix an object waits in until the server has verified it against the store
 rather than against the uploader's claims, and the choice between proxying a
 private download and signing a URL for it. A08 keeps the signature, timestamp,
-and replay rules a callback has to satisfy. A01 keeps import-from-URL SSRF and
-the cache-mediated leak that a CDN cache key dropping its signing parameters is
-one case of. `references/data-lifecycle-and-privacy.md` keeps whether the bytes
+and replay rules a callback has to satisfy. A01 keeps import-from-URL SSRF, the
+cache-mediated leak that a CDN cache key dropping its signing parameters is
+one case of, and the traversal question on a read whose path the request named.
+`references/data-lifecycle-and-privacy.md` keeps whether the bytes
 are gone, while `references/file-uploads.md` keeps only the fact that an
 already-issued signed URL is beyond the reach of any erasure.
 

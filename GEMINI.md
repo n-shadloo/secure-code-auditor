@@ -57,10 +57,18 @@ configuration and the platform state a code review cannot answer, delegated
 upload URLs and what each unbound constraint permits, direct-to-storage
 uploads held in quarantine until the server verifies them against the store,
 callback trust, private downloads, and CDN cache keys for private objects),
+path traversal on a read whose path the request named, which is the half of
+that boundary with no upload in it and where `os.path.join` is not a
+containment function -- it never normalizes `..` and an absolute value discards
+the base outright, so the storage API that runs `safe_join` and rejects rather
+than repairs is the control, and `FileResponse` validates nothing at all,
 injection as one bug at many interpreters (the inventory of every sink a
 request can reach with the file that owns each one, the method for tracing a
-source to one across requests, SQL and the identifier positions the ORM does
-not parameterize, the shell and a program's own option parser, template
+source to one across requests worked end to end on a stored field, SQL and the
+identifier positions the ORM does not parameterize, GeoDjango's raster band
+index, which PostGIS inlines into the statement rather than binding, and the
+spatial lookup that reads a `str` or `dict` value as a raster source to open,
+the shell and a program's own option parser, template
 injection and server-rendered output, LDAP filters and distinguished names, and
 response and mail headers), and a dated maintained-package gate for third-party
 security dependencies, including the development-only package that reaches the
