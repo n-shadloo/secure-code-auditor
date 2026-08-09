@@ -148,12 +148,14 @@ rule for generating that code.
 - Cryptography: choosing a password-hashing family and pinning its cost to the
   hardware that runs it, why a stock Django install is on PBKDF2 no matter what
   is in its requirements file, parameter increases that propagate as users log
-  in, randomness and token generation as the failure this category actually
-  catches most often, where a constant-time comparison earns its place and
-  where it is noise, per-purpose salt discipline so a token minted for one flow
-  cannot be replayed against another, the key lifecycle from generation to
-  destruction with envelope encryption and resumable re-encryption, and a sober
-  post-quantum posture that is an inventory rather than a migration.
+  in and the wrapped-hasher migration that moves the accounts which never log
+  in at all, randomness and token generation as the failure this category
+  actually catches most often, where a constant-time comparison earns its place
+  and where it is noise, per-purpose salt discipline so a token minted for one
+  flow cannot be replayed against another, the key lifecycle from generation to
+  destruction with envelope encryption worked against a KMS and resumable
+  re-encryption, and a sober post-quantum posture that is an inventory rather
+  than a migration.
 - Integrity and cross-system trust: the inbound webhook receiver end to end
   (raw-body capture before any parser, a timestamp inside the signed material,
   constant-time comparison, per-provider signing schemes, and a de-duplication
@@ -172,7 +174,9 @@ rule for generating that code.
   request fingerprint so a reused key cannot answer a different request, side
   effects ordered against the commit, state transitions the database arbitrates
   rather than a Python check, and regular-expression denial of service.
-- Deployment/runtime: TLS, security headers and which layer owns each one,
+- Deployment/runtime: TLS including the hybrid post-quantum group a current
+  OpenSSL already prefers and the copied hardening snippet that quietly pins it
+  back out, security headers and which layer owns each one,
   reverse-proxy trust and reading the client IP from the right of
   `X-Forwarded-For` rather than the attacker-supplied left, debug toolbars and
   profilers reachable in production, Gunicorn/systemd, the container image as a
@@ -211,6 +215,7 @@ Django are flagged. Each area carries the date it was last checked.
 | 8 Aug 2026 | DRF line | The security fixes are in 3.17.2 rather than in 3.18.0, so 3.17.2 is the minimum safe version, while 3.18.0 is a feature release that drops three end-of-life Django lines and changes the error shape list serializers return. |
 | 8 Aug 2026 | OAuth and social login | django-oauth-toolkit 3.4.0, a mandatory floor rather than a preferred one: below it the authorization endpoint carries an unauthenticated open redirect under `prompt=none`, tokens and codes render in cleartext in the admin, client secrets reach debug logs, device-flow user codes are predictable, and redirect-URI matching deviates from RFC 9700 in four ways. django-allauth moved to 65.19.0 and social-auth-app-django to 6.0.1. |
 | 8 Aug 2026 | Django 6.1 lag | Most other entries still declare support through Django 6.0 rather than 6.1, which days after a feature release is packaging lag rather than a compatibility finding. |
+| 9 Aug 2026 | Cryptographic currency | `argon2-cffi` 25.1.0 and PyCA `cryptography` 50.0.0 both re-confirmed against PyPI with no release and no advisory after the 7 Aug check, so neither pin moves; Django's hard-coded Argon2 parameters re-read off the 6.0 source and unchanged since 3.2. Cloud KMS SDKs stay patterns rather than gate entries, now with the boto3 envelope calls written out in A04 and the GCP and Azure equivalents named beside them. |
 | 9 Aug 2026 | Authentication currency | `django-two-factor-auth` 1.18.1 and SimpleJWT 5.5.1 both re-confirmed conditional rather than re-tiered: each shipped artifact declares Django 4.2 through 5.2 and no Django 6 line, whatever the development branch reads. `pwned-passwords-django` 5.2.0 rejected as a new recommendation on the same test, so breached-password screening lands as an owned pattern. `django-smart-ratelimit` 4.12.1 rejected despite being current and declaring Django 6.0, on maintainer concentration and an in-memory default backend that multiplies the limit by the worker count; the category ruling for general-purpose rate limiting is recorded with it so the question stops recurring. |
 
 ## Install

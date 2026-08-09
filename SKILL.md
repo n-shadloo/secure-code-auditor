@@ -21,7 +21,7 @@ license: MIT
 allowed-tools: Read, Grep, Glob, Bash
 metadata:
   author: n-shadloo
-  version: 1.26.0
+  version: 1.27.0
 ---
 
 # secure-code-auditor
@@ -76,7 +76,7 @@ decide which file is authoritative.
 | **A01** Access control, IDOR/BOLA, object- & function-level authz, cache-mediated data leaks, SSRF and egress control, path traversal on a file read the request names, open redirect, multi-tenancy, admin access | `references/a01-broken-access-control.md` |
 | **A02** DEBUG/ALLOWED_HOSTS, SECURE_*/SESSION_*/CSRF_* matrix, signed cookies and the legacy salt fallback, CORS, headers, mail authentication (SPF/DKIM/DMARC alignment and rollout), CAA and dangling-DNS/subdomain takeover, `check --deploy` and what it cannot see | `references/a02-security-misconfiguration.md` |
 | **A03** Dependencies, third-party vetting/maintained-package gate, a development-only package reaching the production requirements file, pinning/hashing, `pip-audit`, EOL frameworks, migrations/data integrity, SBOM | `references/a03-software-supply-chain.md` |
-| **A04** Password-hashing family and parameters, upgrade-on-login, randomness and token generation, constant-time comparison, signing and per-purpose salt discipline, TLS-in-transit, data at rest, key lifecycle and envelope encryption, post-quantum posture | `references/a04-cryptographic-failures.md` |
+| **A04** Password-hashing family and parameters, upgrade-on-login and the wrapped-hasher migration that reaches the dormant accounts it cannot, randomness and token generation, constant-time comparison, signing and per-purpose salt discipline, TLS-in-transit, data at rest, key lifecycle and envelope encryption worked against a KMS, post-quantum posture | `references/a04-cryptographic-failures.md` |
 | **A05** The sink inventory every other reference defers to and the method for tracing a source to it, including the stored-then-used path worked end to end, SQL/ORM injection, dictionary-expansion column aliases, GeoDjango raster band indexes and spatial-lookup raster sources, command and argument injection, template injection and XSS from server-rendered output, LDAP/directory injection, header/email injection | `references/a05-injection.md` |
 | **A06** Which flows need a rate limit or anti-automation in the first place, algorithmic resource exhaustion and the bound every caller-controlled input needs, business-logic and email/notification abuse, missing limits, insecure defaults | `references/a06-insecure-design.md` |
 | **A07** Human authentication: password policy from the length floor to the breached-corpus screening no built-in validator provides, sessions, JWT/SimpleJWT, OAuth2/OIDC/social login, API keys, brute force, MFA, passkey and WebAuthn configuration, password reset, allauth/dj-rest-auth/OAuth Toolkit, enumeration | `references/a07-authentication-failures.md` |
@@ -101,7 +101,7 @@ you rather than by OWASP number.
 | Database roles and privilege separation, row-level security, tenant context on pooled connections, verified DB TLS, field-level encryption and blind indexes, raw-SQL isolation bypass, NoSQL/Redis injection, read-replica staleness, transaction isolation and the serialization-failure retry a raised level requires, connection exhaustion, backups and production-data copies | `references/data-layer-and-database.md` |
 | Deletion completeness and erasure, soft-delete tombstones leaking through related-object/admin/serializer/raw paths, files left after a row is deleted, retention and scheduled purges, anonymization vs pseudonymization, personal-data inventory and model-layer classification, data export/DSAR endpoints, copies in indexes, caches, history tables, and lower environments | `references/data-lifecycle-and-privacy.md` |
 | Service-to-service identity, machine-token validation (algorithm pinning, `iss`/`aud`, required claims), JWKS caching and key rotation, OAuth client credentials, mutual TLS and certificate-bound tokens, proxy-set client-certificate identity, platform workload identity, network-position-as-authentication on internal endpoints, downstream token exchange, secret storage/delivery/rotation, `SECRET_KEY` rotation, leaked-secret response | `references/service-identity-and-secrets.md` |
-| TLS/HSTS, Nginx, reverse-proxy & `X-Forwarded-*` trust, reading the client IP behind proxies, header ownership edge-vs-Django, debug/profiling and metrics endpoints reachable in production, Gunicorn/systemd hardening, container image posture and secrets baked into layers, static/media, cache & queue exposure | `references/deployment-and-runtime.md` |
+| TLS/HSTS and hybrid post-quantum key exchange at the edge, Nginx, reverse-proxy & `X-Forwarded-*` trust, reading the client IP behind proxies, header ownership edge-vs-Django, debug/profiling and metrics endpoints reachable in production, Gunicorn/systemd hardening, container image posture and secrets baked into layers, static/media, cache & queue exposure | `references/deployment-and-runtime.md` |
 
 ### Package decisions
 

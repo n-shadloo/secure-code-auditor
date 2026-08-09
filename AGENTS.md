@@ -69,15 +69,19 @@ deserialization including the cache, session, and fixture paths Django
 deserializes without being asked, Celery task messages as input from anyone who
 can reach the broker, and artifact provenance), the cryptographic primitives
 underneath all of it (password-hashing family and parameters tuned to the
-hardware that runs them, upgrade-on-login, randomness and token generation,
+hardware that runs them, upgrade-on-login and the wrapped-hasher migration that
+moves the dormant accounts it never reaches, randomness and token generation,
 scoped constant-time comparison, per-purpose salt discipline on signed values
 including the salt-namespace collision Django fixed in its own signed-cookie
 helper and the transitional setting that keeps accepting the old derivation,
-key lifecycle and envelope encryption with versioned rotation, and post-quantum
+key lifecycle and envelope encryption with versioned rotation and a data key
+wrapped by a KMS under an encryption context bound to its row, and post-quantum
 posture), the DNS-published configuration that decides whether the domain
 itself can be forged (SPF lookup limits and alignment, DKIM signing through a
 third-party sender, DMARC rollout under the 2026 specification, CAA, and
 dangling-DNS subdomain takeover), deployment/runtime hardening including
+hybrid post-quantum key exchange at the TLS edge, where a current OpenSSL
+already negotiates the group and the finding is a pinned list that excludes it,
 forwarded-header trust and reading the client IP behind proxies, development
 tooling and profilers reachable in production, and the container image as a
 build artifact with a non-root user, a pinned base, and no secret surviving in

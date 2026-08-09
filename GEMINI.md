@@ -47,16 +47,24 @@ integrity and cross-system trust (webhook signature verification on the raw
 body, timestamp tolerance and event de-duplication, outbound delivery controls,
 insecure deserialization including Django's cache, session, and fixture paths,
 and Celery task messages as untrusted input), the cryptographic primitives
-underneath them (password-hashing family and parameters, upgrade-on-login,
-randomness and token generation, constant-time comparison scoped to where it
-matters, per-purpose salt discipline on signed values — including the
-signed-cookie salt collision Django fixed in June 2026 and the transitional
-setting that goes on accepting the old derivation until 7.0 — key lifecycle and
-envelope encryption, and post-quantum posture), the configuration published in
+underneath them (password-hashing family and parameters, upgrade-on-login plus
+the wrapped-hasher data migration that moves the dormant accounts it never
+reaches — where an Argon2 target must override `verify` as well as `encode`,
+because its verification does not re-derive through `encode` the way PBKDF2's
+does and a wrapper missing that rejects every correct password — randomness and
+token generation, constant-time comparison scoped to where it matters,
+per-purpose salt discipline on signed values — including the signed-cookie salt
+collision Django fixed in June 2026 and the transitional setting that goes on
+accepting the old derivation until 7.0 — key lifecycle and envelope encryption
+down to a KMS data key wrapped under an encryption context bound to its own
+row, and post-quantum posture), the configuration published in
 DNS rather than in code (SPF lookup limits and alignment, DKIM signing through
 third-party senders, DMARC rollout under the 2026 specification, CAA, and
-dangling-DNS subdomain takeover), deployment and runtime hardening
-(forwarded-header trust and reading the client IP behind proxies, development
+dangling-DNS subdomain takeover), deployment and runtime hardening (hybrid
+post-quantum key exchange at the edge, where OpenSSL 3.5 already offers and
+prefers X25519MLKEM768 and the finding is a pinned group list that excludes it
+rather than a feature nobody enabled, forwarded-header trust and reading the
+client IP behind proxies, development
 tooling and profilers reachable in production, and the container image as a
 build artifact with a non-root user, a pinned base, and no secret left in a
 layer), file uploads from the request through storage to the reader
