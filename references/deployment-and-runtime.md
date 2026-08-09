@@ -488,6 +488,29 @@ Credentials), CWE-540 (Inclusion of Sensitive Information in Source Code), and
 A03:2025 where the value is a registry or build credential. Severity: high to
 critical by blast radius.
 
+### Scanning the built image
+
+Scanning the image answers a question the Dockerfile cannot: not what the
+build was instructed to assemble, but what is actually present in the layers
+that shipped. Trivy (v0.73.0, 3 Aug 2026) scans OS packages and language
+dependencies for known advisories, and also covers IaC misconfiguration,
+secrets, and licenses. Grype (v0.116.1, 28 July 2026) matches OS and language
+packages against its own vulnerability database, and will read an SBOM in
+place of the image. Syft (v1.50.0, 28 July 2026) generates the SBOM those
+tools consume, in CycloneDX, SPDX, or its own format. All three are
+Apache-2.0, and all three ship as single Go binaries rather than as Python
+packages — which is why they are documented as CI patterns and hold no row in
+`security-hardening-libraries.md`. That index gates pip-installable
+dependencies, and a binary a workflow invokes is not one.
+
+Where those scanners run, what their exit codes gate, which file the SBOM is
+generated from, and what provenance the build carries are the pipeline's
+questions rather than the image's. They are owned by
+`a03-software-supply-chain.md`, "SBOM, scan gate, and provenance", together
+with the reason to pin a scanner's own action to a commit SHA rather than to
+a tag. This file stops at the artifact: what the image contains, who it runs
+as, and what stays readable in a layer after a later layer deleted it.
+
 ## Static and media
 
 - Keep user uploads outside application/static roots or in object storage, with

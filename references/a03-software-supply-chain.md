@@ -21,6 +21,7 @@ dependency was chosen to implement.
 - [Pin and verify](#pin-and-verify)
 - [Scan continuously](#scan-continuously)
 - [Trust and provenance](#trust-and-provenance)
+- [SBOM, scan gate, and provenance](#sbom-scan-gate-and-provenance)
 - [Third-party dependency vetting](#third-party-dependency-vetting)
 - [A development dependency in the production requirements file](#a-development-dependency-in-the-production-requirements-file)
 - [Migration and data-integrity safety](#migration-and-data-integrity-safety)
@@ -72,8 +73,9 @@ pip install --require-hashes -r requirements.txt
   advisory source, maintenance, and operating model.
 - Enable automated update PRs (Dependabot / Renovate) and treat security updates
   as expedited.
-- Generate an SBOM (CycloneDX or SPDX) for the deployed image if you need to
-  answer "are we affected?" quickly when a CVE drops.
+- Generate an SBOM (CycloneDX or SPDX) if you need to answer "are we affected?"
+  quickly when a CVE drops. Which file it is generated from, in which format,
+  and what it does not prove are in "SBOM, scan gate, and provenance" below.
 
 ```
 pip-audit -r requirements.txt
@@ -100,6 +102,321 @@ pip-audit -r requirements.txt
   and treat a tool's own description as untrusted content rather than
   configuration. See `agent-and-llm-interfaces.md`, "Runtime-discovered tools
   and servers".
+
+## SBOM, scan gate, and provenance
+
+Maps to CWE-1395 (Dependency on Vulnerable Third-Party Component) where the
+scan gate is absent or disabled, and CWE-494 (Download of Code Without
+Integrity Check) where an artifact is consumed without verified provenance.
+Severity: medium for an inventory or scan that gates nothing, high where the
+missing check is the one standing between a substituted artifact and
+production.
+
+### Principle layer
+
+A hashed lockfile is the strongest claim this file can make from the
+repository alone. `--require-hashes` turns the install into a verification
+step, so a substituted artifact fails instead of running. It stops at three
+questions it was never able to answer: whether those pinned versions carry
+known advisories *today*, what actually ended up inside the artifact that
+shipped, and who built that artifact. An SBOM, a scan gate, and build
+provenance answer those three in order. Each is worth exactly as much as the
+enforcement attached to it, which is why the useful review question is never
+"is there one" but "what happens when it says no".
+
+**The SBOM is generated from the lock, not from the finished image alone.**
+An SBOM produced by scanning a built image records what a scanner could
+identify inside it; one produced from the lockfile records what the project
+resolved and pinned. The two disagree exactly where it matters — a wheel
+installed by a build step, a vendored dependency, anything the scanner's
+Python detector did not recognise — and only the second is traceable to a
+file a reviewer can open. Generate it in the same job that performs the
+install, from the same file the install reads, so the two cannot drift apart
+without someone editing both.
+
+CycloneDX is the Python ecosystem's working default. Spec 1.7 was published
+in October 2025, and `cyclonedx-py` 7.3.1 still emits 1.6 unless told
+otherwise, so set `--spec-version` explicitly rather than letting a tool
+upgrade silently change the format a consumer parses. SPDX is the
+alternative — 3.0.1 on the 3.0 line from April 2024, with 2.2.1 the version
+standardized as ISO/IEC 5962:2021 — but no maintained Python-native SPDX
+generator of comparable standing exists, so SPDX output comes from a
+general-purpose tool such as Syft rather than from anything pip-installable.
+Pick on what the consumer requires and record which one you picked.
+
+**An SBOM is not a hash-pinning control**, and the failure is quiet enough to
+be worth stating on its own. `cyclonedx-py` 7.3.1 parses a `pip-compile
+--generate-hashes` requirements file without complaint and emits components
+carrying no `hashes` member at all — verified against 7.3.1 on 9 Aug 2026 in
+both `requirements` and `environment` modes. The `--hash=` values survive
+only inside the component's free-text description, where nothing can verify
+against them. Integrity evidence is `--require-hashes` on the install step
+and nothing else. An SBOM sitting beside an install that does not pass it is
+an inventory, not a control, and reading it as one is how a project ends up
+believing it verifies artifacts it never verified.
+
+**A scan gate is configuration, so review it as configuration.** Read what
+the workflow does with the result rather than whether the step is present.
+`continue-on-error: true`, a trailing `|| true`, a severity threshold set
+above the findings the project actually has, and a report uploaded to an
+artifact nobody opens are all the same finding written four ways: the
+scanner runs and gates nothing. The exit code is the control.
+
+For Python dependencies the primary scanner stays `pip-audit` — maintained by
+the PyPA, Apache-2.0, 2.10.1 as of 10 June 2026 — and its advisory sources
+are the reason rather than an incidental detail. It draws on the PyPI
+advisory service and OSV rather than on NVD's CPE matching, and that
+distinction now carries weight it did not carry a year ago. On 15 April 2026
+NIST moved the National Vulnerability Database to risk-based triage: it
+enriches CVEs in CISA's Known Exploited Vulnerabilities catalog, CVEs in
+software used by the federal government, and software critical under
+Executive Order 14028, and marks everything else lowest priority and not
+scheduled — including every backlogged CVE with an NVD publish date earlier
+than 1 March 2026. NVD-derived CPE and CVSS data is systematically
+incomplete from that date forward, so weight an ecosystem-native finding
+above an NVD-derived one, and treat a quiet NVD-backed scanner as less
+reassuring than it used to be.
+
+The image scanners are worth naming for what they are not. Trivy (v0.73.0,
+3 Aug 2026), Grype (v0.116.1, 28 July 2026), Syft (v1.50.0, 28 July 2026)
+and cosign (v3.1.3, 6 Aug 2026) are all Apache-2.0, and Anchore's
+stewardship of Grype and Syft carries no relicensing, no source-available
+move, and no CLA-driven ownership change as of 9 Aug 2026. All four are
+distributed as Go binaries, which puts them outside the maintained-package
+gate entirely: they are CI patterns, they take no row in
+`security-hardening-libraries.md`, and the gate applies here to the two
+pip-installable tools, `pip-audit` and `cyclonedx-py`. What the image
+scanner is pointed at is `deployment-and-runtime.md`, "Scanning the built
+image"; this section owns the pipeline around it.
+
+Pin every action to a commit SHA rather than a tag, and treat that as a
+supply-chain control rather than as hygiene. On 19 March 2026 an attacker
+holding compromised credentials published a malicious Trivy v0.69.4,
+force-pushed 76 of 77 version tags in `aquasecurity/trivy-action` to an
+infostealer that dumped the runner process's memory and swept the filesystem
+for cloud credentials, and replaced all seven tags in
+`aquasecurity/setup-trivy`; a second wave put malicious v0.69.5 and v0.69.6
+images on Docker Hub on 22 March. Trivy's advisory GHSA-69fq-xp46-6x23,
+carrying CVE-2026-33634, is precise about what survived: releases at v0.69.3
+or earlier, images referenced by digest, builds from source, and action
+references pinned to a safe commit. No `setup-trivy` tag was safe, because
+every one of them was force-pushed — which is the reason to record the rule
+as "pin the SHA" and never as "pin the last known-good tag". A tag is a name
+the publisher can repoint, and so can anyone holding the publisher's
+credentials.
+
+**Provenance is produced inside the repository and verified outside it, and
+only the second half is a control.** A GitHub artifact attestation binds a
+subject — a named artifact and its digest — to a SLSA build-provenance
+predicate in in-toto format, signed with a short-lived Sigstore certificate
+minted from the workflow's OIDC identity. Public repositories use the
+Sigstore public-good instance and the bundle is copied to a transparency log
+that is publicly readable; private and internal repositories use GitHub's
+own Sigstore instance, which has no transparency log. Either way the bundle
+is uploaded to GitHub's attestations API rather than committed, so what a
+repository review can actually read is the workflow that asked for it.
+
+Verification without an identity constraint proves nothing. `gh attestation
+verify` scoped only by `--repo` establishes that the artifact carries some
+attestation from that repository; `--signer-workflow` is what pins which
+workflow signed it, and `--deny-self-hosted-runners` is what refuses one
+built where the platform's isolation properties do not apply. `cosign
+verify` has the same shape: without `--certificate-identity` or
+`--certificate-identity-regexp`, plus `--certificate-oidc-issuer`, it
+confirms that a signature exists rather than who produced it. A verify step
+missing those arguments is a decorative gate, and it is a finding at the
+severity of whatever it was supposed to be gating.
+
+**SLSA, at claim level.** SLSA v1.2 was approved in November 2025 and is the
+current specification; its Build track runs L0 to L3 and defines no L4. L0
+offers no guarantee. L1 is provenance that exists and identifies the output
+package by cryptographic digest — it may be unsigned and is trivial to
+forge, so it establishes a record rather than a guarantee. L2 adds a hosted
+build platform that signs the provenance and a consumer who validates that
+signature, and is aimed at tampering after the build. L3 adds a hardened
+platform: builds isolated from one another, and signing material
+unreachable from user-defined build steps, aimed at tampering during the
+build. What a team on GitHub-hosted runners may honestly claim is fixed by
+GitHub's own documentation, which states that artifact attestations by
+themselves provide SLSA v1.0 Build Level 2, and that reaching Build Level 3
+requires provenance generated by a reusable workflow isolated from the
+calling workflow. So L2 is the default claim, L3 is a workflow structure a
+reviewer has to actually see, and a report asserting L3 because attestations
+exist is inflating the level rather than reporting it.
+
+### The artifact boundary
+
+This line is the section's spine. A review that tells its reader to "check"
+something the repository cannot show them is worse than one that stays
+silent, because it turns an open question into an apparent pass.
+
+| Artifact | Where it lives | Review position |
+|---|---|---|
+| Hashed lockfile and the install step that reads it | Files in the repository | Read both. The finding is a lockfile beside an install that never passes `--require-hashes` |
+| SBOM | A repository file only if committed; otherwise a build artifact of one CI run | Read the generating step. An uncommitted SBOM is a claim about a workflow, not a file you can audit |
+| Scanner step and its gate | The workflow file | Read the failure behavior, not the step's presence |
+| Attestation-generating step, its permissions, and the actions it pins | The workflow file | Read it. The attestation it produces is not in the repository |
+| Verification step and its identity constraints | The deploy workflow, where it is in the repository at all | Read it where present; confirm with the operator where verification happens off-repository |
+| Signature or attestation stored in the registry | The container registry, beside the image | Confirm with the platform |
+| Deploy-time enforcement that can actually block a rollout | The cluster or deployment platform | Confirm with the platform |
+| Runner isolation underpinning any Build L3 claim | The CI platform | Confirm with the platform |
+
+Two platform facts belong in the same conversation, because both decide
+whether the repository-side work produces anything at all: artifact
+attestations are unavailable on GitHub Enterprise Server, and on Free, Pro,
+and Team plans they cover public repositories only — a private repository
+needs GitHub Enterprise Cloud. A workflow that requests an attestation on a
+plan that cannot issue one is a build failure rather than a silent downgrade,
+but it is worth confirming before recommending the step.
+
+Where a row says confirm with the platform, the review output is a question
+addressed to whoever operates it, written with the answer that would satisfy
+it — not a finding, and not a checkbox left for the reader to interpret.
+`a08-integrity-and-deserialization.md`, "Pipeline and artifact integrity",
+owns the same boundary from the integrity side.
+
+### Django & DRF implementation layer
+
+A Django project's pipeline is reviewable in one file. The wrong version is
+not a project with no controls; it is a project with all four controls and no
+gate on any of them.
+
+```yaml
+# Wrong: every control is present and none of them can fail the build. The
+# actions float on mutable tags, the install ignores the hashes already
+# sitting in the lockfile, the audit's exit code is thrown away by `|| true`,
+# and the SBOM is built by scanning the finished image -- so it records what
+# a scanner could identify in it rather than what the project pinned.
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@main
+      - run: pip install -r requirements.txt
+      - run: pip-audit -r requirements.txt || true
+      - run: syft app:latest -o cyclonedx-json > sbom.json
+        continue-on-error: true
+```
+
+```yaml
+# Correct: each step either passes or fails the job. Actions are pinned to
+# commit SHAs with the tag in a trailing comment, the install verifies the
+# lockfile's hashes, the audit's exit code is the gate, the SBOM is built
+# from the same file the install read, and provenance and SBOM attestations
+# are requested separately because one step produces one predicate.
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    steps:
+      - uses: actions/checkout@<commit-sha>  # v7.0.1
+      - uses: actions/setup-python@<commit-sha>  # v7.0.0
+        with:
+          python-version: "3.13"
+      - run: pip install --require-hashes -r requirements.txt
+      - run: pip-audit --strict -r requirements.txt
+      - run: >-
+          cyclonedx-py requirements requirements.txt
+          --sv 1.6 --of JSON -o sbom.json
+      - run: python -m build --wheel
+      - uses: actions/attest@<commit-sha>  # v4.2.2
+        with:
+          subject-path: dist/*.whl
+      - uses: actions/attest@<commit-sha>  # v4.2.2
+        with:
+          subject-path: dist/*.whl
+          sbom-path: sbom.json
+```
+
+Three details in that file decide whether it is a control or a decoration.
+`actions/attest` is the current action and `actions/attest-build-provenance`
+is a wrapper over it as of v4, kept for existing workflows; new work should
+name `actions/attest` directly. It selects its mode from its inputs, so a
+step given `sbom-path` produces an SBOM attestation and *not* build
+provenance — the two steps above are two attestations, and collapsing them
+into one silently drops the provenance. And the permission block is three
+entries rather than one: `id-token: write` to mint the OIDC token the
+Sigstore certificate is issued against, `attestations: write` to persist the
+attestation, and `artifact-metadata: write` to create the artifact storage
+record. A workflow declaring only `id-token: write` fails at the attestation
+step rather than producing an unsigned one, which is the right failure but an
+easy one to misread as the action being broken.
+
+`pip-audit` has one behavior worth knowing before writing the gate: passing
+it a requirements file in which any package carries a `--hash` option implies
+`--require-hashes`, so auditing the hashed lockfile enforces the hash
+discipline in the audit step as well as in the install. `--strict` is
+separate and does something the exit code alone does not — it fails the run
+when a dependency cannot be resolved or audited, rather than passing quietly
+over the package nobody could look up.
+
+Verification belongs in whatever job consumes the artifact, and it is the
+step most often missing entirely:
+
+```bash
+gh attestation verify ./dist/app-1.4.2-py3-none-any.whl \
+  --repo my-org/my-service \
+  --signer-workflow my-org/my-service/.github/workflows/release.yml \
+  --deny-self-hosted-runners
+```
+
+**Write-time.** When generating a build or release workflow, write the SHA
+pin, the `--require-hashes` install, the scanner step with no
+`continue-on-error` and no `|| true`, and the SBOM generated from the
+lockfile in the first version of the file rather than as a later hardening
+pass, because each of these is the kind of line that gets added once and
+never revisited — and a scan step that was added with `|| true` to get a red
+build green reads, a year later, exactly like a scan step that works. Put
+the attestation's three permissions on the job rather than the workflow, so
+the write scopes do not extend to jobs that have no reason to hold them, and
+write the verification step in the same change as the attestation step,
+complete with `--signer-workflow`, because an attestation that is generated
+and never verified is a build artifact rather than a control.
+
+### Pipeline review checklist
+
+#### Stack-neutral
+
+- [ ] The install step enforces the lockfile beside it — `--require-hashes` or
+      the equivalent — and the SBOM is not read as evidence that it does.
+- [ ] The scanner's result changes the outcome of the build: no
+      `continue-on-error`, no `|| true`, no severity floor set above the
+      project's actual findings, and no report written to an artifact that
+      nothing reads.
+- [ ] Every action and build image is pinned by commit SHA or digest rather
+      than by a mutable tag, on the basis that a tag can be repointed by
+      anyone holding the publisher's credentials.
+- [ ] Provenance is verified somewhere by a step that pins the expected
+      signer identity and issuer, rather than merely asserting that a
+      signature or attestation exists.
+- [ ] Any SLSA level claimed in a report is the level the platform's own
+      documentation supports — Build L2 for attestations alone — with L3
+      claimed only where the isolating reusable workflow is visible.
+- [ ] Registry-side signatures, deploy-time admission enforcement, and runner
+      isolation are recorded as questions for whoever operates them, with the
+      answer that would satisfy each stated, rather than as repository
+      findings.
+
+#### Django & DRF
+
+- [ ] The requirements file the production image installs is the file the
+      SBOM and the audit step are both generated from, so the inventory,
+      the advisory scan, and the install describe one dependency set.
+- [ ] `pip-audit` runs against the hashed requirements file with `--strict`,
+      so an unresolvable dependency fails the run instead of passing as
+      unexamined.
+- [ ] `cyclonedx-py` is invoked with an explicit `--spec-version`, so a tool
+      upgrade cannot change the format a downstream consumer parses.
+- [ ] The attestation job declares `id-token`, `attestations`, and
+      `artifact-metadata` write scopes on the job rather than the workflow,
+      and provenance and SBOM attestations are requested as separate steps.
 
 ## Third-party dependency vetting
 
@@ -391,6 +708,10 @@ line later does not remove it from the repository's history.
       unmaintained deps).
 - [ ] Dependencies pinned; a lockfile exists; hashes verified on install.
 - [ ] `pip-audit` runs in CI as an advisory input; automated update PRs enabled.
+- [ ] Each pipeline control gates rather than merely runs — hashes enforced on
+      install, the scanner's exit code failing the build, the SBOM generated
+      from the lockfile, and provenance verified against a pinned signer
+      identity; platform-side artifacts are recorded as operator questions.
 - [ ] Dependencies come from trusted indexes; no stray VCS/wheel installs.
 - [ ] Components discovered and loaded at runtime are pinned or provenance-
       checked at call time; tool descriptions are treated as untrusted input.

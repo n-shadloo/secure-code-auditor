@@ -515,11 +515,14 @@ What a backend repository owns, and can be reviewed for:
   lockfile sits unused beside it.
 - Base images and critical build tools you consume are signature- or
   provenance-verified before use, rather than pulled by mutable tag.
-- Artifacts you publish carry provenance. SLSA v1.0's Build track sets the bar:
+- Artifacts you publish carry provenance. SLSA's Build track sets the floor:
   **L1 is "package has provenance showing how it was built"**, and it is a
   repository-level opt-in that generated attestations satisfy. Treat its own
   caveat as part of the finding — L1 provenance is trivial to forge, so it
-  establishes a record, not a guarantee.
+  establishes a record, not a guarantee. The current specification version,
+  what a build on hosted runners may honestly claim above that floor, and the
+  consumer-side verification without which none of it means anything are in
+  `a03-software-supply-chain.md`, "SBOM, scan gate, and provenance".
 - Deploy credentials and CI secrets are protected, because a compromised
   pipeline ships attacker code under your signature. Prefer short-lived
   federated credentials over long-lived deploy keys; A03 and
@@ -529,7 +532,7 @@ What a backend repository owns, and can be reviewed for:
   hand-rolled token or anything pickle-based.
 
 **Out of scope, and worth naming as such** so it is not mistaken for an
-unaddressed gap: hardened or hermetic isolated builders (SLSA Build L2 and L3),
+unaddressed gap: hardened or hermetic isolated builders (SLSA Build L3),
 the CI platform's key custody, two-person review, and organization-wide registry
 admission control are platform work rather than repository work. Report them as
 platform recommendations, not as repository findings.
