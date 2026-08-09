@@ -10,12 +10,16 @@ should not have, and how to recognise it in code. It does not own the model
 behind that failure: `authorization-architecture.md` owns the privilege model
 and field-level authorization, `api-drf-specific.md` owns the DRF call sites
 where a correct model still fails to run, and
-`privileged-access-and-impersonation.md` owns operator privilege. Two topics
+`privileged-access-and-impersonation.md` owns operator privilege. Three topics
 are owned here outright and every other file defers to them: SSRF, including
-the cloud metadata endpoint a leaked workload credential is reached through,
-and the cache-mediated leak of which a CDN cache key dropping its signing
-parameters is one case. `deployment-and-runtime.md` owns the infrastructure
-side of caching; the rule about who may read a cached response is here.
+the cloud metadata endpoint a leaked workload credential is reached through;
+the cache-mediated leak of which a CDN cache key dropping its signing
+parameters is one case; and path traversal — the filesystem path a request
+names on a read, with no upload anywhere in the flow. `file-uploads.md` keeps
+the other half of that split, the filename an upload brings and the storage key
+it lands under, along with the private download of a file the application
+stored. `deployment-and-runtime.md` owns the infrastructure side of caching;
+the rule about who may read a cached response is here.
 
 ## Contents
 - [Principle](#principle)
@@ -25,6 +29,7 @@ side of caching; the rule about who may read a cached response is here.
 - [Multi-tenancy and data isolation](#multi-tenancy-and-data-isolation)
 - [Caching and authorization](#caching-and-authorization)
 - [SSRF](#ssrf)
+- [Path traversal](#path-traversal)
 - [Open redirect](#open-redirect)
 - [Admin exposure](#admin-exposure)
 - [Review checklist](#review-checklist)
@@ -374,6 +379,131 @@ redirects, capped retries — are in `a08-integrity-and-deserialization.md`,
 `agent-and-llm-interfaces.md`, "Retrieved content and indirect prompt
 injection", which reaches the same conclusion from the exfiltration side.
 
+## Path traversal
+
+SSRF is a request reaching a network resource it should not; this is the same
+failure against the filesystem, and it belongs here for the same reason —
+nothing about the code looks like an authorization decision, yet the effect is
+that a caller reads a file the application never meant to expose. Maps to
+CWE-22 (Path Traversal) and CWE-23 (Relative Path Traversal). The upload case
+is elsewhere: `file-uploads.md` owns the name an upload brings and the key it
+is stored under. This section owns the read whose path the request named, which
+is usually a flow with no upload in it at all — a report download, a generated
+export, a documentation tree, a log or artifact viewer.
+
+The sink is any request-derived value reaching `open()`, `os.path.join()`, a
+`pathlib` join, or a template or file path resolved outside the storage API.
+The reason this keeps shipping is that `os.path.join` reads like a
+containment function and is not one. It does not normalize `..`, so a value
+walks upward unimpeded; and if the value is absolute it discards the base
+entirely, which is a documented property rather than an edge case —
+`os.path.join("/srv/exports", "/etc/passwd")` is `"/etc/passwd"`. A base
+directory in the expression is therefore not evidence that anything is
+confined to it.
+
+### What Django actually protects, and what it does not
+
+Three answers, because they are routinely assumed to be one:
+
+- **`safe_join` is the real control, and it rejects rather than repairs.** It
+  resolves `abspath(join(base, *paths))` against `abspath(base)` and raises
+  `SuspiciousFileOperation` unless the result begins with the base plus a
+  separator, equals the base exactly, or the base is a filesystem root. The
+  trailing separator is what defeats a sibling directory sharing the base's
+  prefix, and the comparison runs through `normcase`, so it holds on
+  case-insensitive filesystems. `SuspiciousFileOperation` is a
+  `SuspiciousOperation` subclass, which Django renders as a 400. Note where it
+  lives: `django.utils._os`, an underscore-prefixed private module that no
+  public documentation covers. Using it is reasonable; depending on it directly
+  is depending on something Django has not promised to keep, which is a further
+  argument for reaching it through the storage API that calls it for you.
+- **`FileSystemStorage` inherits that protection, so the storage API is the
+  supported route.** `path()` returns `safe_join(self.location, name)`, and
+  `open()`, `exists()`, and `size()` all resolve through `path()`. On the write
+  side `get_available_name()` and `generate_filename()` additionally raise on
+  `..` in the directory parts and run `validate_file_name`, which requires
+  `name == os.path.basename(name)` unless `allow_relative_path=True`. None of
+  this reaches a bare `open()` — the protection is a property of the API, not
+  of the framework being present.
+- **`FileResponse` validates nothing, and `django.views.static.serve` is not a
+  production answer.** `FileResponse` streams a file object the caller already
+  opened; it sets `Content-Length`, `Content-Type`, and `Content-Disposition`
+  and has no opinion on where the bytes came from, so traversal safety is
+  decided entirely before it is called. `serve()` does use `safe_join` and is
+  traversal-safe, but Django states in the module itself that it is for
+  development and should not be used in production — being safe against this
+  bug is not an endorsement to serve files with it.
+
+```python
+# Wrong: the base directory in the expression is decorative. os.path.join does
+# not normalize "..", and an absolute value discards EXPORT_ROOT outright, so
+# ?name=../../etc/passwd and ?name=/etc/passwd both resolve off the base.
+import os
+
+from django.http import FileResponse
+
+EXPORT_ROOT = "/srv/exports"
+
+
+def download_export(request):
+    path = os.path.join(EXPORT_ROOT, request.GET["name"])
+    return FileResponse(open(path, "rb"), as_attachment=True)
+```
+
+```python
+# Correct: the client names a key the server published rather than a path, so
+# no part of the filename is attacker-authored. The storage instance is the
+# backstop for the next caller who is handed a name from somewhere else -- its
+# path() runs safe_join, which raises SuspiciousFileOperation rather than
+# quietly normalizing an escape into a valid path.
+from django.core.exceptions import SuspiciousFileOperation
+from django.core.files.storage import FileSystemStorage
+from django.http import FileResponse, Http404
+
+EXPORTS = FileSystemStorage(location="/srv/exports")
+AVAILABLE = {
+    "monthly": "monthly-summary.csv",
+    "annual": "annual-summary.csv",
+}
+
+
+def download_export(request):
+    name = AVAILABLE.get(request.GET.get("report"))
+    if name is None:
+        raise Http404
+    try:
+        stream = EXPORTS.open(name, "rb")
+    except (SuspiciousFileOperation, FileNotFoundError):
+        raise Http404
+    return FileResponse(stream, as_attachment=True, filename=name)
+```
+
+The pattern generalises in one line: **let the client choose an identifier, not
+a path.** A key in a server-side mapping, a primary key resolved through a
+scoped queryset, or an enumerated slug all end with the server deciding every
+character of the filename, which removes the class rather than defending
+against it. Where a join genuinely cannot be avoided, resolve through the
+storage API and let `SuspiciousFileOperation` reject the escape; catching it as
+a 404 rather than surfacing a 400 avoids confirming which paths exist.
+
+Two things this does not settle. Confinement is not authorization — a path
+correctly confined to the base still has to be a file *this* requester may
+read, which is the object-level check the rest of this file is about. And in
+production the bytes are usually better served by the web server after Django
+performs the check, through `X-Accel-Redirect` or `X-Sendfile` with the files
+kept outside the public root; that arrangement and its trade-offs are in
+`file-uploads.md`, "Private downloads".
+
+**Write-time.** When generating a view that reads a file whose name derives
+from a request, write the identifier-to-name mapping first and the file access
+second, because the mapping is what makes the traversal question moot rather
+than answered. Where a name has to be passed through, open it with a
+`FileSystemStorage` pinned to the base directory instead of `open()` and
+`os.path.join()`, and handle `SuspiciousFileOperation` in the same edit, since
+an uncaught one is a 500 on a path that was supposed to fail closed. Add the
+ownership check alongside the path resolution rather than after it: a confined
+path is still someone's file.
+
 ## Open redirect
 
 For any user-supplied redirect target (`next`, `return_to`), validate before
@@ -424,4 +554,8 @@ break-glass elevation are in `privileged-access-and-impersonation.md`.
       preview workers, agent tool runners — are denied egress by default at
       the platform, with the application-side allowlist kept as the half that
       sees the redirect and the caller.
+- [ ] No request-derived value reaches `open()`, `os.path.join()`, or a
+      `pathlib` join for a read; file names come from a server-side identifier
+      and resolve through the storage API, whose rejection is handled rather
+      than left to become a 500.
 - [ ] Redirect targets validated with `url_has_allowed_host_and_scheme`.

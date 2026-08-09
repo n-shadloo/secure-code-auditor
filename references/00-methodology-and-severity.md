@@ -309,6 +309,7 @@ an index to them, not a copy:
 | A query, a `subprocess` call, a management command, server-rendered output | `a05-injection.md` |
 | A settings module | `a02-security-misconfiguration.md` |
 | An upload field or handler | `file-uploads.md` |
+| A view that reads or serves a file whose name derives from a request | `a01-broken-access-control.md`, "Path traversal" |
 | A Celery task or its serializer configuration | `a08-integrity-and-deserialization.md` |
 | An outbound HTTP call whose URL derives from input | `a01-broken-access-control.md`, "SSRF" |
 | A new limit, quota, or business flow | `a06-insecure-design.md` |

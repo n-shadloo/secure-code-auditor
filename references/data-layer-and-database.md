@@ -18,7 +18,8 @@ transport, the encrypted column and the blind index over it, the isolation
 level the connection runs at, and the copies of production data that are
 allowed to travel. It defers for the rules those mechanisms carry out:
 `a05-injection.md` owns injection mechanics including
-the raw paths enumerated here, `a04-cryptographic-failures.md` owns the
+the raw paths enumerated here and the GeoDjango lookup positions PostGIS
+inlines rather than binds, `a04-cryptographic-failures.md` owns the
 cryptographic principle and the key lifecycle,
 `authorization-architecture.md` owns the tenant model this isolation enforces,
 `data-lifecycle-and-privacy.md` owns whether a row is really gone, and

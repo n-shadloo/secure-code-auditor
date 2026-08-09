@@ -1,7 +1,8 @@
 # A05:2025 — Injection
 
-The sink inventory for the whole skill: SQL/ORM, OS command, template,
-directory, header/email injection, and server-side output handling (XSS from
+The sink inventory for the whole skill: SQL/ORM including the GeoDjango lookup
+positions the ORM does not parameterize, OS command, template, directory,
+header/email injection, and server-side output handling (XSS from
 server-rendered content), plus the method for tracing a source to any of them.
 
 The inventory is meant to be exhaustive, so a file that defers to it can rely
@@ -9,9 +10,9 @@ on the list being complete instead of keeping a partial copy. Three sinks are
 owned here outright and duplicated nowhere: SQL, the shell, and server-side
 output. The rest point outward to the file that owns the rules —
 `data-layer-and-database.md` for the raw-path enumeration and document-store
-shape validation, `file-uploads.md` for storage keys,
-`a01-broken-access-control.md` for SSRF,
-`a08-integrity-and-deserialization.md` for deserialization, and
+shape validation, `file-uploads.md` for the storage key an upload lands under,
+`a01-broken-access-control.md` for SSRF and for the filesystem path a request
+names, `a08-integrity-and-deserialization.md` for deserialization, and
 `a09-logging-and-alerting.md` for the log line.
 
 ## Contents
@@ -19,6 +20,7 @@ shape validation, `file-uploads.md` for storage keys,
 - [Tracing input to a sink](#tracing-input-to-a-sink)
 - [SQL and the ORM](#sql-and-the-orm)
 - [The dictionary-expansion column-alias class](#the-dictionary-expansion-column-alias-class)
+- [GeoDjango raster and spatial lookups](#geodjango-raster-and-spatial-lookups)
 - [OS command injection](#os-command-injection)
 - [Template injection and server-side output](#template-injection-and-server-side-output)
 - [Directory and LDAP injection](#directory-and-ldap-injection)
@@ -90,6 +92,7 @@ to consult.
 |---|---|---|---|
 | SQL | `Manager.raw()`, `QuerySet.extra()`, `RawSQL`, `cursor.execute()`/`executemany()`/`callproc()`, and `Func`/`Expression` subclasses whose `template` or `function` is built from input | a `%s` placeholder plus a `params` sequence | "SQL and the ORM"; the raw-path list to enumerate during review is in `data-layer-and-database.md`, "Raw SQL as an isolation bypass" |
 | SQL identifiers | keyword names and dictionary keys expanded into `annotate()`, `aggregate()`, `alias()`, `values()`, `values_list()`, `filter()`, `exclude()`, `get()`, `Q()`, `order_by()` | a fixed server-side allowlist; identifiers cannot be parameterized | "The dictionary-expansion column-alias class" |
+| A spatial lookup's non-value positions | a band index spliced into a `RasterField` lookup path or into the tuple on its right-hand side, and a `str`, `pathlib.Path`, or `dict` given as a spatial lookup value | an `int` band index taken from a server-side set, and a raster source wrapped in `GDALRaster` explicitly | "GeoDjango raster and spatial lookups" |
 | Document-store query | a JSON value that arrives as a dict where a scalar was expected, becoming an operator | validate shape and type, not characters | `data-layer-and-database.md`, "NoSQL and key-value injection" |
 | Shell | `os.system`, `os.popen`, `subprocess` with `shell=True`, any command assembled as a string | an argument list with `shell=False` | "OS command injection" |
 | A program's own option parser | a value that reaches `argv` and begins with `-` | `--` before the positional arguments | "OS command injection" |
@@ -99,7 +102,7 @@ to consult.
 | Directory server | an LDAP filter string built by interpolation | `escape_filter_chars` on every assertion value | "Directory and LDAP injection" |
 | Response and mail headers | `response[name] = value`, `EmailMessage` header fields, `send_mail` arguments | reject CR and LF before construction | "Header and email injection" |
 | Log line | any value interpolated into a log message | structured fields, or control characters escaped in a formatter | `a09-logging-and-alerting.md`, "Log injection and integrity" |
-| Filesystem path | `open()`, `os.path.join(base, value)`, `pathlib` joins, and storage names taken from the client | a server-generated key resolved against a fixed base | `file-uploads.md`, "Filenames and storage keys" |
+| Filesystem path | `open()`, `os.path.join(base, value)`, `pathlib` joins, and storage names taken from the client | a server-chosen identifier resolved against a fixed base, by an API that rejects an escape rather than normalizing it | `a01-broken-access-control.md`, "Path traversal"; the name and key an upload brings are in `file-uploads.md`, "Filenames and storage keys" |
 | Outbound HTTP | `requests`, `urllib`, `httpx`, `aiohttp` on a user-influenced URL | an allowlisted destination checked after DNS resolution, not a validated string | `a01-broken-access-control.md`, "SSRF" |
 | Object deserializer | `pickle.loads`, `yaml.load`, `jsonpickle`, `marshal`, and the cache, session, and fixture paths Django runs without being asked | a format that cannot construct objects | `a08-integrity-and-deserialization.md`, "Insecure deserialization" |
 | XML parser | DTDs, external entities, and entity expansion in submitted documents | a maintained parser with those features off, behind input limits | "XML / deserialization pointers" |
@@ -109,6 +112,76 @@ names above, then search for what carries input to them: `request.`, `.data`,
 `validated_data`, `kwargs[`, `**`, `f"`, `.format(`, and `%` near any hit. A
 sink with no source reaching it is not a finding; a source reaching a sink
 through string construction almost always is.
+
+The second-order path is worth walking once in full, because it is the one the
+grep passes above find as two unrelated hits. A single stored field carries it,
+and the field is the only thing the two halves have in common:
+
+```python
+# Wrong: three moments, one bug. The serializer that writes `label` contains no
+# sink, and the job that reads it back contains no request, so each half
+# reviews clean on its own and neither reviewer sees the path between them.
+import subprocess
+
+from django.db import models
+from rest_framework import serializers
+
+
+class Report(models.Model):
+    label = models.CharField(max_length=200)
+
+
+class ReportSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Report
+        fields = ["id", "label"]
+
+
+def render_nightly(report):
+    subprocess.run(f"wkhtmltopdf --title {report.label} out.pdf", shell=True)
+```
+
+```python
+# Correct: the stored field is treated as the source it is, at both ends. It is
+# constrained where it is written, so the column cannot hold shell syntax in
+# the first place, and it still arrives at the sink as one argument rather than
+# as text a shell re-parses -- because the writer and the reader change on
+# different days.
+import subprocess
+
+from django.core.validators import RegexValidator
+from django.db import models
+from rest_framework import serializers
+
+
+class Report(models.Model):
+    label = models.CharField(
+        max_length=200,
+        validators=[RegexValidator(r"\A[\w .-]+\Z")],
+    )
+
+
+class ReportSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Report
+        fields = ["id", "label"]
+
+
+def render_nightly(report):
+    subprocess.run(
+        ["/usr/bin/wkhtmltopdf", "--title", report.label, "out.pdf"],
+        shell=False,
+        check=True,
+        timeout=60,
+    )
+```
+
+Read the fix as two independent controls rather than one applied twice. The
+validator is what makes the column's contents describable; the argument list is
+what holds when a later migration, a management command, an admin edit, or a
+data import writes the same column without passing through the serializer at
+all. Neither is sufficient, because a stored field is as tainted as its worst
+writer and the worst writer is rarely the one in front of you.
 
 ### Tracing review checklist
 
@@ -236,6 +309,105 @@ qs.order_by(sort)
 
 Keeping Django patched matters (the framework hardens these), but the durable fix
 is to never route client-controlled identifiers into these methods.
+
+## GeoDjango raster and spatial lookups
+
+GeoDjango is where the ORM's parameterization guarantee stops being a question
+about escape hatches and becomes a question about positions inside an ordinary
+`filter()` call. Two positions in a spatial lookup do not take a bound value,
+and Django's 2026 record has one CVE for each of them.
+
+**A band index is syntax, not a value.** Raster lookups on a `RasterField` —
+implemented only on the PostGIS backend — take a band index either on the left
+of the lookup (`rast__1__contains=geom`) or as the second element of a tuple on
+the right (`rast__contains=(rst, 1)`). Django inlined that index into the
+generated SQL instead of binding it, so an index derived from a request was a
+SQL-injection sink. That is CVE-2026-1207, rated high, fixed in Django 6.0.2,
+5.2.11, and 4.2.28 on 3 February 2026. The patch closes the framework's half.
+The durable half is that a band index sits in an identifier position exactly
+as a column alias does, so it has to be coerced to an `int` or chosen from a
+server-side set before it reaches the lookup, under the same rule as the
+section above.
+
+**A lookup value can be a raster source rather than a value.** Spatial lookups
+also accepted `str`, `pathlib.Path`, and `dict` on the right-hand side and
+handed them to `GDALRaster`, which opens or creates a datasource through a GDAL
+driver. A `dict` — or a JSON string, which is parsed into one first — creates a
+new raster, which writes a file with an attacker-chosen name and contents and
+reaches remote code execution where that file lands somewhere the application
+later loads. A bare `str` is opened as a datasource, so a GDAL
+virtual-filesystem path such as `/vsicurl/...` issues an outbound request as
+the Django process user. That is CVE-2026-15307, rated high, fixed in Django
+6.0.8 and 5.2.17 on 4 August 2026.
+
+The write is a side effect of the driver opening the datasource rather than of
+a flag someone left on. `GDALRaster` always opens new rasters in write mode,
+and the constructor's `write=False` default never governed the open at all, so
+there was nothing to switch off.
+
+Reachability is wider than "a view that accepts a raster". The admin changelist
+takes lookups from query parameters, subject only to
+`ModelAdmin.lookup_allowed()`, so on any model registered with the admin that
+carries a spatial field the lookup was reachable by a staff user holding
+nothing beyond *view* permission. Treat a spatial field on a registered model
+as reachable by every staff account rather than by whoever wrote the view.
+
+The fix is an opt-in signal rather than a sanitizer. `str`, `Path`, and `dict`
+are now rejected in a lookup with `DisallowedRasterLookup`, a
+`SuspiciousOperation` subclass, which Django renders as a 400; wrapping the
+value in `GDALRaster(...)` is how a project states that this particular source
+is trusted. `bytes` are still accepted unwrapped, because they open through
+GDAL's in-memory virtual filesystem rather than through the disk or the
+network. Assignment is deliberately unchanged: assigning a `dict` to a
+`RasterField` still opens a new raster and assigning a `str` or `Path` still
+fetches the referenced one, so upgrading closes the lookup path and leaves
+every assignment from untrusted input exactly as dangerous as it was. Validate
+raster input yourself — the `GeometryField` form field rejects rasters rather
+than validating them, and GDAL's own guidance on restricting the available
+drivers is the defense-in-depth layer under all of it.
+
+```python
+# Wrong: the band index is spliced into the lookup path, where PostGIS raster
+# lookups inline it as SQL rather than binding it. The right-hand value is a
+# client-supplied string the lookup reads as a raster source -- opened through
+# a GDAL driver before the fix, a 400 after it, and in both cases a request
+# value the code is treating as trusted.
+from .models import Elevation
+
+band = request.GET["band"]
+Elevation.objects.filter(**{f"rast__{band}__contains": geom})
+Elevation.objects.filter(rast__contains=request.data["source"])
+```
+
+```python
+# Correct: the band index is one of a set the server wrote, so nothing the
+# client sends reaches the statement as syntax; the raster source is named by
+# configuration and wrapped in GDALRaster, which is the wrap that says trusted
+# rather than a wrap that makes an untrusted value safe.
+from django.conf import settings
+from django.contrib.gis.gdal import GDALRaster
+
+from .models import Elevation
+
+ALLOWED_BANDS = {"0", "1", "2"}
+
+band = request.GET.get("band", "0")
+if band not in ALLOWED_BANDS:
+    band = "0"
+Elevation.objects.filter(**{f"rast__{band}__contains": geom})
+Elevation.objects.filter(
+    rast__contains=GDALRaster(settings.REFERENCE_RASTER_PATH)
+)
+```
+
+**Write-time.** When generating a GeoDjango lookup, decide for each position
+whether the ORM will bind it or splice it, because the two look identical at
+the call site: bind the geometry, take the band index from a server-side set as
+an `int`, and if a raster genuinely has to come from outside the code, wrap it
+in `GDALRaster(...)` in the same edit so the trust decision is written down
+where the value enters rather than inferred later from the absence of an
+exception. Where the feature does not actually need a caller-chosen band, write
+the literal and the whole position stops being an input.
 
 ## OS command injection
 
@@ -405,6 +577,10 @@ that is covered in A08 (Integrity and Deserialization); cross-check there.
       substitute an operator object where a scalar was expected.
 - [ ] No client-controlled column names/aliases/keys into
       `order_by/annotate/aggregate/values/filter(**...)`.
+- [ ] A raster band index reaching a PostGIS lookup is an `int` from a
+      server-side set, and no spatial lookup takes a `str`, `Path`, or `dict`
+      from a request rather than a value wrapped in `GDALRaster`; spatial
+      fields on admin-registered models are judged as staff-reachable.
 - [ ] No `shell=True`, `os.system`, `eval`, or `exec` on request data; argument
       lists pass `shell=False`, a `timeout`, and `--` ahead of any value that
       could otherwise be read as an option.
