@@ -22,6 +22,7 @@ dependency was chosen to implement.
 - [Scan continuously](#scan-continuously)
 - [Trust and provenance](#trust-and-provenance)
 - [Third-party dependency vetting](#third-party-dependency-vetting)
+- [A development dependency in the production requirements file](#a-development-dependency-in-the-production-requirements-file)
 - [Migration and data-integrity safety](#migration-and-data-integrity-safety)
 - [Review checklist](#review-checklist)
 
@@ -148,6 +149,53 @@ configuration, provenance, compatibility, or absence of design flaws.
 **Review evidence:** name the package and installed version, disposition, minimum
 safe version, compatibility result, advisory result, defaults reviewed, and the
 file/setting that proves the project's actual configuration.
+
+## A development dependency in the production requirements file
+
+A package tiered development-only is a finding when it appears in a production
+requirements file, and it is two findings at once. It is unreviewed
+supply-chain surface, because a dependency that was accepted on the basis of
+"it only runs on a laptop" was never held to the gate above. And it is
+exposure, because development tooling exists to make internals reachable, and
+shipping it makes them reachable in production. Neither depends on the
+package being vulnerable; the finding is that it is installed where nobody
+decided it should be.
+
+The disposition belongs in `security-hardening-libraries.md`, which is the
+dated record of what each package was tiered as and why. Do not re-tier a
+package here — read the tier there, then check the requirements file that
+actually builds the production image against it.
+
+`django-extensions` is the case that recurs. Its tier is development-only in
+the index, for `show_urls` on an existing install, and the index also names
+the reason it must not ship: it carries `runserver_plus`, and therefore the
+Werkzeug interactive debugger, which is arbitrary code execution by design,
+along with `shell_plus` and other commands whose whole purpose is direct
+access to the model layer. Finding it under `install_requires` or in the
+production layer of a requirements split is a finding at that severity, not a
+tidiness note. The runtime side of the same exposure — what happens when such
+a route or console is actually reachable — is in `deployment-and-runtime.md`,
+"Operational and development endpoints".
+
+Read the file the production image installs, not the one at the repository
+root: a `requirements.txt` that ends with `-r requirements-dev.txt`, an
+unsplit extras group installed with `pip install .[dev]`, and a Dockerfile
+that copies every requirements file and installs all of them are the three
+ways a development pin arrives in production without anyone adding it there.
+
+**Write-time.** When adding a package whose purpose is development or
+debugging, put it in the development requirements file or extras group in the
+same edit that adds it, and confirm the production install path does not
+include that file, because the default outcome of a single undifferentiated
+requirements list is that every development convenience ships. Where the
+package is only wanted on an existing install for one command, add nothing:
+the equivalent recursion over `get_resolver().url_patterns` is a few lines
+with no dependency, and Django 6.2's built-in `listurls` supersedes both.
+
+CWE-1104 (Use of Unmaintained Third Party Components) where the tier reflects
+maintenance, and CWE-489 (Active Debug Code) where the shipped tooling exposes
+a console or debugger. Severity: high where the package carries an interactive
+debugger or shell, medium otherwise.
 
 ## Migration and data-integrity safety
 
@@ -349,5 +397,8 @@ line later does not remove it from the repository's history.
 - [ ] every security dependency has a recorded need, maintenance/advisory check,
       minimum safe version, compatibility, license, secure-default review, and
       disposition; scanners are not treated as proof of safety;
+- [ ] the requirements file the production image actually installs carries no
+      package the library index tiers development-only — `django-extensions`
+      in particular, which ships `runserver_plus` and `shell_plus`.
 - [ ] Migrations use historical models, explicit validation and DB aliases,
       preserve fail-closed mixed-version access, and contain no secrets.

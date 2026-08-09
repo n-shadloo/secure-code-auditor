@@ -291,6 +291,77 @@ analysis; both provide the hook.
   package and is not wired into `GraphQLView`; pass it, and any cost rule you
   write, through the view's validation rules.
 
+The cost rule is the one you have to write, and it is the same object in both
+stacks because both execute on graphql-core. Give each field a static cost,
+multiply by the pagination argument at the level it appears, and sum over the
+tree; run it as a validation rule so the rejection happens before a resolver
+is entered.
+
+```python
+# Correct: a static per-field cost multiplied by the pagination argument at
+# each level, summed over the tree, and rejected before execution.
+from graphql import GraphQLError
+from graphql.language import FieldNode, FragmentSpreadNode, IntValueNode
+from graphql.validation import ASTValidationRule
+
+MAX_COST = 1000
+FIELD_COST = {"search": 50}      # anything unlisted costs 1
+PAGE_ARGUMENTS = ("first", "last", "limit")
+ASSUMED_PAGE_SIZE = 100          # when the size arrives in a variable
+
+
+def page_multiplier(field):
+    for argument in field.arguments:
+        if argument.name.value in PAGE_ARGUMENTS:
+            if isinstance(argument.value, IntValueNode):
+                return int(argument.value.value)
+            return ASSUMED_PAGE_SIZE
+    return 1
+
+
+class CostLimitRule(ASTValidationRule):
+    def enter_operation_definition(self, node, *_args):
+        cost = self.cost_of(node.selection_set, 1)
+        if cost > MAX_COST:
+            self.report_error(GraphQLError(
+                f"Operation cost {cost} exceeds the limit {MAX_COST}.", node
+            ))
+
+    def cost_of(self, selection_set, multiplier):
+        total = 0
+        for selection in selection_set.selections:
+            if isinstance(selection, FragmentSpreadNode):
+                # An unfollowed spread is a free bypass of the budget.
+                fragment = self.context.get_fragment(selection.name.value)
+                if fragment is not None:
+                    total += self.cost_of(fragment.selection_set, multiplier)
+                continue
+            factor = multiplier
+            if isinstance(selection, FieldNode):
+                factor *= page_multiplier(selection)
+                total += FIELD_COST.get(selection.name.value, 1) * factor
+            if selection.selection_set is not None:
+                total += self.cost_of(selection.selection_set, factor)
+        return total
+```
+
+Three details decide whether a rule of this shape is worth anything. The
+multiplier has to **compound down the tree** rather than being applied per
+field, because `authors(first: 100) { books(first: 100) { ... } }` is ten
+thousand objects, not two hundred. A **fragment spread that is not followed
+is a complete bypass** — move the expensive selection into a fragment and the
+budget reads as zero — so the rule resolves spreads through the validation
+context rather than skipping non-field selections. And a page size arriving
+**in a variable is not in the AST**, so the rule must assume a ceiling rather
+than fall through to a multiplier of one; validation runs before variables
+are coerced, which is also why the assumed value should be the maximum the
+paginator will actually serve.
+
+Strawberry takes such a rule through `AddValidationRules`, supplied as a
+factory rather than a shared instance for the reason above; graphene takes it
+in the `validation_rules` argument to `GraphQLView`, the same argument its
+`depth_limit_validator` goes through.
+
 Confirm the limits in the code that constructs the schema and the view. A
 limit named in documentation but absent from the schema definition is not
 applied, and this is one of the few places where reading the settings file is
@@ -421,6 +492,61 @@ Django has no first-party library for this; it is normally implemented at the
 gateway or with a small server-side registry. Treat its absence on a
 first-party-only API as a hardening finding, not a defect.
 
+The registry is the whole control, and it is small enough that the shape is
+worth stating exactly.
+
+```python
+# Correct: the client sends an id, and the server answers only from the
+# registry the build produced, so an unregistered document is refused
+# before anything parses it.
+import hashlib
+import json
+from pathlib import Path
+
+from django.core.exceptions import PermissionDenied
+
+REGISTRY_PATH = Path("/srv/app/build/persisted-operations.json")
+
+
+def load_registry(path):
+    """Registration is out of band: the client build emits the operations it
+    ships and this process only ever reads that artifact."""
+    return {
+        hashlib.sha256(document.encode("utf-8")).hexdigest(): document
+        for document in json.loads(path.read_text())
+    }
+
+
+REGISTRY = load_registry(REGISTRY_PATH)
+
+
+def resolve_document(body):
+    """`body` is the decoded JSON request body. Nothing here writes to
+    REGISTRY: an implementation that registers whatever a client sends on
+    first use is a cache, not an allowlist, and gates nothing."""
+    if "query" in body:
+        raise PermissionDenied("This endpoint accepts operation ids only.")
+    document = REGISTRY.get(body.get("operationId"))
+    if document is None:
+        raise PermissionDenied("Unregistered operation.")
+    return document
+```
+
+Two properties are what make it a gate rather than a cache. The registry is
+**loaded, never written** — the moment a request path can add an entry, the
+allowlist accepts every document a client cares to send, which is the
+automatic-persisted-query behavior cautioned against above and the single way
+this control is most often built wrong. And a request carrying a `query` key
+is **refused rather than executed**, because an endpoint that falls back to
+the arbitrary document when the id is missing has an allowlist that any
+client can opt out of. Hook it wherever the view decodes the body and before
+it hands a document to the schema: graphene's `GraphQLView.parse_body`,
+Strawberry's Django view, or the gateway if one sits in front.
+
+Everything downstream is unchanged. An allowlisted operation still runs its
+own resolver authorization, still validates its inputs, and — if it takes an
+upload — still needs the full upload validation below.
+
 ## CSRF and file uploads on a GraphQL endpoint
 
 **CSRF.** If the endpoint authenticates with cookies, it must not be
@@ -545,6 +671,9 @@ backend code for these, and do not report their absence as a backend finding:
 - [ ] Depth, alias, token, and cost limits are all applied as validation rules
       that run before execution, and a document over budget is tested and
       rejected.
+- [ ] The cost rule compounds its multiplier down the tree, follows fragment
+      spreads rather than skipping them, and assumes a ceiling for a page
+      size supplied in a variable.
 - [ ] An execution or wall-clock timeout exists underneath the limits.
 - [ ] Array batching is bounded or disabled, and aliases and operations count
       toward the document budget.
@@ -559,7 +688,9 @@ backend code for these, and do not report their absence as a backend finding:
       nested write is authorized on its own terms.
 - [ ] N+1 is mitigated and verified by query count under a nested document.
 - [ ] For a first-party-only API, operations are allowlisted or persisted, and
-      the mechanism is not a register-on-first-use cache.
+      the mechanism is not a register-on-first-use cache: no request path
+      writes to the registry, and a body carrying a raw document is refused
+      rather than executed.
 - [ ] Cookie-authenticated endpoints are not CSRF-exempt.
 
 ### Django & DRF

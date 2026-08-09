@@ -475,6 +475,98 @@ self-inclusion so it does not document itself to an anonymous caller. Where it
 is public, the schema must not be the only place the access requirements of an
 endpoint are written down.
 
+**Serve the caller the document they are entitled to, and redact per
+operation.** In `drf-spectacular`, `SERVE_PUBLIC` defaults to `True`, which
+generates the whole document for whoever reaches the endpoint; set to `False`
+it drops the operations whose views the requesting caller fails.
+`SERVE_PERMISSIONS` decides who reaches the endpoint at all and defaults to
+`AllowAny` independently of `DEFAULT_PERMISSION_CLASSES`, so a project with a
+restrictive project-wide default still serves its schema to anonymous callers
+until this is set. Read the filtering for what it is: it runs each view's
+`check_permissions`, so it reflects view-level access only and knows nothing
+about object permissions or queryset scoping. A tailored document is a smaller
+reconnaissance map, not an authorization boundary.
+
+Per-operation redaction has the same limit. `extend_schema(exclude=True)`
+removes an operation from the document and
+`extend_schema_serializer(exclude_fields=[...])` removes fields from a
+component; both change the document only. The route still resolves, the
+serializer still returns the field, and a caller who guesses the name gets
+exactly the response they would have got before. Use them to keep an internal
+operation out of a partner-facing contract, never as the reason an operation
+is safe — the permission class and the field set are the control, and the
+decoration is the document catching up to them.
+
+```python
+# Correct: the permission class does the gating; the decorations only keep
+# the published document to the contract integrators are meant to code
+# against. Neither decoration authorizes anything.
+from drf_spectacular.utils import extend_schema, extend_schema_serializer
+from rest_framework import serializers, viewsets
+from rest_framework.decorators import action
+from rest_framework.permissions import IsAdminUser
+from rest_framework.response import Response
+
+from .models import Account
+
+
+@extend_schema_serializer(exclude_fields=["internal_risk_score"])
+class StaffAccountSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Account
+        fields = ["id", "name", "internal_risk_score"]
+
+
+class AccountViewSet(viewsets.ReadOnlyModelViewSet):
+    # The gate. Without it the two decorations merely hide a field and an
+    # operation that any caller could still read and invoke.
+    permission_classes = [IsAdminUser]
+    serializer_class = StaffAccountSerializer
+
+    def get_queryset(self):
+        return Account.objects.filter(tenant=self.request.user.tenant)
+
+    @extend_schema(exclude=True)
+    @action(detail=False)
+    def reindex(self, request):
+        return Response({"queued": True})
+```
+
+**What a deliberately public schema should omit**, once it is a published
+contract rather than an internal artifact:
+
+- **Internal and admin operations.** Anything an integrator has no route to
+  call: staff-only actions, impersonation entry points, reindex and other
+  operational routes, and the health and metrics surfaces owned by
+  `deployment-and-runtime.md`, "Operational and development endpoints".
+- **Error internals.** Response schemas and examples carrying exception class
+  names, stack frames, database constraint names, or upstream service
+  identifiers. The rule is `a10-exceptional-conditions.md`, "Don't leak on
+  error"; the schema is one more place it escapes, and the place nobody
+  re-reads.
+- **Fields the serializer returns only to an elevated role.** A component
+  enumerating every field any caller might receive tells an unprivileged
+  caller precisely which fields exist and which are worth escalating for.
+
+**The schema is the inventory artifact, so diff it.** Its audit value is in
+the change between two generations rather than in any single one. Generate it
+in CI, keep the generated document as a build artifact, and diff it on every
+dependency upgrade and every release. An upgrade is where operations appear
+that nobody wrote — a router that began mounting a route, a package that
+stopped honouring an exclusion, a serializer that gained a field from a model
+change — and a release diff turns "a new field reached the API" into a
+reviewable line instead of something found later.
+
+**Write-time.** When generating a schema route, set `SERVE_PERMISSIONS` and
+`SERVE_PUBLIC` in the same edit that adds the URL rather than accepting the
+defaults, because between them the defaults hand the complete document to an
+anonymous caller and neither is implied by a restrictive
+`DEFAULT_PERMISSION_CLASSES`. When generating an operation the published
+contract should not carry, give it its own `permission_classes` first and add
+`extend_schema(exclude=True)` second, in that order: the permission is the
+control and the exclusion is documentation, so an operation that only the
+exclusion protects is a public operation with a delay in front of it.
+
 OWASP API9:2023 and API8:2023, A02:2025. Severity: medium, higher where the
 schema covers an internal or admin surface.
 
@@ -552,6 +644,39 @@ While both versions run, the security requirements are:
 - **Evidence before switch-off.** Monitor traffic per version so the
   decommission date is a decision rather than a guess, and so a client still
   calling v1 the day before is discovered before it breaks.
+
+That behavior is common to every versioning class. Two of them additionally
+make the version a decision about something outside the request body, and
+each changes what a reviewer has to check.
+
+- **`HostNameVersioning` puts DNS inside the trust boundary.** The version is
+  the first label of `request.get_host()`, so it is the `Host` header, and
+  `ALLOWED_HOSTS` is the only thing constraining it — a wildcard DNS record
+  pointing at the application together with a wildcard `ALLOWED_HOSTS` entry
+  such as `.example.com` turns any hostname an attacker can resolve into
+  version input. Two mechanics matter in review. The class matches hostnames
+  against a regex of exactly three dot-separated labels, so
+  `v1.internal.example.com` and `v1.example.co.uk` do not match at all and
+  fall back to `default_version` silently rather than being rejected — a
+  deployment that moves behind a longer hostname stops versioning without
+  erroring. And where `USE_X_FORWARDED_HOST` is enabled, the version comes
+  from a header the client sends and the proxy forwards, so the proxy rules
+  in `deployment-and-runtime.md`, "Reverse proxy and forwarded headers" decide
+  whether it is trustworthy.
+- **`NamespaceVersioning` binds the version to URLconf include scope.** It
+  reads `request.resolver_match.namespace`, which means a version exists for
+  exactly as long as an `include(..., namespace="v1")` is reachable from the
+  root URLconf: a stale include is a live old version, and removing the
+  routes — not editing a setting — is what switches it off. Two consequences.
+  A route reachable outside any namespaced include resolves with an empty
+  namespace and therefore runs at `default_version`, so a viewset mounted at
+  the root while its versioned copies exist under the includes is silently
+  served as the default version, and any authorization that branches on
+  `request.version` branches on that. And because the class splits nested
+  namespaces and returns the first allowed component, an outer namespace
+  wins over the inner one — re-mounting a module under a namespace that
+  matches another version serves that module's code under the outer version's
+  name.
 
 OWASP API9:2023. Severity: medium to high, depending on the gap between the
 versions' controls.
@@ -678,11 +803,21 @@ def payment_webhook(request):
 - [ ] `BrowsableAPIRenderer` is absent from production renderers, not merely
       ordered last; schema and Swagger/Redoc routes are authenticated or
       `DEBUG`-gated unless the API is deliberately public.
+- [ ] The schema view sets `SERVE_PERMISSIONS` and `SERVE_PUBLIC` rather than
+      taking the defaults; a public schema omits internal and admin
+      operations, error internals, and fields only an elevated role receives;
+      no operation relies on `extend_schema(exclude=True)` for its access
+      control; the generated document is a CI artifact diffed on upgrade and
+      on release.
 - [ ] The live URL map has been enumerated and diffed against the served schema;
       shadow, zombie, and orphan routes are retired or protected.
 - [ ] Deprecated versions emit `Deprecation` and `Sunset` with a dated
       switch-off, carry the same authorization as the current version, and
       `DEFAULT_VERSION`/`ALLOWED_VERSIONS` are both set.
+- [ ] Under `HostNameVersioning`, wildcard DNS and wildcard `ALLOWED_HOSTS`
+      entries are checked as version inputs; under `NamespaceVersioning`, no
+      stale `include()` keeps a retired version live and no route resolves
+      outside a namespace into `default_version`.
 - [ ] Bulk routes authorize every object and define partial-failure semantics;
       no queryset-level bulk update or delete on an unscoped queryset.
 - [ ] Payments resolve amounts server-side; webhook verifiers read

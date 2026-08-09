@@ -601,6 +601,72 @@ visible in review. Prefer twenty lines of local convention to a dependency: the
 packaged options in this area are unmaintained, as recorded in
 `security-hardening-libraries.md`, "Data lifecycle and privacy".
 
+The command that emits it is **project-side code the audited application
+carries**, not tooling supplied by a reviewer, because it has to run against
+the application's own app registry with its own settings loaded. Walk
+`apps.get_models()`, read the marker, and emit both halves — what is
+classified and what is not, since the second half is what a review acts on.
+
+```python
+# Correct: the inventory is derived from the models themselves, so a model
+# or field nobody classified is a visible gap rather than an absence.
+import json
+
+from django.apps import apps
+from django.core.management.base import BaseCommand
+
+
+class Command(BaseCommand):
+    help = "Emit the personal-data map from the model layer."
+
+    def handle(self, *args, **options):
+        data_map, unclassified = [], []
+        for model in apps.get_models():
+            privacy = getattr(model, "Privacy", None)
+            personal = tuple(getattr(privacy, "personal_fields", ()))
+            if not personal:
+                if privacy is None:
+                    unclassified.append(model._meta.label)
+                continue
+            exported = tuple(getattr(privacy, "export_fields", ()))
+            declared = set(personal) | set(exported)
+            data_map.append({
+                "model": model._meta.label,
+                "personal_fields": sorted(personal),
+                "export_fields": sorted(exported),
+                "on_erasure": getattr(privacy, "on_erasure", None),
+                # Every inbound FK is a path the erasure fan-out must follow.
+                "referenced_by": sorted(
+                    f"{rel.related_model._meta.label}.{rel.field.name}"
+                    for rel in model._meta.related_objects
+                ),
+                # On the model but absent from the declaration.
+                "undeclared_fields": sorted(
+                    f.name for f in model._meta.local_fields
+                    if not f.primary_key and f.name not in declared
+                ),
+            })
+
+        self.stdout.write(json.dumps(
+            {"models": data_map, "unclassified_models": sorted(unclassified)},
+            indent=2, sort_keys=True,
+        ))
+```
+
+Three things about the shape are load-bearing. A model carrying no `Privacy`
+class at all is reported as unclassified, while one that declares an empty
+`personal_fields` is not — the difference between "nobody looked" and
+"somebody looked and found none" is the whole value of the artifact.
+`related_objects` gives the inbound foreign keys, which are the paths the
+erasure fan-out has to follow and the paths a reviewer would otherwise have to
+find by hand. And `undeclared_fields` is what makes the write-time rule below
+checkable: a field added to a classified model without being added to its
+declaration is the ordinary way personal data becomes invisible.
+
+Run it in CI and diff the output, on the same terms as any other inventory:
+the useful signal is a model or field appearing in the unclassified half
+between one release and the next.
+
 **Write-time.** When generating a model field that holds personal data, add it
 to that model's `Privacy` declaration in the same edit — `personal_fields`,
 the `export_fields` a subject-access response returns, and an `on_erasure`
