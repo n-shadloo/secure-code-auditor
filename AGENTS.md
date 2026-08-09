@@ -18,8 +18,9 @@ cross-cutting references. Coverage includes the authorization architecture and
 privilege model (object-, function-, and field-level authorization, default-deny,
 authorization test design), impersonation and break-glass privileged access,
 OAuth2/OIDC and social-login trust boundaries, API-key lifecycle and scoping,
-third-party dependency vetting and maintained-package decisions, file uploads
-end to end (content validation, storage keys that disclose nothing,
+third-party dependency vetting and maintained-package decisions including the
+development-only package that reaches the production requirements file,
+file uploads end to end (content validation, storage keys that disclose nothing,
 object-store configuration and the platform state a code review cannot see,
 delegated upload URLs and the constraints each one has to bind,
 direct-to-storage uploads held in a quarantine prefix until the server

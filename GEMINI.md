@@ -63,7 +63,8 @@ source to one across requests, SQL and the identifier positions the ORM does
 not parameterize, the shell and a program's own option parser, template
 injection and server-rendered output, LDAP filters and distinguished names, and
 response and mail headers), and a dated maintained-package gate for third-party
-security dependencies.
+security dependencies, including the development-only package that reaches the
+production requirements file and ships a debugger with it.
 
 Primary integration is Claude; this file exists so Gemini CLI uses the same
 single source of truth. Modes (review-time / write-time), the severity rubric

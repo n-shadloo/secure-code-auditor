@@ -162,8 +162,10 @@ rule for generating that code.
   build artifact of its own (non-root, pinned base, and the secrets that stay
   readable in a layer after a later layer deletes them), origin-isolated media,
   caching, and brokers.
-- Supply chain: third-party dependency vetting, maintained-package gates,
-  pinning, hashing, advisory scanning, SBOMs, and EOL frameworks.
+- Supply chain: third-party dependency vetting, maintained-package gates, the
+  development-only package that reaches the production requirements file and
+  ships a debugger with it, pinning, hashing, advisory scanning, SBOMs, and EOL
+  frameworks.
 
 Version baseline is kept current (Django 6.1, 6.0.8, and 5.2.17 LTS; DRF
 3.18.0; Channels 4.3.2; django-allauth 65.19.0; dj-rest-auth 7.2.0;
