@@ -199,7 +199,11 @@ and password hashing".
 
 Configure `AUTH_PASSWORD_VALIDATORS` (length, common-password, numeric,
 user-attribute similarity). This is your baseline against weak and reused
-credentials; see the auth file for lockout and breach handling.
+credentials. The policy those validators encode is not this file's:
+`a07-authentication-failures.md`, "Password policy", carries the SP 800-63B-4
+requirements each one maps to, the length floor that sits above Django's
+default, and the breached-corpus screening no built-in provides. Lockout and
+breach handling are in the same file under "Brute force and enumeration".
 
 ## Secrets
 
@@ -437,6 +441,13 @@ Review notes:
 - Which subsystems `SECRET_KEY_FALLBACKS` covers during a rotation, and the
   two-phase procedure, are in `service-identity-and-secrets.md`, "Rotating
   Django's SECRET_KEY".
+- Django made this exact mistake in its own signed-cookie helper, which is
+  worth knowing because it shows the failure is a collision rather than a
+  weak signature: `get_signed_cookie()` built its salt by concatenating the
+  cookie name and the `salt` argument, so two distinct pairs could produce
+  one salt. The version floor, the transitional setting, and the audit are in
+  `a02-security-misconfiguration.md`, "Signed cookies and the legacy salt
+  fallback".
 
 ## Data in transit and at rest
 

@@ -19,6 +19,7 @@ what a `DEBUG` error view discloses when a request fails.
 - [Principle](#principle)
 - [DEBUG and ALLOWED_HOSTS](#debug-and-allowed_hosts)
 - [The security settings matrix](#the-security-settings-matrix)
+- [Signed cookies and the legacy salt fallback](#signed-cookies-and-the-legacy-salt-fallback)
 - [CSRF settings and trusted origins](#csrf-settings-and-trusted-origins)
 - [CORS](#cors)
 - [Content Security Policy](#content-security-policy)
@@ -94,6 +95,48 @@ cookie flags in that same edit rather than leaving them for a later hardening
 pass: those four are off by default, they are precisely what `check --deploy`
 warns about, and a settings module that has already been merged is one nobody
 re-opens without a reason to.
+
+## Signed cookies and the legacy salt fallback
+
+`HttpRequest.get_signed_cookie()` derived its signing salt by concatenating
+the cookie name and the `salt` argument. Where two distinct name-and-salt
+pairs concatenated to the same string, a cookie signed in one context could be
+accepted in another — CVE-2026-6873, disclosed 3 June 2026 and rated low under
+Django's security policy. Signed cookies now use an unambiguous derivation.
+This is the domain-separation failure `a04-cryptographic-failures.md`,
+"Signing and salt discipline", describes, reached through Django's own helper
+rather than through a hand-rolled signer.
+
+Two things follow for a settings module.
+
+- **The floor is 5.2.15 or 6.0.6**, both released 3 June 2026. Below either,
+  the project still derives salts ambiguously and the finding is the upgrade,
+  not a setting.
+- **`SIGNED_COOKIE_LEGACY_SALT_FALLBACK` decides whether the old cookies are
+  still honoured.** It was added in 5.2.15 and defaults to `True`, so a
+  patched project goes on accepting cookies signed under the historical
+  `key + salt` derivation. Django accepts them until 7.0, where the
+  transitional setting is removed. Set it to `False` once cookies signed
+  before the upgrade have expired — and immediately, rather than on a
+  schedule, in any project whose own calls can collide, because until then
+  the ambiguous derivation remains a valid way to present a cookie.
+
+Auditing it is closer to a grep than a review. Collect every
+`set_signed_cookie()` and `get_signed_cookie()` call, concatenate each cookie
+name with the `salt` it passes, and look for two pairs that produce the same
+string: a cookie named `session` salted `_token` and one named `session_`
+salted `token` both derive from `session_token`. Where no pair collides, the
+setting is hygiene with no behavioural risk. Where one does, it is the fix,
+and the pair should be renamed as well.
+
+**Write-time.** When generating a `set_signed_cookie()` or
+`get_signed_cookie()` call, pass an explicit `salt` naming the purpose the
+cookie serves rather than repeating its name, so the value is domain-separated
+on the same principle every other signed artifact in the project follows. On a
+new project set `SIGNED_COOKIE_LEGACY_SALT_FALLBACK = False` in the same
+settings module you generate: nothing signed under the old derivation is in
+circulation, so the default only preserves an acceptance path this project
+never needed, and it is far easier to set now than to schedule later.
 
 ## CSRF settings and trusted origins
 
@@ -395,6 +438,9 @@ so a clean linter is never evidence of deployment posture.
       module.
 - [ ] HSTS, SSL redirect, nosniff, `X-Frame-Options`, secure session/CSRF cookies set.
 - [ ] `SECURE_PROXY_SSL_HEADER` matches the actual proxy and isn't client-spoofable.
+- [ ] Django is at 5.2.15 or 6.0.6 and later, and
+      `SIGNED_COOKIE_LEGACY_SALT_FALLBACK` is `False` wherever two
+      `get_signed_cookie()` name-and-salt pairs could concatenate alike.
 - [ ] `CSRF_TRUSTED_ORIGINS` set with scheme; no stray `@csrf_exempt`.
 - [ ] CORS uses an allowlist; no `CORS_ALLOW_ALL_ORIGINS = True` with credentials.
 - [ ] DMARC is at `p=quarantine` or `p=reject` rather than parked at `p=none`,

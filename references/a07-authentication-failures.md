@@ -17,6 +17,7 @@ because authentication ends where authorization begins.
 ## Contents
 
 - [Principle](#principle)
+- [Password policy](#password-policy)
 - [Sessions](#sessions)
 - [JWT](#jwt)
 - [Token storage](#token-storage)
@@ -36,6 +37,184 @@ explicit issuer, audience, lifetime, storage, rotation, revocation, and logging
 rules. Fail closed, resist enumeration and automation, and re-authenticate before
 sensitive changes. Never infer authorization merely because authentication
 succeeded.
+
+## Password policy
+
+### Principle layer
+
+NIST SP 800-63B-4 states the password-verifier requirements normatively, and
+the first of them is the one most projects fail without noticing. Section
+3.1.1.2, requirement 1: a password used as a **single-factor** authentication
+mechanism SHALL be a minimum of **15 characters**; a password used only as
+part of a multi-factor process MAY be shorter but SHALL still be a minimum of
+**eight**. Both halves of that split are SHALL-level, and the 15-character
+floor is the one that governs the ordinary case of a site where a password
+alone logs a user in. The revision matters here — the 2017 edition asked only
+for eight, so guidance and validators inherited from it are a tier low.
+
+The rest of the section, in its own grammar:
+
+- a maximum length of at least 64 characters SHOULD be permitted, and the
+  entire submitted password SHALL be verified rather than truncated;
+- other composition rules — required mixtures of character types — SHALL NOT
+  be imposed, a point section 3.1.1.1 repeats;
+- subscribers SHALL NOT be required to change passwords periodically, but a
+  change SHALL be forced on evidence that the authenticator is compromised;
+- on every request to establish or change a password, the prospective secret
+  SHALL be compared against a blocklist of known commonly used, expected, or
+  compromised values. The **entire** password is compared rather than
+  substrings, and the list is expected to draw on previous breach corpuses,
+  dictionary words, and context-specific words such as the name of the
+  service and the username. A password found on it SHALL be rejected and the
+  reason SHALL be given;
+- password managers SHALL be allowed and the paste function SHOULD be
+  permitted;
+- a password hint reachable by an unauthenticated claimant SHALL NOT be
+  stored, and knowledge-based authentication or security questions SHALL NOT
+  be used when choosing a password; and
+- failed-attempt rate limiting SHALL be implemented — the control this file
+  covers under "Brute force and enumeration".
+
+Storage is a separate requirement, met elsewhere: salted and hashed with a
+salt of at least 32 bits. `a04-cryptographic-failures.md` owns the hashing
+family and its parameters.
+
+### Django and DRF implementation layer
+
+`AUTH_PASSWORD_VALIDATORS` ships four validators, and mapping them onto the
+requirements above locates the one gap that matters:
+
+- `MinimumLengthValidator` defaults to `min_length=8`. Raise it to 15 wherever
+  the password is a single factor. Eight is defensible only where a second
+  factor is genuinely enforced for every account that can reach the flow,
+  which is a claim about the whole login path rather than about this setting.
+- `CommonPasswordValidator` lowercases the candidate and checks it against a
+  list of 20,000 common passwords. That is a blocklist in form but nowhere
+  near breach scale, and it is the requirement projects most often believe
+  they have already satisfied. Its `password_list_path` option takes a custom
+  file of one lowercase password per line.
+- `UserAttributeSimilarityValidator` covers the context-specific-words clause
+  for the user's own attributes.
+- `NumericPasswordValidator` rejects an all-numeric password.
+
+Django imposes no maximum length, no composition rules, and no periodic
+expiry. The last two are the correct default rather than gaps, because the
+requirement is to *not* impose them — a project that added a character-class
+rule or an expiry job is the finding. The one requirement no built-in meets is
+**breached-corpus screening**, and no package currently clears the gate to
+provide it: `pwned-passwords-django==5.2.0` (6 Apr 2025, re-checked 9 Aug
+2026) declares Django 4.2, 5.1, and 5.2 with no Django 6 line at all, on a
+single maintainer. Own the check instead.
+
+```python
+# Wrong: the floor is Django's default of eight and the only blocklist is the
+# 20,000-entry common-password list, so a nine-character password sitting in
+# last year's breach corpus is accepted. The two additions make it worse
+# rather than better -- a character-class rule and an expiry job are both
+# SHALL NOTs, and both push users toward predictable mutations of one secret.
+AUTH_PASSWORD_VALIDATORS = [
+    {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
+    {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
+    {"NAME": "myproject.validators.RequireMixedCharacterClassesValidator"},
+]
+PASSWORD_EXPIRY_DAYS = 90
+```
+
+```python
+# Correct: 15 for a single factor, the built-ins that map to real
+# requirements kept, and a breach-corpus check that no built-in provides. The
+# range query sends the first five hex characters of the SHA-1 digest and
+# never the password or the full digest, so the candidate never leaves the
+# process.
+
+# myproject/validators.py
+import hashlib
+import logging
+import urllib.error
+import urllib.request
+
+from django.conf import settings
+from django.core.exceptions import ValidationError
+from django.utils.translation import gettext as _
+
+logger = logging.getLogger(__name__)
+
+
+class BreachedPasswordValidator:
+    def validate(self, password, user=None):
+        digest = hashlib.sha1(password.encode("utf-8")).hexdigest().upper()
+        prefix, suffix = digest[:5], digest[5:]
+        lookup = urllib.request.Request(
+            f"{settings.PWNED_RANGE_ENDPOINT}{prefix}",
+            headers={"Add-Padding": "true"},
+        )
+        try:
+            with urllib.request.urlopen(lookup, timeout=2) as response:
+                body = response.read().decode("utf-8")
+        except (urllib.error.URLError, TimeoutError):
+            # Fail open, deliberately and visibly. Failing closed denies every
+            # password change during someone else's outage; whichever way the
+            # product decides, it gets logged rather than silently skipped.
+            logger.warning("breach screening unavailable", exc_info=True)
+            return
+        for line in body.splitlines():
+            candidate, _sep, count = line.partition(":")
+            if candidate == suffix and int(count) > 0:
+                raise ValidationError(
+                    _("This password has appeared in a known data breach."),
+                    code="password_breached",
+                )
+
+    def get_help_text(self):
+        return _("Your password must not appear in a known data breach.")
+
+
+# settings.py
+AUTH_PASSWORD_VALIDATORS = [
+    {
+        "NAME": "django.contrib.auth.password_validation"
+        ".UserAttributeSimilarityValidator",
+    },
+    {
+        "NAME": "django.contrib.auth.password_validation"
+        ".MinimumLengthValidator",
+        "OPTIONS": {"min_length": 15},
+    },
+    {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
+    {"NAME": "myproject.validators.BreachedPasswordValidator"},
+]
+```
+
+State the cost of that check rather than absorbing it. It is an outbound call
+to a third party on every password set and change, so password changes now
+depend on that service's availability and latency, the endpoint joins the
+hosts the egress policy has to allow, and a five-character hash prefix is
+disclosed to it. The `Add-Padding` header makes every response a uniform size
+so a prefix's popularity cannot be inferred from response length. The
+fail-open branch is a decision and not a default: failing closed is the
+stronger posture and the right one for a high-assurance product, but it
+denies every password change during an outage nobody in the project controls.
+SHA-1 appears here as a lookup key for the range API and nowhere else —
+storage remains whatever `PASSWORD_HASHERS` selects.
+
+Where an outbound call is unacceptable — an air-gapped deployment, a privacy
+review that will not clear it, or a flow that cannot take the latency — the
+offline alternative is `CommonPasswordValidator` pointed at a much larger
+local list through `password_list_path`. It needs no network and discloses
+nothing; the trade is that the file has to be obtained, reviewed for its
+licence, shipped with the image, and refreshed on a schedule somebody owns,
+and a list nobody refreshed is the failure it was added to prevent.
+
+**Write-time.** When generating `AUTH_PASSWORD_VALIDATORS`, or any flow that
+sets or changes a password, put `min_length` at 15 unless a second factor is
+enforced for every account that can reach the flow, and add the
+breach-screening validator in the same edit, because a project that ships the
+four defaults has met the blocklist requirement in form only and nothing
+later prompts a revisit. Do not generate a character-class rule or a
+password-expiry job even when the ticket asks for one: both are SHALL NOTs
+under SP 800-63B-4, and expiry in particular is the control most often added
+by reflex. Where a maximum length is needed, set it at 64 or above and never
+truncate before hashing.
 
 ## Sessions
 
@@ -74,8 +253,10 @@ succeeded.
   See `agent-and-llm-interfaces.md`, "Inbound token validation and the
   passthrough prohibition".
 - SimpleJWT `5.5.1` contains the fix for CVE-2024-22513 but advertises support only
-  through Django 5.2. Treat it as conditional on a compatible project, not as a
-  Django 6 default; re-check compatibility before adoption.
+  through Django 5.2 — re-confirmed on 9 Aug 2026 against the classifiers the
+  release publishes, which top out there, on an artifact from 21 July 2025.
+  Treat it as conditional on a compatible project, not as a Django 6 default;
+  re-check compatibility before adoption.
 - A token minted by *another* system for a *machine* caller is a different
   problem from one this application issued. The ordered claim-by-claim
   verification, JWKS caching and rotation, sender-constrained tokens, and the
@@ -147,7 +328,11 @@ it.
   audit factor lifecycle events without logging secrets.
 - `django-otp==1.7.0` passes the current gate and supports Django 6.0.
   `django-two-factor-auth==1.18.1` is conditional for compatible Django 5.2
-  projects and must be re-vetted before Django 6 adoption.
+  projects and must be re-vetted before Django 6 adoption, re-confirmed on
+  9 Aug 2026: the shipped artifact declares Django 4.2 through 5.2 and no
+  Django 6 line. Its development branch reads ahead of that, so pin the
+  disposition to what the release declares rather than to what the repository
+  says, and re-check when the next version ships.
 
 ## OAuth2, OIDC, and social login
 
@@ -246,9 +431,31 @@ replace the integration.
 Service-to-service mutual TLS **is** in scope and lives in
 `service-identity-and-secrets.md`, along with certificate-bound tokens and the
 proxy-set client-certificate identity a Django application actually consumes.
-Human-facing mTLS, SAML, and passkeys stay outside this skill; when
-encountered, audit their maintained library configuration rather than
-reimplementing protocol internals.
+Human-facing mTLS and SAML stay outside this skill; when encountered, audit
+their maintained library configuration rather than reimplementing protocol
+internals.
+
+**Passkeys and WebAuthn** are audited at that same depth, and the depth is a
+finding about the ecosystem rather than a gap: Django ships no native WebAuthn
+support through 6.1, so there is no framework surface to review — only a
+library's configuration, since the registration and authentication ceremonies
+belong to a vetted implementation and not to a hand-written one. On allauth,
+WebAuthn is inert until `MFA_SUPPORTED_TYPES` names `"webauthn"`; the default
+is `["recovery_codes", "totp"]`. `MFA_PASSKEY_LOGIN_ENABLED` and
+`MFA_PASSKEY_SIGNUP_ENABLED` both default to `False`, and the first is not a
+convenience toggle — turning it on makes a passkey a complete login rather
+than a second factor, which changes the authentication model and needs the
+recovery path reviewed with it. The second additionally requires mandatory
+email verification with `ACCOUNT_EMAIL_VERIFICATION_BY_CODE_ENABLED`.
+`MFA_WEBAUTHN_ALLOW_INSECURE_ORIGIN` exists for localhost development and is
+a finding anywhere else, because relying-party ID and origin binding are what
+stop a credential registered for one site from being replayed at another.
+Underneath sit `webauthn` (py_webauthn) `3.0.0` and Yubico's `fido2` `2.2.1`,
+both released 29 June 2026 and checked 9 Aug 2026; neither declares a Django
+version because neither is a Django package, so they are version floors to
+confirm rather than gate entries. Check that the user-verification requirement
+matches the assurance the flow claims, and that registration and
+authentication responses are verified server-side rather than trusted.
 
 ## API keys
 
@@ -302,6 +509,10 @@ are in scope.
 
 - [ ] authentication and authorization are separate; all backends reject inactive,
       suspended, wrong-tenant, and otherwise ineligible principals;
+- [ ] password validators set a 15-character floor wherever the password is a
+      single factor, impose no composition rule and no periodic expiry, and
+      screen the candidate against a breach corpus rather than against the
+      20,000-entry common-password list alone;
 - [ ] session cookies, CSRF, rotation, idle/absolute lifetime, logout, and sensitive
       re-authentication match the deployment architecture;
 - [ ] JWTs have fixed algorithms, issuer/audience/time validation, short lifetime,

@@ -420,10 +420,82 @@ Four mechanics decide whether a configured limit is the limit you actually get:
   endpoints need lockout and edge limits, not a throttle class.
 
 Where a limit must actually hold — login, password reset, payment, invitation —
-supplement the throttle with an atomic counter (a Redis `INCR` with an expiry,
-or a database constraint) and a limit at the edge. Fail closed on those flows,
-but define the degraded behavior so a cache outage does not silently remove the
-protection instead of denying the request.
+supplement the throttle with an atomic counter and a limit at the edge. No
+maintained general-purpose limiter currently clears the package gate to supply
+one, so this is a pattern to own rather than a dependency to add;
+`security-hardening-libraries.md`, "Existing-install audit only or rejected
+candidates", records that category ruling and the date behind it. Django's own
+cache API carries the pattern: `cache.incr()` is a single atomic operation on
+the Memcached and Redis backends.
+
+```python
+# Wrong: a read, a decision, and a write across two round trips. Two requests
+# that read the same count both write count + 1, so the effective limit is
+# whatever concurrency allows -- the same non-atomic shape SimpleRateThrottle
+# has, rebuilt by hand on the flow that most needed it not to.
+from django.core.cache import cache
+from rest_framework.exceptions import Throttled
+
+
+def register_attempt(identity):
+    key = f"login-attempts:{identity}"
+    attempts = cache.get(key, 0)
+    if attempts >= 5:
+        raise Throttled()
+    cache.set(key, attempts + 1, 300)
+```
+
+```python
+# Correct: one atomic increment per attempt. add() creates the key and starts
+# the window only when it is absent, so the expiry is established once and the
+# window does not slide forward under sustained load. incr() raises ValueError
+# when the key expires between the two calls -- that is the real race, and it
+# is handled rather than left to chance.
+from django.conf import settings
+from django.core.cache import caches
+from rest_framework.exceptions import Throttled
+
+
+def register_attempt(identity):
+    cache = caches["throttle"]
+    key = f"login-attempts:{identity}"
+    window = settings.LOGIN_ATTEMPT_WINDOW_SECONDS
+    cache.add(key, 0, window)
+    try:
+        attempts = cache.incr(key)
+    except ValueError:
+        cache.set(key, 1, window)
+        attempts = 1
+    if attempts > settings.LOGIN_ATTEMPT_LIMIT:
+        raise Throttled(wait=window)
+```
+
+Three constraints travel with it, and none is optional.
+
+- **The backend decides whether it is atomic at all.** `incr()` is atomic only
+  on Memcached and Redis. On `LocMemCache` it is a per-process
+  read-modify-write that is not even thread-safe, so N Gunicorn workers give N
+  independent counters and roughly N times the limit — the same per-worker
+  failure described above for throttles, and worse here, because this counter
+  is the control that was supposed to actually hold. The database cache
+  backend's `incr` is a non-atomic get-then-set and races the same way.
+- **Name the cache alias explicitly.** Reading `caches["throttle"]` rather
+  than the default keeps the counter off a cache someone later repoints at
+  LocMemCache for a test suite, and off one whose eviction policy discards
+  keys under memory pressure. An evicted counter is a reset counter.
+- **Choose the outage behaviour.** When the cache is unreachable, `incr()`
+  raises, and the flow either denies (fail closed, correct for credential and
+  payment flows) or allows (fail open, which turns a cache outage into an open
+  door). Letting the exception reach a 500 is a third behaviour nobody chose.
+
+**Write-time.** When generating a login, password-reset, payment, or
+invitation endpoint, write the atomic counter in the same change as the view
+and point it at a named Redis or Memcached alias, because the throttle class
+is what a reviewer sees and the non-atomic counter is what actually runs. Put
+the window and the ceiling in settings rather than inline so they can be tuned
+without a code change, and pick the cache-outage branch in that same edit —
+fail closed on credential and payment flows — since an unhandled cache error
+is a 500 that reads as a bug rather than as the denial it should have been.
 
 A throttle caps requests, not what a request costs. Where a call spends money,
 model tokens, or heavy database work, add a per-identity cost and concurrency
@@ -799,7 +871,9 @@ def payment_webhook(request):
       cache is shared rather than `LocMemCache`; `NUM_PROXIES` matches the
       deployed proxy count so the key is not a caller-supplied forwarded chain;
       machine callers are keyed on identity, not IP; costly calls are capped by
-      cost and concurrency as well as rate.
+      cost and concurrency as well as rate; and any limit that must actually
+      hold is an atomic `incr` on a Redis or Memcached alias with a chosen
+      cache-outage branch, not a read-modify-write.
 - [ ] `BrowsableAPIRenderer` is absent from production renderers, not merely
       ordered last; schema and Swagger/Redoc routes are authenticated or
       `DEBUG`-gated unless the API is deliberately public.
