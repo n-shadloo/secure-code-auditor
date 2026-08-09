@@ -326,6 +326,7 @@ an index to them, not a copy:
 | An impersonation or break-glass path | `privileged-access-and-impersonation.md` |
 | A GraphQL type or resolver | `graphql-and-alternative-api-surfaces.md` |
 | A Django Ninja route | `graphql-and-alternative-api-surfaces.md`, "Django Ninja: nothing is authenticated by default" |
+| A gRPC servicer or a `.proto` service definition | `graphql-and-alternative-api-surfaces.md`, "gRPC: nothing from the DRF request cycle applies" |
 | A Channels consumer or its routing | `async-and-channels.md` |
 | An MCP tool over a Django application | `agent-and-llm-interfaces.md` |
 | A field holding a value the database must not read | `data-layer-and-database.md` |

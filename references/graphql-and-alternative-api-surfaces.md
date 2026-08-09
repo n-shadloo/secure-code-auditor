@@ -1,14 +1,17 @@
 # GraphQL and Alternative API Surfaces
 
-Backend API surfaces where the client, not the route, decides the shape and the
-cost of a request: GraphQL schemas served from Django, and non-DRF HTTP
-frameworks such as Django Ninja whose defaults differ from DRF's. Covers
-resolver-level authorization, schema and type over-exposure, document cost
-limits, introspection and error leakage, mutation inputs and nested writes,
-batching, persisted operations, and the framework defaults a DRF engineer will
-assume are present and are not. Maps primarily to CWE-285, CWE-639, CWE-213,
-CWE-770, CWE-915, CWE-799, CWE-306, and CWE-200; relevant OWASP categories
-include A01:2025, A05:2025, A06:2025, and API1, API2, API3, and API4:2023.
+Backend API surfaces that are not DRF routes: GraphQL schemas served from
+Django, where the client rather than the route decides the shape and the cost
+of a request; non-DRF HTTP frameworks such as Django Ninja whose defaults
+differ from DRF's; and gRPC servicers, which answer on a second server that
+Django's request cycle never enters. Covers resolver-level authorization,
+schema and type over-exposure, document cost limits, introspection and error
+leakage, mutation inputs and nested writes, batching, persisted operations,
+protobuf message and recursion limits, and the framework defaults a DRF
+engineer will assume are present and are not. Maps primarily to CWE-285,
+CWE-639, CWE-213, CWE-770, CWE-915, CWE-799, CWE-306, and CWE-200; relevant
+OWASP categories include A01:2025, A05:2025, A06:2025, and API1, API2, API3,
+and API4:2023.
 
 The spine is unchanged. GraphQL is a transport and a query language, not a new
 vulnerability class: every finding here is an existing category expressed
@@ -16,8 +19,10 @@ through a schema.
 
 This file owns **the surface where the client composes the request** —
 authorization at every resolved edge rather than at the route, document depth,
-alias, token, and cost limits, schema and type over-exposure, and the defaults
-of the non-DRF frameworks a DRF engineer will assume are present.
+alias, token, and cost limits, schema and type over-exposure — and, alongside
+it, **the API surface that is not a DRF route at all**: the defaults of the
+non-DRF frameworks and transports a DRF engineer will assume are present, from
+a Django Ninja route to a gRPC servicer on a second server.
 `a01-broken-access-control.md` owns the access-control failure itself,
 `authorization-architecture.md` owns the field-level model,
 `api-drf-specific.md` owns the serializer and throttling patterns generalised
@@ -39,6 +44,7 @@ graphene-django install raises on its own weight.
 - [Persisted queries and operation allowlists](#persisted-queries-and-operation-allowlists)
 - [CSRF and file uploads on a GraphQL endpoint](#csrf-and-file-uploads-on-a-graphql-endpoint)
 - [Django Ninja: nothing is authenticated by default](#django-ninja-nothing-is-authenticated-by-default)
+- [gRPC: nothing from the DRF request cycle applies](#grpc-nothing-from-the-drf-request-cycle-applies)
 - [Out of backend scope](#out-of-backend-scope)
 - [Review checklist](#review-checklist)
 
@@ -642,6 +648,203 @@ they may reach — and enable CSRF explicitly on any operation that
 authenticates from a session cookie, since it is off by default and correct
 only for bearer credentials.
 
+## gRPC: nothing from the DRF request cycle applies
+
+A Django project that serves gRPC runs a second server on a second port,
+speaking HTTP/2 with protobuf message bodies, and Django's request cycle is
+not in the path. No middleware runs, no `DEFAULT_AUTHENTICATION_CLASSES` or
+`DEFAULT_PERMISSION_CLASSES` are consulted, no throttle class applies, no CSRF
+check happens, and `ALLOWED_HOSTS` decides nothing. The servicer imports the
+same models and often reuses the same serializers, which is exactly why the
+surface reads as covered: the business logic is shared and every control
+around it is not. Each control is re-earned here or it does not exist. Maps to
+CWE-306 and API2:2023.
+
+Like a Django Ninja route, a gRPC method is not a URLconf entry and will not
+appear in the audit test in `authorization-architecture.md`, "Default-deny
+architecture". Inventory the surface from the `.proto` service definitions and
+the servicers registered on the server, and carry each method as its own row.
+
+**A server with no interceptor serves everyone.** `grpc.server(...)` applies
+no authentication of its own: every method on every registered servicer
+answers any caller that can open a connection, and `add_insecure_port` hands
+out connections with no transport identity at all. There is no project-wide
+default-deny to inherit and nothing in the library analogous to
+`DEFAULT_PERMISSION_CLASSES`, so the whole of the enforcement is whatever the
+interceptor list contains — and it is empty until someone fills it.
+
+```python
+# Wrong: no interceptor and an insecure port, so every method on every
+# registered servicer answers any caller that can reach the port.
+from concurrent import futures
+
+import grpc
+
+import billing_pb2_grpc
+
+server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
+billing_pb2_grpc.add_BillingServicer_to_server(Billing(), server)
+server.add_insecure_port("[::]:50051")
+server.start()
+```
+
+```python
+# Correct: an authenticating interceptor runs before any handler and refuses
+# rather than annotating, the port carries server and client certificates,
+# and the three limits that are unbounded or generous by default are set.
+from concurrent import futures
+
+import grpc
+from django.conf import settings
+
+import billing_pb2_grpc
+
+
+class ServiceTokenInterceptor(grpc.ServerInterceptor):
+    def __init__(self):
+        self._deny = grpc.unary_unary_rpc_method_handler(
+            lambda request, context: context.abort(
+                grpc.StatusCode.UNAUTHENTICATED, "Invalid credentials"
+            )
+        )
+
+    def intercept_service(self, continuation, handler_call_details):
+        metadata = dict(handler_call_details.invocation_metadata)
+        if verify_service_token(metadata.get("authorization", "")) is None:
+            return self._deny
+        return continuation(handler_call_details)
+
+
+credentials = grpc.ssl_server_credentials(
+    [(settings.GRPC_PRIVATE_KEY, settings.GRPC_CERTIFICATE_CHAIN)],
+    root_certificates=settings.GRPC_CLIENT_CA,
+    require_client_auth=True,
+)
+
+server = grpc.server(
+    futures.ThreadPoolExecutor(max_workers=10),
+    interceptors=[ServiceTokenInterceptor()],
+    options=[
+        ("grpc.max_receive_message_length", 1 * 1024 * 1024),
+        ("grpc.max_send_message_length", 4 * 1024 * 1024),
+    ],
+    maximum_concurrent_rpcs=100,
+)
+billing_pb2_grpc.add_BillingServicer_to_server(Billing(), server)
+server.add_secure_port("[::]:50051", credentials)
+server.start()
+```
+
+Three things about that shape are the review rather than the example.
+
+- **Interceptors are given control in the order they are specified**, per
+  `grpc.server`'s own documentation, so the first in the list is outermost. An
+  authenticating interceptor placed after one that logs, unpacks, or meters
+  the request has already let unauthenticated work happen.
+- **Establishing who is calling is not deciding what they may call.** An
+  interceptor that admits every caller holding a valid token is the gRPC
+  spelling of a check at the query root, and it is why `PERMISSION_DENIED`
+  (code 7) is a different answer from `UNAUTHENTICATED` (code 16). Which
+  methods this principal may invoke, and which objects it may reach through
+  them, are decided per method and inside the handler, on the scoped-queryset
+  terms in `a01-broken-access-control.md`, "IDOR / BOLA". An interceptor that
+  authorizes by service name lets every method on that service through.
+- **Transport identity is not application authorization either.** Mutual TLS
+  through `ssl_server_credentials(..., require_client_auth=True)` and a
+  metadata bearer token are the same two mechanisms as a proxy-verified client
+  certificate and an `Authorization` header on an HTTP service; the rules for
+  both, including what to validate in the token, are in
+  `service-identity-and-secrets.md`, "Validating an inbound machine token".
+
+**django-socio-grpc inherits the open default and adds to it.** Read from the
+0.25.0 distribution on 9 Aug 2026, its `GRPC_FRAMEWORK` settings ship
+`DEFAULT_AUTHENTICATION_CLASSES` and `DEFAULT_PERMISSION_CLASSES` as empty
+lists, `SERVER_INTERCEPTORS` and `SERVER_OPTIONS` as `None`, and
+`REQUIRE_CLIENT_AUTH` as `False`. An empty permission list is not a deny — the
+service's permission check iterates it and falls through — so a service
+written against the DRF-shaped base classes is public in the way an
+`AllowAny` viewset is, minus the visual signal: there is no permission class
+written down for a reviewer to read as wrong. `SERVER_OPTIONS` at `None` means
+the package sets no message-size limits either, so the grpcio defaults below
+are what the deployment gets. Its disposition is in
+`security-hardening-libraries.md`, "GraphQL and alternative API surfaces".
+
+**Two of the three size and concurrency limits are unbounded by default.** The
+values below were read from grpcio 1.83.0 and protobuf 7.35.1 on 9 Aug 2026.
+
+- `grpc.max_receive_message_length` defaults to 4 MB, written in the source as
+  `4 * 1024 * 1024` bytes, with `-1` meaning unlimited. This is the one bound
+  the stack supplies, and raising it to `-1` so that one large message can get
+  through removes it for every caller.
+- `grpc.max_send_message_length` has no default limit.
+- `maximum_concurrent_rpcs` on `grpc.server(...)` defaults to `None`, which
+  the signature documents as no limit. Set it, and the server answers
+  `RESOURCE_EXHAUSTED` past the ceiling instead of accepting unbounded
+  concurrent work against a fixed thread pool and a fixed connection pool.
+- protobuf's pure-Python decoder carries `DEFAULT_RECURSION_LIMIT = 100`,
+  changeable process-wide through `SetRecursionLimit`.
+- `json_format.Parse` and `ParseDict` both default `max_recursion_depth=100`.
+
+Those recursion guards have been bypassed twice in the pure-Python path. The
+advisories and the version floors they set belong to the protobuf entry in
+`a08-integrity-and-deserialization.md`, "Insecure deserialization". The
+general rule the limits above instance — every caller-controlled value that
+multiplies work carries a server-enforced ceiling — is in
+`a06-insecure-design.md`, "Algorithmic resource exhaustion".
+
+**`Any` lets the sender choose the type, and unknown fields survive a
+forward.** Two protobuf behaviours become concrete review checks the moment a
+servicer accepts messages from anything but a first-party caller.
+
+- A `google.protobuf.Any` field carries a type URL and a serialized payload,
+  so unpacking one instantiates and parses whichever message type the sender
+  named. Allow-list the type URLs a field may carry and reject the rest before
+  unpacking. An `Any` accepted on the sender's terms is a sender-chosen
+  constructor, and the nesting it permits is what defeated the JSON recursion
+  guard in the second advisory above.
+- Proto3 preserves unknown fields through a binary parse and re-serialize, so
+  a servicer that relays a received message onward passes attacker-supplied
+  fields to a downstream service that may understand them. Copy the fields you
+  validated into a fresh message before forwarding rather than passing on the
+  object you parsed. Serializing through JSON drops them, which is a side
+  effect of that path and not a control you can rely on.
+
+**Reflection is this surface's introspection.** The server reflection service
+in `grpcio-reflection` lets a client enumerate services, methods, and message
+types and fetch the schemas needed to call them — the gRPC equivalent of
+serving the OpenAPI document, and what lets `grpcurl` and `grpcui` work
+against an endpoint they know nothing about. Unlike GraphQL introspection it
+is off unless someone turns it on, because it exists only where
+`enable_server_reflection` was called; the check is that no production server
+calls it.
+
+Then assume that did not work, on the same terms as the GraphQL case above.
+The schema leaks through error messages and ships inside every compiled
+first-party client, so **never rely on schema secrecy** — a method that is
+safe only because it is undiscovered is an unauthorized method with a delay in
+front of it.
+
+Two other opt-in services belong in the same sweep. `grpcio-health-checking`
+serves per-service SERVING and NOT_SERVING status, which is low sensitivity
+and still an enumeration of service names. `grpcio-channelz` serves live
+per-channel and per-socket internals — connection state, peer sockets, and
+message and failure counts — which is operational intelligence about the
+inside of the deployment and needs whatever access control any other debug
+endpoint gets; see `deployment-and-runtime.md`, "Operational and development
+endpoints".
+
+**Write-time.** When generating a gRPC server, pass `interceptors=` with an
+authenticating interceptor first in the list in the same edit that calls
+`grpc.server(...)`, because there is no project-wide default to inherit and
+every registered method is public the moment the port opens. Set
+`grpc.max_receive_message_length`, `grpc.max_send_message_length`, and
+`maximum_concurrent_rpcs` in that same call — the send length and the
+concurrency ceiling have no default at all — and prefer `add_secure_port` with
+credentials over `add_insecure_port`. Then authorize per method inside the
+handler and scope the queryset from the authenticated principal, since an
+interceptor that established who is calling has decided nothing about which
+objects they may reach.
+
 ## Out of backend scope
 
 Mirroring `00-methodology-and-severity.md`, "What to exclude" — do not search
@@ -654,9 +857,9 @@ backend code for these, and do not report their absence as a backend finding:
   everything above applies;
 - schema design quality, naming, and deprecation hygiene, which are API-design
   concerns rather than security ones;
-- gRPC transport and service-mesh configuration. Where a Django application
-  serves gRPC, the authorization, input-validation, and limit rules in this
-  file apply unchanged to its handlers; the transport and mesh belong to
+- service-mesh topology, sidecar configuration, and the gRPC transport itself.
+  The servicer is in scope and has its own section above; where the mesh
+  terminates TLS or issues the workload identity behind it, that belongs to
   `deployment-and-runtime.md` and `service-identity-and-secrets.md`.
 
 ## Review checklist
@@ -692,6 +895,26 @@ backend code for these, and do not report their absence as a backend finding:
       writes to the registry, and a body carrying a raw document is refused
       rather than executed.
 - [ ] Cookie-authenticated endpoints are not CSRF-exempt.
+- [ ] A gRPC server installs an authenticating interceptor, and it is first in
+      the interceptor list; a call arriving without valid credentials is
+      refused with `UNAUTHENTICATED` rather than reaching a handler.
+- [ ] Authorization is decided per method and per object inside the handler,
+      not once by the interceptor that established who is calling; an
+      interceptor keyed on the service name is tested against a second method
+      on the same service.
+- [ ] `grpc.max_receive_message_length`, `grpc.max_send_message_length`, and
+      `maximum_concurrent_rpcs` are all set explicitly — the send length and
+      the concurrency ceiling have no default, and the receive default of 4 MB
+      has not been raised to `-1`.
+- [ ] No `Any` field from an untrusted peer is unpacked without an allow-list
+      of acceptable type URLs, and a servicer that forwards a message copies
+      validated fields into a fresh one rather than relaying the parsed object
+      with its unknown fields intact.
+- [ ] Server reflection is not registered on a production server, and the
+      health and channelz services are either absent or access-controlled.
+- [ ] gRPC methods are inventoried from the `.proto` service definitions and
+      the registered servicers, each as its own row; they are not URLconf
+      entries and no URLconf-shaped audit will find them.
 
 ### Django & DRF
 
@@ -718,5 +941,13 @@ backend code for these, and do not report their absence as a backend finding:
       and any `auth=None` override is a reviewed exception.
 - [ ] Ninja routes appear as their own rows in the URLconf audit test.
 - [ ] `django-ninja-jwt`'s `SIGNING_KEY` is independent of `SECRET_KEY`.
+- [ ] A gRPC servicer that reuses DRF serializers is not credited with DRF's
+      settings: `DEFAULT_AUTHENTICATION_CLASSES`, `DEFAULT_PERMISSION_CLASSES`,
+      and the throttle classes in `REST_FRAMEWORK` are never consulted on this
+      surface.
+- [ ] On django-socio-grpc, `GRPC_FRAMEWORK` sets non-empty
+      `DEFAULT_AUTHENTICATION_CLASSES` and `DEFAULT_PERMISSION_CLASSES`, and
+      `SERVER_OPTIONS` carries the message-size limits the package leaves at
+      `None`.
 - [ ] Subscriptions meet the origin, authentication, authorization, and
       backpressure requirements in `async-and-channels.md`.

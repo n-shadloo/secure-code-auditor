@@ -196,6 +196,13 @@ Review notes:
   built only from valid and expired tokens never covers.
 - Require `PyJWT>=2.13.0` for any service in the resource-server role; see
   `security-hardening-libraries.md`, "Service identity and secrets".
+- On a gRPC surface these are the same two checks in different clothing — the
+  token arrives in call metadata rather than in a header, and mutual TLS is
+  configured on the server credentials rather than terminated at a proxy — so
+  everything above applies unchanged; the interceptor that has to run them,
+  and the rest of that surface, are in
+  `graphql-and-alternative-api-surfaces.md`, "gRPC: nothing from the DRF
+  request cycle applies".
 - SimpleJWT is the wrong tool here. It issues and verifies tokens the Django
   application itself minted from a human login, which is `a07`'s territory, not
   a mechanism for accepting an external machine identity.

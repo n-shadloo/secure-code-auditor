@@ -97,6 +97,27 @@ def restore(request):
     return state, config
 ```
 
+**Protobuf sits on the data side of that line, with two caveats.** A protobuf
+message is schema-bound — the parser can fill only the fields the compiled
+descriptor declares, so it cannot name a class or reach a constructor the way
+pickle can — and unlike JSON it arrives bounded: grpcio caps a received
+message at 4 MB, protobuf's pure-Python decoder carries
+`DEFAULT_RECURSION_LIMIT = 100`, and `json_format.Parse` and `ParseDict`
+default `max_recursion_depth=100`, all read from grpcio 1.83.0 and protobuf
+7.35.1 on 9 Aug 2026. What keeps it out of the safe column is that both
+recursion guards have been bypassed. CVE-2025-4565 exhausts the interpreter's
+own limit through nested groups and recursive messages in the pure-Python
+decoder, fixed in 4.25.8, 5.29.5, and 6.31.1; CVE-2026-0994 bypasses the JSON
+guard through nested `google.protobuf.Any` messages, fixed in 5.29.6 and
+6.33.5. Both are denial of service rather than execution, and the current 7.x
+line is outside the affected range of each. Two behaviours stay reviewable on
+any version: unpacking an `Any` instantiates whichever message type the sender
+named, so allow-list the acceptable type URLs before unpacking, and proto3
+preserves unknown fields through a binary parse and re-serialize, so a message
+relayed onward carries fields this service never validated. The surface that
+receives them is in `graphql-and-alternative-api-surfaces.md`, "gRPC: nothing
+from the DRF request cycle applies".
+
 #### The paths the framework runs for you
 
 **The cache framework pickles by default, on every built-in backend.**
@@ -547,6 +568,10 @@ platform recommendations, not as repository findings.
 - [ ] Every store the application deserializes from — cache, queue, session,
       file, database column — has been checked for who can write to it, not only
       for who can read it.
+- [ ] Where protobuf crosses a trust boundary, the runtime is outside the
+      affected range of both recursion advisories, no `Any` is unpacked without
+      an allow-list of type URLs, and no message is relayed onward carrying
+      unknown fields this service never validated.
 - [ ] Task-queue messages are treated as unauthenticated input: arguments are
       validated inside the task, and no secret or capability token is passed as
       an argument.
