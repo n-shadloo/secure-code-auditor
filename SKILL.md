@@ -21,7 +21,7 @@ license: MIT
 allowed-tools: Read, Grep, Glob, Bash
 metadata:
   author: n-shadloo
-  version: 1.32.0
+  version: 1.32.1
 ---
 
 # secure-code-auditor
@@ -116,7 +116,7 @@ one owner; every other file names the topic and points at the owner instead of
 restating its rules. Each reference file repeats its own half of the rule in
 its opening paragraph, so the decision holds whichever file you opened first.
 
-**Authorization.** A01 owns the per-request failure and how to recognise it.
+**Authorization.** A01 owns the per-request failure and how to recognize it.
 `references/authorization-architecture.md` owns the privilege model that
 produces it, the field-level model, and the table of which DRF paths invoke the
 object hook. `references/api-drf-specific.md` owns the call sites — the routes,
@@ -185,10 +185,10 @@ and the client IP that every rate limit and audit record depends on. Mail
 authentication is A02 — whether your domain can be forged — while whether your
 mailer can be driven is A06.
 
-**Failure behaviour.** A10 owns what happens when the expected sequence does
+**Failure behavior.** A10 owns what happens when the expected sequence does
 not hold: the concurrency mechanics, idempotency-key design, and fail-closed
 error handling. A09 owns what must be recorded and what must never be. A06
-catalogues the flows worth attacking, A08's event de-duplication is the same
+catalogs the flows worth attacking, A08's event de-duplication is the same
 design as A10's idempotency key, and `references/api-drf-specific.md`,
 `references/a03-software-supply-chain.md`, and
 `references/data-lifecycle-and-privacy.md` carry one-line uses that name A10
@@ -256,7 +256,7 @@ non-DRF frameworks and transports, from a Django Ninja route to a gRPC
 servicer. It defers to A01 for the access-control failure itself,
 `references/authorization-architecture.md` for the field-level model,
 `references/api-drf-specific.md` for the serializer and throttling patterns it
-generalises, `references/file-uploads.md` and `references/async-and-channels.md`
+generalizes, `references/file-uploads.md` and `references/async-and-channels.md`
 for uploads and subscriptions, and A03 for the stale-library finding a
 graphene-django install raises.
 

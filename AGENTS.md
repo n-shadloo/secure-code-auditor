@@ -147,7 +147,7 @@ together are defined in `references/00-methodology-and-severity.md`.
    below the router names the single owning file for each contested topic;
    every other file cross-references it rather than restating its rules. Each
    reference file repeats its own half of that rule in its opening paragraph.
-3. Optional read-only triage (standard library only, no network):
+4. Optional read-only triage (standard library only, no network):
    - `python scripts/settings_scan.py path/to/settings.py`
    - `python scripts/dangerous_patterns.py path/to/project`
 Treat script output as leads to verify, not confirmed findings.

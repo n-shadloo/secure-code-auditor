@@ -41,7 +41,8 @@ interceptor serves every registered method to anyone who can open a
 connection, an interceptor that authenticates has still authorized nothing,
 `grpc.max_send_message_length` and `maximum_concurrent_rpcs` have no default
 where the 4 MB receive cap does, an `Any` field is a constructor the sender
-picks, and reflection hands over the whole schema), the DRF API surface (routes where the object check never runs,
+picks, and reflection hands over the whole schema), the DRF API surface
+(routes where the object check never runs,
 function-level authorization on viewset actions, serializer and filter
 exposure, throttling mechanics and the atomic `incr` a limit that must hold
 needs instead of DRF's read-modify-write, schema and browsable-API exposure,
