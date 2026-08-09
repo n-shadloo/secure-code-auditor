@@ -93,9 +93,24 @@ index, which PostGIS inlines into the statement rather than binding, and the
 spatial lookup that reads a `str` or `dict` value as a raster source to open,
 the shell and a program's own option parser, template
 injection and server-rendered output, LDAP filters and distinguished names, and
-response and mail headers), and a dated maintained-package gate for third-party
-security dependencies, including the development-only package that reaches the
-production requirements file and ships a debugger with it.
+response and mail headers), the build pipeline as reviewable configuration —
+where the useful question is never whether a control is present but what
+happens when it says no, so a scanner behind `continue-on-error` or a trailing
+`|| true` gates nothing, an SBOM is an inventory and `--require-hashes` on the
+install is the only integrity evidence, and a `gh attestation verify` or
+`cosign verify` without a pinned signer identity and issuer confirms that a
+signature exists rather than who made it; SLSA is claimed at the level the
+platform documents and no higher, which on GitHub-hosted runners is Build
+Level 2 for artifact attestations alone and Level 3 only where an isolating
+reusable workflow generates the provenance; and the boundary is stated rather
+than blurred, because registry-side signatures, deploy-time admission
+enforcement, and runner isolation are questions for an operator rather than
+things a repository can show you — and a dated maintained-package gate for
+third-party security dependencies, including the development-only package that
+reaches the production requirements file and ships a debugger with it, and the
+rule that a Go-binary tool such as Trivy, Grype, Syft, or cosign is documented
+as a CI pattern rather than tiered in an index that gates pip-installable
+dependencies.
 
 Primary integration is Claude; this file exists so Gemini CLI uses the same
 single source of truth. Modes (review-time / write-time), the severity rubric

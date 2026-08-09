@@ -6,14 +6,14 @@ description: >-
   code is written or reviewed and touches authentication, sessions, JWT,
   OAuth2/OIDC, API keys, passkeys, password hashing, permissions, access
   control, SSRF, path traversal, impersonation, SQL/command/template
-  injection, XSS, LDAP, row-level security, encrypted columns, NoSQL,
+  injection, LDAP, row-level security, encrypted columns, NoSQL,
   Redis, file uploads, S3, serializers, API endpoints, pagination, rate
   limiting, CSRF/CORS, OpenAPI schema, GraphQL, Django Ninja, AI agents,
   MCP tools, secrets, payments, webhooks, Celery, race conditions,
   caching, deserialization, async/ASGI, WebSockets, audit logging,
   erasure, retention, personal data, migrations, JWKS, mutual TLS, key
-  rotation, SECRET_KEY, Dockerfile, X-Forwarded-For, SPF/DKIM/DMARC, or
-  deployment config, even if "security" is never used.
+  rotation, SECRET_KEY, Dockerfile, SBOM, X-Forwarded-For, SPF/DKIM/DMARC,
+  or deployment config, even if "security" is never used.
   Review-time returns prioritized findings with fixes; write-time
   applies secure defaults. Django/DRF-first; general layer suits any
   stack.
@@ -21,7 +21,7 @@ license: MIT
 allowed-tools: Read, Grep, Glob, Bash
 metadata:
   author: n-shadloo
-  version: 1.30.0
+  version: 1.31.0
 ---
 
 # secure-code-auditor
@@ -75,7 +75,7 @@ decide which file is authoritative.
 |---|---|
 | **A01** Access control, IDOR/BOLA, object- & function-level authz, cache-mediated data leaks, SSRF and egress control, path traversal on a file read the request names, open redirect, multi-tenancy, admin access | `references/a01-broken-access-control.md` |
 | **A02** DEBUG/ALLOWED_HOSTS, SECURE_*/SESSION_*/CSRF_* matrix, signed cookies and the legacy salt fallback, CORS, headers, mail authentication (SPF/DKIM/DMARC alignment and rollout), CAA and dangling-DNS/subdomain takeover, `check --deploy` and what it cannot see | `references/a02-security-misconfiguration.md` |
-| **A03** Dependencies, third-party vetting/maintained-package gate, a development-only package reaching the production requirements file, pinning/hashing, `pip-audit`, EOL frameworks, migrations/data integrity, SBOM | `references/a03-software-supply-chain.md` |
+| **A03** Dependencies, third-party vetting/maintained-package gate, a development-only package reaching the production requirements file, pinning/hashing, `pip-audit`, EOL frameworks, migrations/data integrity, the SBOM generated from the lockfile rather than the built image and what it does not prove, the CI scan gate read as configuration rather than as a step that exists, build provenance and the consumer-side verification that makes an attestation mean anything, SLSA Build levels at claim level, and the line between what a repository audit can verify and what is confirm-with-platform | `references/a03-software-supply-chain.md` |
 | **A04** Password-hashing family and parameters, upgrade-on-login and the wrapped-hasher migration that reaches the dormant accounts it cannot, randomness and token generation, constant-time comparison, signing and per-purpose salt discipline, TLS-in-transit, data at rest, key lifecycle and envelope encryption worked against a KMS, post-quantum posture | `references/a04-cryptographic-failures.md` |
 | **A05** The sink inventory every other reference defers to and the method for tracing a source to it, including the stored-then-used path worked end to end, SQL/ORM injection, dictionary-expansion column aliases, GeoDjango raster band indexes and spatial-lookup raster sources, command and argument injection, template injection and XSS from server-rendered output, LDAP/directory injection, header/email injection | `references/a05-injection.md` |
 | **A06** Which flows need a rate limit or anti-automation in the first place, algorithmic resource exhaustion and the bound every caller-controlled input needs, business-logic and email/notification abuse, missing limits, insecure defaults | `references/a06-insecure-design.md` |

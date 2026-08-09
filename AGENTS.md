@@ -24,6 +24,14 @@ clears the gate to supply, passkey and WebAuthn configuration as the only
 audit surface a framework shipping no native support can offer,
 third-party dependency vetting and maintained-package decisions including the
 development-only package that reaches the production requirements file,
+the build pipeline as reviewable configuration (the SBOM generated from the
+lockfile rather than from the finished image and why it is an inventory rather
+than integrity evidence, the scan gate judged by what its exit code does rather
+than by whether the step exists, build provenance and the consumer-side
+verification that has to pin a signer identity to prove anything, SLSA Build
+levels claimed only where the platform's own documentation supports them, and
+the hard line between the artifacts a repository audit can read and the
+registry, deploy-time, and runner state it can only ask an operator about),
 file uploads end to end (content validation, storage keys that disclose nothing,
 object-store configuration and the platform state a code review cannot see,
 per-tenant buckets against a shared bucket with prefixes, delegated upload URLs

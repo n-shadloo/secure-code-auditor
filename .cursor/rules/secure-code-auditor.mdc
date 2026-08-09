@@ -36,7 +36,14 @@ privilege, A07 for auth/API keys and whenever `AUTH_PASSWORD_VALIDATORS`, a
 password validator, or a passkey/WebAuthn setting is in view, A02 whenever
 `set_signed_cookie` or `get_signed_cookie` is in view, A03 for the dependency
 gate and whenever a
-requirements file, extras group, or Dockerfile install layer is in view,
+requirements file, extras group, Dockerfile install layer, or a CI workflow
+that installs, scans, generates an SBOM, or attests a build artifact is in
+view — judge each of those by what its exit code does rather than by whether
+the step is present, treat an SBOM as an inventory rather than as integrity
+evidence, and never write down a verification step that omits the expected
+signer identity and issuer or a SLSA level above the one the platform's own
+documentation supports, which for artifact attestations alone is Build
+Level 2,
 `data-layer-and-database.md` whenever database roles, row-level security, tenant
 context on pooled connections, encrypted columns, raw SQL, NoSQL queries, read
 replicas, a raised transaction isolation level, or connection pooling are in
