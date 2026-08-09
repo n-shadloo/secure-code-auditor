@@ -189,7 +189,7 @@ PASSWORD_HASHERS = [
 ]
 ```
 
-**Package decision (7 Aug 2026):** `argon2-cffi==25.1.0` passes the maintained-
+**Package decision (9 Aug 2026):** `argon2-cffi==25.1.0` passes the maintained-
 package gate. Install it with `pip install "django[argon2]"`, put a hasher of
 yours in front of Django's, and record the benchmark that produced the
 parameters. See `security-hardening-libraries.md`, "Cryptographic primitives

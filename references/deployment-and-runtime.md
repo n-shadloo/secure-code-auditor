@@ -531,10 +531,11 @@ critical by blast radius.
 - Never shared-cache authenticated or personalized responses by default. Audit
   `cache_page`, `UpdateCacheMiddleware`, proxy/CDN rules, `Vary`, `Set-Cookie`,
   and `Cache-Control` together, and test with two users and two tenants.
-- Keep Django at 6.0.7 or 5.2.16 or later in the supported line for the 2026
-  cache fixes. See A01 for audience-safe keys, authorization ordering,
-  invalidation, and private-response policy; infrastructure configuration cannot
-  repair a key that omits security context.
+- Keep Django at the current patch level in the supported line — 6.1, 6.0.8,
+  or 5.2.17 as of 9 Aug 2026; the 2026 cache fixes themselves landed in 6.0.7
+  and 5.2.16. See A01 for audience-safe keys, authorization ordering,
+  invalidation, and private-response policy; infrastructure configuration
+  cannot repair a key that omits security context.
 
 ## Queue and broker exposure
 

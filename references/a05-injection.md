@@ -488,7 +488,7 @@ operator supplied it.
 
 When a product genuinely requires user-authored rich HTML, use an explicit
 allowlist sanitizer and still apply output-context encoding. `nh3==0.3.6` passes
-the maintained-package gate as of 8 Aug 2026; centralize its tag/attribute/URL-
+the maintained-package gate as of 9 Aug 2026; centralize its tag/attribute/URL-
 scheme policy, test bypass payloads, and sanitize again when policy changes.
 Plain-text or structured-markup designs remain safer than accepting HTML.
 

@@ -37,7 +37,7 @@ is code you never chose directly.
 
 ## Run a supported Django
 
-As of 8 Aug 2026 the supported lines are **Django 6.1**, **6.0.8**, and
+As of 9 Aug 2026 the supported lines are **Django 6.1**, **6.0.8**, and
 **5.2.17 LTS**. Django 6.1 was released on 5 Aug 2026, which moved 6.0 onto
 security and data-loss fixes only through April 2027; 5.2 LTS runs to April
 2028. The current patch level matters as much as the line: 6.0.8 and 5.2.17

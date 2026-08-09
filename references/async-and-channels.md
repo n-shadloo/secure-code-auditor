@@ -65,7 +65,7 @@ serializer, and renderer pipeline into a native async pipeline merely because
 the deployment uses ASGI. Keep ordinary DRF views synchronous unless the project
 has deliberately selected and audited an async integration.
 
-**Package decision (8 Aug 2026):** Channels `4.3.2` passes the maintained-
+**Package decision (9 Aug 2026):** Channels `4.3.2` passes the maintained-
 package gate, is maintained by the Django project, and supports Django 6.0.
 Installing it does not supply origin validation, per-message authorization,
 backpressure, quotas, or disconnect cleanup; retain every control below.

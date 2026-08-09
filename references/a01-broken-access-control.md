@@ -273,8 +273,9 @@ When a response really is safe for a defined audience:
 - never assume DRF authentication or permission classes are re-run on a cache
   hit outside the view.
 
-Keep Django at 6.0.7 or 5.2.16 or later in the supported line. The 2026 cache
-security fixes covered `Authorization` variation, malformed or mixed-case cache
+Keep Django at the current patch level in the supported line — 6.1, 6.0.8, or
+5.2.17 as of 9 Aug 2026. The 2026 cache security fixes landed in 6.0.7 and
+5.2.16 and covered `Authorization` variation, malformed or mixed-case cache
 directives, `Vary` parsing, and responses that set cookies. Patching is
 necessary, but it cannot repair an application key that omits tenant, user, or
 permission state.

@@ -1,10 +1,20 @@
 # Security-hardening libraries — vetted decisions
 
 This is a dated decision index, not an install-all list. It is current as of
-**8 Aug 2026** for the repository baseline (Django 6.1, 6.0.8, and 5.2.17 LTS,
+**9 Aug 2026** for the repository baseline (Django 6.1, 6.0.8, and 5.2.17 LTS,
 with DRF 3.18.0). Re-run the A03 dependency gate for the project's actual
 Python/Django versions and whenever maintenance, advisories, or compatibility
 changes.
+
+**How this file is dated.** One index date in the header governs every version
+and classifier claim below, and an entry or section states its own date only
+where something was checked on a different day. Every package version and
+classifier in this file was re-checked against PyPI on the index date. The
+behavioral notes are dated separately and deliberately: what a package ships,
+what its defaults are, and what its own source does were not re-read on that
+date, so they keep the date stated at the head of their section. Hold that
+split on the next sweep. A version is one page away and cheap to re-check, a
+default is neither, and collapsing the two would date a claim nobody verified.
 
 Django 6.1 was released on 5 Aug 2026, so most entries below still declare
 support through 6.0 and not yet 6.1. Days after a feature release that is the
@@ -68,7 +78,7 @@ Advisory scanning alone is not vetting.
 | WebSockets/ASGI | Channels `4.3.2` | **Recommend.** Django-project maintained; Django 6 supported. Still implement origin checks, per-message authz, bounds, backpressure, and cleanup. |
 | Dependency advisories | `pip-audit==2.10.1` | **Recommend as one input.** PyPA-maintained, Apache-2.0. It does not prove maintenance, provenance, compatibility, configuration, or safety. |
 | Rich-HTML sanitization | `nh3==0.3.6` | **Recommend when rich HTML is required.** MIT; actively released. Centralize a minimal allowlist and URL-scheme policy; prefer plain text/structured markup. |
-| LDAP directory queries and authentication | `django-auth-ldap==5.3.0` (26 Dec 2025) over `python-ldap>=3.4.5`, latest `3.4.7` (20 May 2026); checked 8 Aug 2026 | **Recommend the integration where a directory is the identity source; require the `python-ldap>=3.4.5` floor explicitly.** There is no built-in alternative — a directory client is a dependency by definition — so the gate here is about the floor and the defaults rather than the choice. django-auth-ldap is BSD, Python >=3.10, Production/Stable, and declares Django 4.2, 5.2, and 6.0; it escapes filter arguments through `ldap.filter.escape_filter_chars` with escaping on by default, which is the reason to prefer it over hand-assembled filter strings. Advisory: `python-ldap` before 3.4.5 could be made to skip escaping when a `list` or `dict` reached `escape_filter_chars` under the non-default `escape_mode=1` (CVE-2025-61911, moderate); 3.4.5 type-checks the argument. django-auth-ldap's own requirement is only `python-ldap>=3.1`, so installing the integration does not deliver the fix — pin `python-ldap` yourself. Operational cost: `python-ldap` builds against the OpenLDAP client libraries, so it needs system headers in the build image rather than a wheel alone. Review the search filters for any place the project still formats its own, and confirm group-to-permission mapping separately — a successful bind is authentication, not authorization. Exit plan: filter escaping is one function call, so a different client keeps the same call-site discipline. See `a05-injection.md`, "Directory and LDAP injection". |
+| LDAP directory queries and authentication | `django-auth-ldap==5.3.0` (26 Dec 2025) over `python-ldap>=3.4.5`, latest `3.4.7` (20 May 2026); escaping behaviour and advisory checked 8 Aug 2026 | **Recommend the integration where a directory is the identity source; require the `python-ldap>=3.4.5` floor explicitly.** There is no built-in alternative — a directory client is a dependency by definition — so the gate here is about the floor and the defaults rather than the choice. django-auth-ldap is BSD, Python >=3.10, Production/Stable, and declares Django 4.2, 5.2, and 6.0; it escapes filter arguments through `ldap.filter.escape_filter_chars` with escaping on by default, which is the reason to prefer it over hand-assembled filter strings. Advisory: `python-ldap` before 3.4.5 could be made to skip escaping when a `list` or `dict` reached `escape_filter_chars` under the non-default `escape_mode=1` (CVE-2025-61911, moderate); 3.4.5 type-checks the argument. django-auth-ldap's own requirement is only `python-ldap>=3.1`, so installing the integration does not deliver the fix — pin `python-ldap` yourself. Operational cost: `python-ldap` builds against the OpenLDAP client libraries, so it needs system headers in the build image rather than a wheel alone. Review the search filters for any place the project still formats its own, and confirm group-to-permission mapping separately — a successful bind is authentication, not authorization. Exit plan: filter escaping is one function call, so a different client keeps the same call-site discipline. See `a05-injection.md`, "Directory and LDAP injection". |
 
 ## Existing-install audit only or rejected candidates
 
@@ -102,11 +112,28 @@ counter in `api-drf-specific.md`, "Throttling as quota, not security (API4)".
 Re-open the ruling when a limiter ships with more than one active maintainer
 and a shared backend by default.
 
+**Standing re-vet triggers, re-checked 9 Aug 2026.** A handful of entries below
+are held at their tier by one fact that a single release would overturn, so
+each is re-checked every sweep and its status restated here rather than left to
+age quietly inside its own row. **None of them moved this pass.**
+`django-safedelete` is still 1.4.1 from 5 Mar 2025 with no Django classifiers,
+so the cascade behaviour behind its tier is still open. `graphene-django` is
+still 3.2.3 from 13 Mar 2025 with classifiers stopping at Django 4.2 — the
+release declaring 5.2 or 6.x that would move it back to conditional has not
+appeared. `django-ipware` is still 7.0.1 from 19 Apr 2024, as is
+`python-ipware` 3.0.0 alongside it. `ariadne-django` is still 0.3.0 from
+19 Jul 2022 while Ariadne core reached 1.1.0 on 15 Jun 2026, so the gap between
+the core and its Django binding widened rather than closed.
+`django-gdpr-assist` is still 1.4.2 with no release since 2022 and its
+repository archived read-only, and no maintained successor has taken the
+pattern over. The one trigger that did fire — a maintained general-purpose
+rate limiter appearing — is ruled on immediately above.
+
 ## Authorization, object permissions, and impersonation
 
-Versions and classifiers in this section were checked against PyPI on
-**1 Aug 2026**; the rest of this file carries the 8 Aug 2026 baseline above.
-Read with `authorization-architecture.md` and
+The behavioral notes in this section were checked on **1 Aug 2026**; versions
+and classifiers carry the index date above. Read with
+`authorization-architecture.md` and
 `privileged-access-and-impersonation.md`.
 
 Before adding any of these, note that the default recommendation for object
@@ -129,8 +156,8 @@ per-object rule is being hand-written across more than a handful of views.
 
 ## Agent and MCP interfaces
 
-Versions and defaults in this section were checked on **1 Aug 2026**; the rest
-of this file carries the 8 Aug 2026 baseline above. Read with
+The defaults in this section were checked on **1 Aug 2026**; versions and
+classifiers carry the index date above. Read with
 `agent-and-llm-interfaces.md`.
 
 **No package in this area clears the gate for a `recommend` tier.** The default
@@ -141,10 +168,10 @@ server. Every entry below is a disposition for something already installed.
 
 | Candidate | Disposition and review notes |
 |---|---|
-| `django-mcp-server==0.5.7` (10 Mar 2026) | **Existing-install audit only.** MIT; publishes DRF viewsets as MCP tools with `authentication_classes`, `permission_classes`, `filter_backends`, and `pagination_class` disabled by default. Every one must be explicitly re-enabled on every tool path; confirm `self.paginator` is not `None` on a list tool. Not a new recommendation. |
+| `django-mcp-server==0.5.7` (10 Oct 2025) | **Existing-install audit only**, and now on a ten-month release gap that predates the 2026-07-28 specification revision this section is audited against. MIT; publishes DRF viewsets as MCP tools with `authentication_classes`, `permission_classes`, `filter_backends`, and `pagination_class` disabled by default. Every one must be explicitly re-enabled on every tool path; confirm `self.paginator` is not `None` on a list tool. Not a new recommendation. |
 | `django-rest-framework-mcp==0.1.0a4` (25 Nov 2025) | **Existing-install audit only.** MIT; alpha, so treat the API as unstable. Defaults are the safe ones — confirm `BYPASS_VIEWSET_AUTHENTICATION`, `BYPASS_VIEWSET_PERMISSIONS`, and `RETURN_200_FOR_ERRORS` are all off, since the last returns HTTP 200 on an auth or permission failure and blinds 4xx-rate alerting. |
 | `django-admin-mcp-api` / `django-admin-mcp` | **Reject for production.** Both expose the Django admin as a machine API. The admin was designed as a human interface behind staff/superuser privilege, so the blast radius is the whole model layer; non-browser session or long-lived bearer semantics make it worse. Audit-only where already installed. |
-| `mcp-django==0.13.0` | **Reject for production.** Offers management-command and stateful shell access, which is arbitrary code execution by design. Development tooling only; treat any production install as a Critical finding. |
+| `mcp-django==0.14.0` (23 Jul 2026) | **Reject for production.** Offers management-command and stateful shell access, which is arbitrary code execution by design. Active maintenance and a Django 6.0 classifier do not move this one: the disposition is about what the package exposes, not how well it is kept. Development tooling only; treat any production install as a Critical finding. |
 | `mcp` (Python SDK) | **Infrastructure, not a recommendation target.** 2.0.0 shipped 28 Jul 2026 for the stateless 2026-07-28 specification revision, which is final rather than the draft it was taken for, so a bare `pip install mcp` now resolves to the 2.x line and 1.x is on security fixes only. Pin `mcp>=1.28,<2` until the migration is a deliberate one and re-vet at that point; 2026-07-28 is the audit baseline. |
 
 The MCP authorization requirements themselves — OAuth 2.1, RFC 9728 protected-
@@ -161,9 +188,9 @@ an architectural rule that no package enforces for you.
 
 ## Service identity and secrets
 
-Versions and defaults in this section were checked against PyPI and the
-projects' own release notes on **3 Aug 2026**; the rest of this file carries
-the 8 Aug 2026 baseline above. Read with `service-identity-and-secrets.md`.
+The defaults in this section were checked against the projects' own release
+notes on **3 Aug 2026**; versions and classifiers carry the index date above.
+Read with `service-identity-and-secrets.md`.
 
 Most of this area is not a dependency at all. `django.core.signing`,
 `SECRET_KEY_FALLBACKS`, `salted_hmac`, and the standard library's `secrets`
@@ -181,29 +208,25 @@ a pattern to audit rather than a package to tier.
 
 ## Data layer and database
 
-Versions in this section were checked on **2 Aug 2026**; the rest of this file
-carries the 8 Aug 2026 baseline above. Read with
-`data-layer-and-database.md`.
+Read with `data-layer-and-database.md`.
 
 Most of this domain is configuration rather than dependency: role separation,
 row-level security, connection verification, statement timeouts, and pool
 sizing are database and driver settings, and no package supplies them. The
 encryption primitives themselves — `cryptography`, and the one packaged field
 library still worth a disposition — are in "Cryptographic primitives and
-password hashing" below, re-checked 7 Aug 2026.
+password hashing" below.
 
 | Concern | Choice and version | Disposition and review notes |
 |---|---|---|
 | Connection pooling | psycopg 3 with the `pool` extra | **Recommend the built-in.** Django 5.1+ accepts `OPTIONS={"pool": {...}}` on the PostgreSQL backend and Django 6.0 adds async-aware pooling. The option requires psycopg 3 — it is unavailable under psycopg2 — and requires `CONN_MAX_AGE = 0`, or Django raises `ImproperlyConfigured`. PgBouncer stays the choice where a process-external pool is wanted; use session mode when row-level-security context or `search_path` tenancy is in play. |
-| Schema-per-tenant | `django-tenants` 3.10.x (Jun 2026) | **Conditional.** MIT; Production/Stable; declares Django 4.2/5.2/6.0 and Python 3.10–3.13; actively maintained. Adopt only where schema-per-tenant genuinely is the architecture: it requires session-mode pooling because `search_path` is session state, and migration time scales linearly with tenant count. It is not the default answer to multi-tenancy — scoped querysets plus a cross-tenant test suite are. |
-| MongoDB backend | `django-mongodb-backend`, 6.0.x line (Apr 2026) | **Conditional.** MongoDB-maintained, Apache-2.0, Production/Stable, Python 3.12+, version-matched to the Django line. Only where MongoDB is already in the stack. Ordinary ORM `filter()` compiles to an aggregation pipeline and is the safe path; `raw_aggregate()` is the injection-sensitive one and `raw()` is unsupported. |
+| Schema-per-tenant | `django-tenants==3.14.0` (5 Aug 2026) | **Conditional, and pin it exactly.** MIT; Production/Stable; declares Django 5.2, 6.0, and 6.1 and Python 3.10–3.13, which makes it one of the few entries here already carrying the new line — it dropped the 4.2 classifier in the same move. Adopt only where schema-per-tenant genuinely is the architecture: it requires session-mode pooling because `search_path` is session state, and migration time scales linearly with tenant count. It is not the default answer to multi-tenancy — scoped querysets plus a cross-tenant test suite are. The pin is not a formality: it went 3.10.2, 3.12.0, 3.13.0, 3.14.0 between 30 Jun and 5 Aug 2026, three of them in the three days around the Django 6.1 release, so an unpinned install moves minor versions underneath a tenancy layer that owns query scoping. |
+| MongoDB backend | `django-mongodb-backend==6.0.4` (14 Jul 2026), the 6.0.x line | **Conditional.** MongoDB-maintained, Apache-2.0, Production/Stable, Python 3.12+, version-matched to the Django line — the major/minor tracks Django's, so a 6.1 project waits for a 6.1.x line rather than taking this one. Only where MongoDB is already in the stack. Ordinary ORM `filter()` compiles to an aggregation pipeline and is the safe path; `raw_aggregate()` is the injection-sensitive one and `raw()` is unsupported. |
 | Packaged field encryption | `django-encrypted-model-fields`, `django-cryptography` and its Django-5 forks, `django-pgcrypto-fields`, `django-searchable-encrypted-fields`, `django-fernet-fields` | **Reject for new use.** None declares support for Django 5.2 or 6.0 and each has gone more than a year without a release; `django-cryptography` still imports `django.utils.baseconv`, which Django 5 removed. **Existing-install audit only** where one is already present, with a documented migration off it. Build on `cryptography` instead. The single exception in this category, `django-fernet-encrypted-fields`, is tiered conditional in "Cryptographic primitives and password hashing". |
 
 ## Data lifecycle and privacy
 
-Versions in this section were checked against PyPI and the projects' own
-repositories on **2 Aug 2026**; the rest of this file carries the 8 Aug 2026
-baseline above. Read with `data-lifecycle-and-privacy.md`.
+Read with `data-lifecycle-and-privacy.md`.
 
 The dedicated privacy packages are the weakest category in this index: the
 best-known option is archived, the rest are years past their last release, and
@@ -224,16 +247,15 @@ classification convention cover the area without a dependency.
 | Candidate | Disposition and safer direction |
 |---|---|
 | `django-safedelete==1.4.1` | **Existing-install audit only.** BSD-3-Clause but Beta status, last repository activity Mar 2025, no Django version classifiers, and cascade soft-delete raises against `PROTECT` relations. Where it is present, verify Django compatibility and audit the cascade behaviour; do not newly adopt it for a 6.0/5.2 baseline. |
-| `pganonymize==0.12.0` | **Existing-install audit only.** Standalone PostgreSQL CLI, last released 2024. Acceptable where already used for dump anonymization; prefer the maintained extension above for new work. |
+| `pganonymize==0.13.0` (6 Aug 2026) | **Existing-install audit only, and the disposition is about fit rather than maintenance.** MIT, but Beta status, no `requires_python`, and Python classifiers still advertising 2.7. It broke a two-year gap with a release on 6 Aug 2026, so the staleness argument that used to carry this row no longer holds — the reason it is not a recommendation is that it is a standalone CLI operating on a dump, outside the database's own masking rules, where the extension above enforces them in the engine. Acceptable where already used for dump anonymization; prefer the extension for new work. |
 | `django-gdpr-assist` | **Reject.** The repository was archived read-only on 21 May 2025 and the package supports neither Django 5.2 nor 6.0. Its per-model privacy declaration is still a good pattern to reimplement locally in a few lines. |
 | `django-anon`, `django-GDPR` | **Reject.** No release since 2023, no declared support for a supported Django line, and field-level “anonymizers” built on plain hashes are pseudonymization, not anonymization. |
 | Single-maintainer retention packages | **Reject as a category.** A management command plus a scheduled task and a persisted run record is smaller, reviewable, and does not add an unmaintained dependency to the deletion path. |
 
 ## GraphQL and alternative API surfaces
 
-Versions and defaults in this section were checked against PyPI and the
-packages' own source on **4 Aug 2026**; the rest of this file carries the
-8 Aug 2026 baseline above. Read with
+The defaults in this section were checked against the packages' own source on
+**4 Aug 2026**; versions and classifiers carry the index date above. Read with
 `graphql-and-alternative-api-surfaces.md`.
 
 No package in this area ships the controls that make a GraphQL endpoint safe.
@@ -243,7 +265,7 @@ footguns you inherit, not whether you still have to do the work.
 
 | Concern | Choice and version | Disposition and review notes |
 |---|---|---|
-| GraphQL on Django (new work) | `strawberry-graphql==0.323.2` (23 Jul 2026) with `strawberry-graphql-django==0.86.8` (1 Aug 2026) | **Conditional; pin both exactly.** MIT; Python >=3.10; the Django package declares Django 5.2 and 6.0. Ships `QueryDepthLimiter`, `MaxAliasesLimiter`, `MaxTokensLimiter`, `AddValidationRules`, `DisableIntrospection`, `MaskErrors`, the `IsAuthenticated`/`HasPerm`/`HasSourcePerm`/`HasRetvalPerm` field extensions, and `DjangoOptimizerExtension` for N+1 — none of them enabled by default. Pre-1.0 on both lines with frequent releases (three on 1 Aug 2026 alone), so an unpinned install is a moving target. Pass limiter extensions as classes or factories; a shared instance carries execution context across concurrent requests. |
+| GraphQL on Django (new work) | `strawberry-graphql==0.323.2` (23 Jul 2026) with `strawberry-graphql-django==0.87.0` (6 Aug 2026) | **Conditional; pin both exactly.** MIT; Python >=3.10; the Django package declares Django 5.2 and 6.0. Ships `QueryDepthLimiter`, `MaxAliasesLimiter`, `MaxTokensLimiter`, `AddValidationRules`, `DisableIntrospection`, `MaskErrors`, the `IsAuthenticated`/`HasPerm`/`HasSourcePerm`/`HasRetvalPerm` field extensions, and `DjangoOptimizerExtension` for N+1 — none of them enabled by default. Pre-1.0 on both lines with frequent releases (three on 1 Aug 2026 alone), so an unpinned install is a moving target. Pass limiter extensions as classes or factories; a shared instance carries execution context across concurrent requests. |
 | GraphQL on Django (existing install) | `graphene-django==3.2.3` (13 Mar 2025) | **Existing-install audit only.** MIT; classifiers stop at Django 4.2, so it declares no support for 5.2 LTS or 6.0, and there has been no release in roughly seventeen months. An install on a supported Django line is a supply-chain finding under A03, not merely a compatibility note. `DjangoObjectType` with `Meta.model` and neither `fields` nor `exclude` exposes every field behind a `DeprecationWarning`, and `graphene_django.utils.bypass_get_queryset` disables type-level scoping on foreign-key and one-to-one traversal. A release declaring Django 5.2/6.0 would move it back to conditional. |
 | GraphQL core validators | `graphene==3.4.3` (9 Nov 2024) | **Transitive; audit, do not add directly.** Supplies `graphene.validation.depth_limit_validator` and `DisableIntrospection`, neither wired into `GraphQLView` by default. Release cadence tracks graphene-django's, which is the concern above. |
 | Non-DRF HTTP API | `django-ninja==1.6.2` (18 Mar 2026) | **Conditional.** Declares Django 5.2 and 6.0; healthy adoption. The footgun is the default: an operation is public unless `auth=` is set on the `NinjaAPI`, router, or route, and there is no project-wide default-deny equivalent to `DEFAULT_PERMISSION_CLASSES`. Set `auth=` at the `NinjaAPI` object and treat every `auth=None` as a reviewed exception. |
@@ -258,8 +280,6 @@ footguns you inherit, not whether you still have to do the work.
 
 ## API surface, schema, and bulk operations
 
-Versions and classifiers in this section were checked against PyPI on
-**5 Aug 2026**; the rest of this file carries the 8 Aug 2026 baseline above.
 Read with `api-drf-specific.md`. The DRF baseline moved to `3.18.0` (7 Aug
 2026) in this pass, and two things about that line matter more than the number.
 The security fixes are in `3.17.2` (5 Aug 2026) and not in `3.18.0`: it stopped
@@ -293,9 +313,7 @@ already installed when a bulk endpoint turns out to skip every object check.
 
 ## Concurrency, idempotency, and regular expressions
 
-Versions and classifiers in this section were checked against PyPI and the
-projects' own repositories on **7 Aug 2026**; the rest of this file carries the
-8 Aug 2026 baseline above. Read with `a10-exceptional-conditions.md`.
+Read with `a10-exceptional-conditions.md`.
 
 This is the area where the built-ins win most clearly. `transaction.atomic()`,
 `select_for_update()`, `F()`, `UniqueConstraint`, `CheckConstraint`,
@@ -321,9 +339,7 @@ entries are for the narrow cases the built-ins genuinely do not reach.
 
 ## Integrity, webhooks, and deserialization
 
-Versions and classifiers in this section were checked against PyPI and the
-projects' own repositories on **7 Aug 2026**; the rest of this file carries the
-8 Aug 2026 baseline above. Read with `a08-integrity-and-deserialization.md`.
+Read with `a08-integrity-and-deserialization.md`.
 
 Nothing is recommended here, and that is the finding. A conformant inbound
 webhook verifier is `hmac.new`, `hmac.compare_digest`, and a model with a unique
@@ -346,11 +362,10 @@ a package only for the outbound interop problem, if at all.**
 
 ## Cryptographic primitives and password hashing
 
-Versions and defaults in this section were checked against PyPI and the
-projects' own source on **7 Aug 2026**; the rest of this file carries the
-8 Aug 2026 baseline above. Read with `a04-cryptographic-failures.md`. The
-`argon2-cffi` entry moved here from the table above and was re-checked on this
-date.
+The defaults in this section — above all the Argon2 parameters below — were
+checked against the projects' own source on **7 Aug 2026**; versions and
+classifiers carry the index date above. Read with
+`a04-cryptographic-failures.md`.
 
 This area is mostly two dependencies and a lot of parameters. The standard
 library covers randomness and constant-time comparison outright — `secrets` and
@@ -372,9 +387,7 @@ Django's hasher and the primitives behind an encrypted column.
 
 ## Runtime, proxy trust, and operational endpoints
 
-Versions and classifiers in this section were checked against PyPI and the
-projects' own repositories on **7 Aug 2026**; the rest of this file carries the
-8 Aug 2026 baseline above. Read with `deployment-and-runtime.md`.
+Read with `deployment-and-runtime.md`.
 
 Nothing is recommended here, for the same reason as the webhook section above:
 both controls in scope are already built in. Reading the client IP correctly is

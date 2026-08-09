@@ -89,8 +89,15 @@ easy to get wrong from the outside:
    stay in `MEDIA_ROOT` or the bucket.
 
 Behavior in this file was verified against the Django 6.0.7 and 5.2.16 source
-on 2 August 2026. Re-check it against the project's actual Django version
-before relying on a traversal being filtered.
+on 2 August 2026. The second and third claims above were re-read against the
+6.1 source on 9 August 2026 and are unchanged there, apart from the new
+database-level delete options recorded with them: the fast-delete path still
+declines whenever a delete-signal receiver exists, the bypass set still
+bypasses, and `FileField` still connects no `post_delete`, so a deleted row
+still leaves its bytes in storage. The first claim — the traversal table —
+was not re-read against 6.1 and keeps its 6.0.x/5.2.x provenance. Re-check it
+against the project's actual Django version before relying on a traversal
+being filtered.
 
 ## Soft delete and what it does not hide
 
@@ -248,7 +255,16 @@ attached to one of them:
   — registering a receiver disables it. It does mean a model whose cleanup
   lives only in an overridden `delete()` gets no cleanup at all.
 - `_raw_delete()`, `cursor.execute()`, `TRUNCATE`, and database-level `ON
-  DELETE CASCADE` bypass model methods and signals entirely.
+  DELETE CASCADE` bypass model methods and signals entirely. Django 6.1 makes
+  that last path reachable from the model definition rather than only from
+  hand-written DDL: `on_delete=models.DB_CASCADE`, `DB_SET_NULL`, and
+  `DB_SET_DEFAULT` push the deletion into the SQL `ON DELETE` clause, so the
+  related rows are never loaded and `pre_delete`/`post_delete` are never sent
+  for them. All three sit in the collector's skip set; the release notes spell
+  it out for `DB_CASCADE`. Switching a field to one of these for the write
+  performance silently drops every signal-attached side effect on the far side
+  of that relation — file cleanup, audit rows, cache invalidation — and the
+  diff that does it is one keyword long.
 - `QuerySet.update()`, `bulk_create()`, and `bulk_update()` skip `save()` and
   the save signals, which is how a field is scrubbed without the audit entry
   that was supposed to accompany it.
@@ -742,7 +758,9 @@ pipeline that satisfies it is:
       the guarantee.
 - [ ] Cleanup does not depend only on an overridden `Model.delete()` or on
       delete signals, given `QuerySet.delete()`, `_raw_delete()`, `TRUNCATE`,
-      and database-level cascades.
+      and database-level cascades — including a `ForeignKey` declared with
+      Django 6.1's `DB_CASCADE`, `DB_SET_NULL`, or `DB_SET_DEFAULT`, which
+      sends no delete signal for the rows it removes.
 - [ ] Retention commands are wired into an actual schedule and write a run
       record; bulk `delete()` in them is checked against the cleanup the model
       needs.
