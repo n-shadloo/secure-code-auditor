@@ -11,13 +11,18 @@ the source files.
 Coverage includes the authorization architecture and privilege model (object-,
 function-, and field-level authorization, default-deny, authorization test
 design), SSRF, impersonation and break-glass privileged access, OAuth2/OIDC and
-social login, API-key lifecycle and scoping, agent- and LLM-facing interfaces
-(MCP tool surfaces, agent token audience validation, tool scope versus user
-permissions, model output and retrieved content as untrusted input), the
-database as a security boundary (migration versus runtime roles, row-level
-security and tenant context on pooled connections, verified database TLS,
-field-level encryption, NoSQL injection, transaction isolation and the retry a
-raised level requires, and connection exhaustion), the data lifecycle
+social login, API-key lifecycle and scoping, password policy at the numbers the
+standard actually sets — fifteen characters for a single factor and eight only
+inside a multi-factor process, no composition rule and no expiry, and a
+blocklist reaching a breach corpus rather than Django's twenty thousand
+entries — with passkeys and WebAuthn audited at the configuration surface
+because Django ships no native support to audit, agent- and LLM-facing
+interfaces (MCP tool surfaces, agent token audience validation, tool scope
+versus user permissions, model output and retrieved content as untrusted
+input), the database as a security boundary (migration versus runtime roles,
+row-level security and tenant context on pooled connections, verified database
+TLS, field-level encryption, NoSQL injection, transaction isolation and the
+retry a raised level requires, and connection exhaustion), the data lifecycle
 (deletion and erasure completeness, soft-delete leakage, retention,
 anonymization versus pseudonymization, personal-data classification, and
 export/subject-access endpoints), service-to-service identity and secrets
@@ -29,12 +34,13 @@ depth/alias/token/cost limits, introspection and error masking, mutation mass
 assignment, persisted operations, and Django Ninja's default of no
 authentication), the DRF API surface (routes where the object check never runs,
 function-level authorization on viewset actions, serializer and filter
-exposure, throttling mechanics, schema and browsable-API exposure, endpoint
-inventory, version deprecation, and bulk endpoints), algorithmic resource
-exhaustion as the design rule that every caller-controlled value multiplying
-work carries a server-enforced ceiling, with a table naming the surface that
-enforces each one, the handling of exceptional conditions (fail-closed error
-paths, race conditions and TOCTOU,
+exposure, throttling mechanics and the atomic `incr` a limit that must hold
+needs instead of DRF's read-modify-write, schema and browsable-API exposure,
+endpoint inventory, version deprecation, and bulk endpoints), algorithmic
+resource exhaustion as the design rule that every caller-controlled value
+multiplying work carries a server-enforced ceiling, with a table naming the
+surface that enforces each one, the handling of exceptional conditions
+(fail-closed error paths, race conditions and TOCTOU,
 database constraints versus row locks, idempotency-key design, side effects
 ordered against the commit, and regular-expression denial of service),
 integrity and cross-system trust (webhook signature verification on the raw
@@ -43,7 +49,9 @@ insecure deserialization including Django's cache, session, and fixture paths,
 and Celery task messages as untrusted input), the cryptographic primitives
 underneath them (password-hashing family and parameters, upgrade-on-login,
 randomness and token generation, constant-time comparison scoped to where it
-matters, per-purpose salt discipline on signed values, key lifecycle and
+matters, per-purpose salt discipline on signed values — including the
+signed-cookie salt collision Django fixed in June 2026 and the transitional
+setting that goes on accepting the old derivation until 7.0 — key lifecycle and
 envelope encryption, and post-quantum posture), the configuration published in
 DNS rather than in code (SPF lookup limits and alignment, DKIM signing through
 third-party senders, DMARC rollout under the 2026 specification, CAA, and

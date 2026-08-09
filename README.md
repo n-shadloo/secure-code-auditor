@@ -78,14 +78,22 @@ rule for generating that code.
   value to bind), command and argument injection,
   template injection and server-side output handling, LDAP/directory
   injection, and header/email injection.
-- Authentication: sessions, JWT, OAuth2/OIDC and social login, API keys,
-  brute-force resistance, MFA, password reset, and enumeration resistance.
+- Authentication: password policy stated as the standard actually states it —
+  fifteen characters where the password is a single factor, no composition
+  rule, no expiry job, and a blocklist that reaches a breach corpus rather
+  than the twenty thousand entries Django ships — with the screening validator
+  written out because no maintained package currently clears the gate to
+  provide it; sessions, JWT, OAuth2/OIDC and social login, API keys,
+  brute-force resistance, MFA, passkey and WebAuthn configuration on a
+  framework that ships no native support for either, password reset, and
+  enumeration resistance.
 - API/DRF: where the framework runs an object check and every route that skips
   it (`@action(detail=True)`, plain `APIView`, overridden `get_object`, bulk),
   function-level authorization on viewset actions, serializer over-exposure and
   mass assignment, pagination/filter/ordering leakage, throttling mechanics that
-  decide whether a configured limit is the real one, browsable-API and OpenAPI
-  schema exposure, enumerating the live URL map to find shadow endpoints,
+  decide whether a configured limit is the real one and the atomic counter to
+  reach for when it has to be, browsable-API and OpenAPI schema exposure,
+  enumerating the live URL map to find shadow endpoints,
   version deprecation that actually ends, default permission classes, CSRF
   interaction, and webhook raw-body handling.
 - GraphQL and non-DRF API surfaces: authorization on every resolved edge rather
@@ -129,7 +137,9 @@ rule for generating that code.
   by network position; downstream token exchange instead of forwarding; where
   secrets live and how they reach the process; `SECRET_KEY` rotation and what
   it does and does not invalidate; and the ordered response to a leak.
-- Configuration: the `SECURE_*`/`SESSION_*`/`CSRF_*` matrix, CORS, headers, the
+- Configuration: the `SECURE_*`/`SESSION_*`/`CSRF_*` matrix, the signed-cookie
+  salt collision Django fixed in June 2026 and the transitional setting that
+  goes on accepting the old cookies until you turn it off, CORS, headers, the
   DNS records that decide whether your domain can be forged (SPF's ten-lookup
   ceiling, DKIM alignment through a third-party sender, and the DMARC rollout
   under the 2026 specification that removed `pct` and added `np`), CAA and
@@ -201,6 +211,7 @@ Django are flagged. Each area carries the date it was last checked.
 | 8 Aug 2026 | DRF line | The security fixes are in 3.17.2 rather than in 3.18.0, so 3.17.2 is the minimum safe version, while 3.18.0 is a feature release that drops three end-of-life Django lines and changes the error shape list serializers return. |
 | 8 Aug 2026 | OAuth and social login | django-oauth-toolkit 3.4.0, a mandatory floor rather than a preferred one: below it the authorization endpoint carries an unauthenticated open redirect under `prompt=none`, tokens and codes render in cleartext in the admin, client secrets reach debug logs, device-flow user codes are predictable, and redirect-URI matching deviates from RFC 9700 in four ways. django-allauth moved to 65.19.0 and social-auth-app-django to 6.0.1. |
 | 8 Aug 2026 | Django 6.1 lag | Most other entries still declare support through Django 6.0 rather than 6.1, which days after a feature release is packaging lag rather than a compatibility finding. |
+| 9 Aug 2026 | Authentication currency | `django-two-factor-auth` 1.18.1 and SimpleJWT 5.5.1 both re-confirmed conditional rather than re-tiered: each shipped artifact declares Django 4.2 through 5.2 and no Django 6 line, whatever the development branch reads. `pwned-passwords-django` 5.2.0 rejected as a new recommendation on the same test, so breached-password screening lands as an owned pattern. `django-smart-ratelimit` 4.12.1 rejected despite being current and declaring Django 6.0, on maintainer concentration and an in-memory default backend that multiplies the limit by the worker count; the category ruling for general-purpose rate limiting is recorded with it so the question stops recurring. |
 
 ## Install
 

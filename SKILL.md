@@ -4,10 +4,10 @@ description: >-
   Backend security auditor for Django and DRF on an OWASP Top 10 (2025),
   API Security Top 10 (2023), and ASVS 5.0 foundation. Use when backend
   code is written or reviewed and touches authentication, sessions, JWT,
-  OAuth2/OIDC, API keys, password hashing, permissions, access control,
-  SSRF, path traversal, impersonation, SQL/command/template injection,
-  XSS, LDAP, row-level security, encrypted columns, NoSQL, Redis, file
-  uploads, S3, serializers, viewsets, API endpoints, pagination, rate
+  OAuth2/OIDC, API keys, passkeys, password hashing, permissions, access
+  control, SSRF, path traversal, impersonation, SQL/command/template
+  injection, XSS, LDAP, row-level security, encrypted columns, NoSQL,
+  Redis, file uploads, S3, serializers, API endpoints, pagination, rate
   limiting, CSRF/CORS, OpenAPI schema, GraphQL, Django Ninja, AI agents,
   MCP tools, secrets, payments, webhooks, Celery, race conditions,
   caching, deserialization, async/ASGI, WebSockets, audit logging,
@@ -21,7 +21,7 @@ license: MIT
 allowed-tools: Read, Grep, Glob, Bash
 metadata:
   author: n-shadloo
-  version: 1.25.0
+  version: 1.26.0
 ---
 
 # secure-code-auditor
@@ -74,12 +74,12 @@ decide which file is authoritative.
 | Concern | Reference file |
 |---|---|
 | **A01** Access control, IDOR/BOLA, object- & function-level authz, cache-mediated data leaks, SSRF and egress control, path traversal on a file read the request names, open redirect, multi-tenancy, admin access | `references/a01-broken-access-control.md` |
-| **A02** DEBUG/ALLOWED_HOSTS, SECURE_*/SESSION_*/CSRF_* matrix, CORS, headers, mail authentication (SPF/DKIM/DMARC alignment and rollout), CAA and dangling-DNS/subdomain takeover, `check --deploy` and what it cannot see | `references/a02-security-misconfiguration.md` |
+| **A02** DEBUG/ALLOWED_HOSTS, SECURE_*/SESSION_*/CSRF_* matrix, signed cookies and the legacy salt fallback, CORS, headers, mail authentication (SPF/DKIM/DMARC alignment and rollout), CAA and dangling-DNS/subdomain takeover, `check --deploy` and what it cannot see | `references/a02-security-misconfiguration.md` |
 | **A03** Dependencies, third-party vetting/maintained-package gate, a development-only package reaching the production requirements file, pinning/hashing, `pip-audit`, EOL frameworks, migrations/data integrity, SBOM | `references/a03-software-supply-chain.md` |
 | **A04** Password-hashing family and parameters, upgrade-on-login, randomness and token generation, constant-time comparison, signing and per-purpose salt discipline, TLS-in-transit, data at rest, key lifecycle and envelope encryption, post-quantum posture | `references/a04-cryptographic-failures.md` |
 | **A05** The sink inventory every other reference defers to and the method for tracing a source to it, including the stored-then-used path worked end to end, SQL/ORM injection, dictionary-expansion column aliases, GeoDjango raster band indexes and spatial-lookup raster sources, command and argument injection, template injection and XSS from server-rendered output, LDAP/directory injection, header/email injection | `references/a05-injection.md` |
 | **A06** Which flows need a rate limit or anti-automation in the first place, algorithmic resource exhaustion and the bound every caller-controlled input needs, business-logic and email/notification abuse, missing limits, insecure defaults | `references/a06-insecure-design.md` |
-| **A07** Human authentication: sessions, JWT/SimpleJWT, OAuth2/OIDC/social login, API keys, brute force, MFA, password reset, allauth/dj-rest-auth/OAuth Toolkit, enumeration | `references/a07-authentication-failures.md` |
+| **A07** Human authentication: password policy from the length floor to the breached-corpus screening no built-in validator provides, sessions, JWT/SimpleJWT, OAuth2/OIDC/social login, API keys, brute force, MFA, passkey and WebAuthn configuration, password reset, allauth/dj-rest-auth/OAuth Toolkit, enumeration | `references/a07-authentication-failures.md` |
 | **A08** Insecure deserialization (pickle/yaml), the cache/session/fixture paths Django deserializes without being asked, Celery task-message trust and serializers, signed data, inbound webhook signature/timestamp/replay and event de-duplication, outbound webhook delivery controls, artifact provenance | `references/a08-integrity-and-deserialization.md` |
 | **A09** Sensitive-data leakage in logs, audit logging, lifecycle hooks/signals, alerting, log injection | `references/a09-logging-and-alerting.md` |
 | **A10** Fail-open vs fail-closed checks, error views and stack-trace leakage, race conditions/TOCTOU, locking vs database constraints, idempotency-key design, transaction side-effect ordering, state-transition enforcement, ReDoS | `references/a10-exceptional-conditions.md` |
@@ -93,7 +93,7 @@ you rather than by OWASP number.
 |---|---|
 | Privilege model (RBAC/ABAC/ReBAC), `ModelBackend`/DRF/admin permission behavior, default-deny + URLconf audit test, field-level authz (BOPLA), search-index and denormalised-copy leakage, authz test design, permission decay | `references/authorization-architecture.md` |
 | Impersonation / "log in as user", django-hijack, break-glass & JIT elevation, operator audit identity | `references/privileged-access-and-impersonation.md` |
-| Where DRF runs the object check and the routes that skip it, `@action` and function-level authz (BFLA), serializer over-exposure/mass assignment, pagination/filter/ordering leakage, throttling mechanics, schema and browsable-API exposure, endpoint inventory and shadow routes, versioning and deprecation, bulk endpoints, unsafe DRF defaults, DRF+CSRF | `references/api-drf-specific.md` |
+| Where DRF runs the object check and the routes that skip it, `@action` and function-level authz (BFLA), serializer over-exposure/mass assignment, pagination/filter/ordering leakage, throttling mechanics and the owned atomic counter a limit that must hold needs instead, schema and browsable-API exposure, endpoint inventory and shadow routes, versioning and deprecation, bulk endpoints, unsafe DRF defaults, DRF+CSRF | `references/api-drf-specific.md` |
 | GraphQL endpoints and schemas, resolver-level authorization and nested traversal, all-fields types, query depth/alias/token/cost limits, introspection and error masking, mutation inputs and nested writes, batching, persisted queries, N+1 as resource exhaustion, Strawberry and graphene-django defaults, Django Ninja routes with no `auth=` | `references/graphql-and-alternative-api-surfaces.md` |
 | Async/ASGI boundaries, sync ORM access, task/request context, WebSocket/Channels origin, authentication, authorization, and limits, subscriptions on the subscribe and publish paths | `references/async-and-channels.md` |
 | File uploads, type/content validation, safe names and storage-key design, object-storage configuration and bucket exposure, presigned URLs and direct-to-storage uploads, quarantine and promotion, callback trust, SVG, image/archive bombs, size/count/quotas, private downloads, proxy vs signed URL, CDN caching of private objects | `references/file-uploads.md` |

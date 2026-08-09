@@ -18,6 +18,10 @@ cross-cutting references. Coverage includes the authorization architecture and
 privilege model (object-, function-, and field-level authorization, default-deny,
 authorization test design), impersonation and break-glass privileged access,
 OAuth2/OIDC and social-login trust boundaries, API-key lifecycle and scoping,
+password policy carried from the length floor through to the breached-corpus
+screening no built-in validator performs and no maintained package currently
+clears the gate to supply, passkey and WebAuthn configuration as the only
+audit surface a framework shipping no native support can offer,
 third-party dependency vetting and maintained-package decisions including the
 development-only package that reaches the production requirements file,
 file uploads end to end (content validation, storage keys that disclose nothing,
@@ -51,7 +55,8 @@ document depth/alias/token/cost limits, introspection and error masking,
 mutation mass assignment, batching, persisted operations, and framework
 defaults that authenticate nothing), the DRF API surface itself (the routes
 where the object check never runs, function-level authorization on viewset
-actions, serializer and filter exposure, throttling mechanics, schema and
+actions, serializer and filter exposure, throttling mechanics and the owned
+atomic counter a limit that must actually hold needs instead, schema and
 browsable-API exposure, endpoint inventory and shadow routes, version
 deprecation, and bulk endpoints), the handling of exceptional conditions
 (fail-closed error paths, race conditions and TOCTOU, database constraints
@@ -65,7 +70,9 @@ deserializes without being asked, Celery task messages as input from anyone who
 can reach the broker, and artifact provenance), the cryptographic primitives
 underneath all of it (password-hashing family and parameters tuned to the
 hardware that runs them, upgrade-on-login, randomness and token generation,
-scoped constant-time comparison, per-purpose salt discipline on signed values,
+scoped constant-time comparison, per-purpose salt discipline on signed values
+including the salt-namespace collision Django fixed in its own signed-cookie
+helper and the transitional setting that keeps accepting the old derivation,
 key lifecycle and envelope encryption with versioned rotation, and post-quantum
 posture), the DNS-published configuration that decides whether the domain
 itself can be forged (SPF lookup limits and alignment, DKIM signing through a
