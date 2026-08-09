@@ -167,11 +167,11 @@ below to both lists:
   backend can require verification before acting on model output; it cannot
   make the output true.
 - **LLM09:2026 Vector and Embedding Weaknesses** — the authorization boundary
-  around retrieval is in scope and mapped above; embedding behaviour and
+  around retrieval is in scope and mapped above; embedding behavior and
   retrieval quality are not.
 - **ASI07 Insecure Inter-Agent Communication** — multi-agent transport. Where
   the Django application is itself one endpoint, it is ordinary API security.
-- **ASI10 Rogue Agents** — behavioural monitoring and fleet governance are
+- **ASI10 Rogue Agents** — behavioral monitoring and fleet governance are
   operational, which is why the audit record is the only row it appears on.
 
 The MCP Top 10 tokens some sections below also carry are a third list and a
@@ -542,7 +542,7 @@ applied to a machine delegate; the durability requirements are identical.
 
 The tension specific to this surface is that reconstructability pulls toward
 logging arguments and results verbatim, and arguments and results routinely
-carry credentials and personal data. Resolve it in favour of
+carry credentials and personal data. Resolve it in favor of
 `a09-logging-and-alerting.md`, "Don't log secrets": record argument shape,
 field names, and digests rather than values, redact known-sensitive fields, and
 neutralize control characters in any model-supplied string before it reaches a
@@ -555,13 +555,13 @@ CWE-532; A09:2025; ASI10 Rogue Agents; MCP08 Lack of Audit and Telemetry.
 Mirroring `00-methodology-and-severity.md`, "What to exclude" — do not search
 backend code for these, and do not report their absence as a backend finding:
 
-- rogue-agent behavioural monitoring, kill switches, and agent-fleet governance,
+- rogue-agent behavioral monitoring, kill switches, and agent-fleet governance,
   which are operational controls rather than server-side code;
 - inter-agent transport and multi-agent coordination, except where the Django
   application is itself one endpoint, in which case it is ordinary API security;
 - model selection, prompt engineering, system-prompt content, and alignment;
 - RAG pipeline and vector-store internals — the authorization boundary around
-  retrieval is in scope, retrieval quality and embedding behaviour are not;
+  retrieval is in scope, retrieval quality and embedding behavior are not;
 - AI bills of material and AI-governance process.
 
 ## Review checklist

@@ -113,7 +113,7 @@ Two things follow for a settings module.
   the project still derives salts ambiguously and the finding is the upgrade,
   not a setting.
 - **`SIGNED_COOKIE_LEGACY_SALT_FALLBACK` decides whether the old cookies are
-  still honoured.** It was added in 5.2.15 and defaults to `True`, so a
+  still honored.** It was added in 5.2.15 and defaults to `True`, so a
   patched project goes on accepting cookies signed under the historical
   `key + salt` derivation. Django accepts them until 7.0, where the
   transitional setting is removed. Set it to `False` once cookies signed
@@ -126,7 +126,7 @@ Auditing it is closer to a grep than a review. Collect every
 name with the `salt` it passes, and look for two pairs that produce the same
 string: a cookie named `session` salted `_token` and one named `session_`
 salted `token` both derive from `session_token`. Where no pair collides, the
-setting is hygiene with no behavioural risk. Where one does, it is the fix,
+setting is hygiene with no behavioral risk. Where one does, it is the fix,
 and the pair should be renamed as well.
 
 **Write-time.** When generating a `set_signed_cookie()` or
@@ -353,7 +353,7 @@ surface.
 publicly trusted CA may issue for any name, so one mis-validating or compromised
 CA anywhere in the ecosystem is enough to produce a valid certificate for your
 domain. A CAA record names the CAs permitted to issue; public CAs have been
-required to honour it since September 2017, and it is specified in RFC 8659. Add
+required to honor it since September 2017, and it is specified in RFC 8659. Add
 an `iodef` address so a rejected attempt reaches somebody.
 
 ```

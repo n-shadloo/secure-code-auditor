@@ -129,7 +129,7 @@ An SBOM produced by scanning a built image records what a scanner could
 identify inside it; one produced from the lockfile records what the project
 resolved and pinned. The two disagree exactly where it matters — a wheel
 installed by a build step, a vendored dependency, anything the scanner's
-Python detector did not recognise — and only the second is traceable to a
+Python detector did not recognize — and only the second is traceable to a
 file a reviewer can open. Generate it in the same job that performs the
 install, from the same file the install reads, so the two cannot drift apart
 without someone editing both.
@@ -446,7 +446,7 @@ verification where the project uses it, and document why an exception is safe.
 Advisory scanners find known records; they do not prove maintenance, correct
 configuration, provenance, compatibility, or absence of design flaws.
 
-### Django and DRF implementation layer
+### Django & DRF implementation layer
 
 - Prefer current Django/DRF features before adding middleware or auth packages.
 - Compare every candidate's declared Django/Python classifiers with the actual

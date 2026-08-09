@@ -12,7 +12,7 @@ and API1:2023 and API3:2023.
 This file owns **the record over time** — deletion completeness, what a
 soft-delete flag fails to hide, retention and the schedule that has to be shown
 to have run, when anonymization is real, and every copy an erasure must reach.
-The boundary with its neighbours is existence rather than access:
+The boundary with its neighbors is existence rather than access:
 `authorization-architecture.md` owns who may read a denormalised copy while
 this file owns whether that copy still exists once the source row is gone, and
 `a09-logging-and-alerting.md` owns what must be recorded while this file owns
@@ -430,7 +430,7 @@ model signals, so raw SQL, `_raw_delete()`, `TRUNCATE`, and database-level
 cascades bypass them entirely, and file deletion has to be reconciled with
 transaction rollback so a rolled-back delete does not destroy a live file.
 
-Two object-store behaviours also make a delete less complete than its return
+Two object-store behaviors also make a delete less complete than its return
 value suggests. On a versioned bucket, deleting an object writes a delete
 marker and retains every prior version, so the erasure has to enumerate and
 remove the versions rather than the key — and where delete protection requires

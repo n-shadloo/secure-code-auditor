@@ -313,7 +313,7 @@ and health disclosure.
 - Set sensible `--timeout`, worker count, and `--max-requests`/`--max-requests-jitter`
   to recycle workers. Don't run Gunicorn with `--reload` or Django's `runserver`
   in production.
-- `forwarded_allow_ips` decides whether Gunicorn honours `X-Forwarded-*` at all,
+- `forwarded_allow_ips` decides whether Gunicorn honors `X-Forwarded-*` at all,
   and it defaults to `127.0.0.1,::1`. In a container the proxy is a different
   host, so that default ignores the headers — and the fix copied from most
   deployment guides is `--forwarded-allow-ips="*"`, which accepts the forwarded
@@ -563,7 +563,7 @@ as, and what stays readable in a layer after a later layer deleted it.
 ## Queue and broker exposure
 
 - Redis/RabbitMQ brokers must be authenticated and firewalled, never
-  internet-reachable. A public broker plus a pickle serializer is critical RCE
+  internet-reachable. A public broker plus a pickle serializer is Critical RCE
   (A08). Don't put secrets in task args/results (A09).
 - Treat a reachable, unauthenticated Redis as Critical on its own, not merely as
   a broker-hygiene issue. CVE-2025-49844 is a use-after-free in the embedded Lua

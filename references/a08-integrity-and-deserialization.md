@@ -26,7 +26,7 @@ objects, and authenticate the source of anything that drives a state change.
 
 ## Insecure deserialization
 
-Maps to CWE-502 (Deserialization of Untrusted Data). Severity is critical
+Maps to CWE-502 (Deserialization of Untrusted Data). Severity is Critical
 wherever an attacker controls the bytes, because the outcome is code execution
 rather than data corruption.
 
@@ -110,7 +110,7 @@ own limit through nested groups and recursive messages in the pure-Python
 decoder, fixed in 4.25.8, 5.29.5, and 6.31.1; CVE-2026-0994 bypasses the JSON
 guard through nested `google.protobuf.Any` messages, fixed in 5.29.6 and
 6.33.5. Both are denial of service rather than execution, and the current 7.x
-line is outside the affected range of each. Two behaviours stay reviewable on
+line is outside the affected range of each. Two behaviors stay reviewable on
 any version: unpacking an `Any` instantiates whichever message type the sender
 named, so allow-list the acceptable type URLs before unpacking, and proto3
 preserves unknown fields through a binary parse and re-serialize, so a message
@@ -286,8 +286,8 @@ Maps to CWE-345 (Insufficient Verification of Data Authenticity) and CWE-347
 (Improper Verification of Cryptographic Signature), with CWE-294 (Authentication
 Bypass by Capture-replay) for the replay half and CWE-208 (Observable Timing
 Discrepancy) for the comparison. OWASP API2:2023 also applies, because the
-signature *is* the authentication for this endpoint. Severity is high to
-critical on any route that moves money, grants entitlement, or changes identity
+signature *is* the authentication for this endpoint. Severity is High to
+Critical on any route that moves money, grants entitlement, or changes identity
 state.
 
 ### Principle layer

@@ -25,7 +25,7 @@ non-DRF frameworks and transports a DRF engineer will assume are present, from
 a Django Ninja route to a gRPC servicer on a second server.
 `a01-broken-access-control.md` owns the access-control failure itself,
 `authorization-architecture.md` owns the field-level model,
-`api-drf-specific.md` owns the serializer and throttling patterns generalised
+`api-drf-specific.md` owns the serializer and throttling patterns generalized
 here with the unit of measurement changed, `file-uploads.md` and
 `async-and-channels.md` own uploads and subscriptions, and
 `a03-software-supply-chain.md` owns the stale-library finding a
@@ -793,7 +793,7 @@ multiplies work carries a server-enforced ceiling — is in
 `a06-insecure-design.md`, "Algorithmic resource exhaustion".
 
 **`Any` lets the sender choose the type, and unknown fields survive a
-forward.** Two protobuf behaviours become concrete review checks the moment a
+forward.** Two protobuf behaviors become concrete review checks the moment a
 servicer accepts messages from anything but a first-party caller.
 
 - A `google.protobuf.Any` field carries a type URL and a serialized payload,

@@ -110,7 +110,7 @@ OWASP ASVS 5.0.0, released 30 May 2025 and still the current version, holds
 around 350 requirements in 17 chapters at three cumulative levels — L1 is
 roughly a fifth of the standard, L2 about seventy per cent of it including all
 of L1, and L3 the remainder. It answers a different question from the Top 10
-spine this skill is organised on. The Top 10 ranks what goes wrong most often;
+spine this skill is organized on. The Top 10 ranks what goes wrong most often;
 ASVS enumerates what has to be demonstrably true before someone signs the
 application off. A finding is discovered against the first and defended against
 the second.
@@ -235,7 +235,7 @@ the line would end at the OWASP mapping.
 - Category: Race condition / TOCTOU | CWE-367 | OWASP A06:2025 | ASVS V15.4
 - Confidence: High
 - Problem: debit() reads the wallet row, compares balance to amount in Python,
-  then writes back balance - amount as a separate statement. Nothing serialises
+  then writes back balance - amount as a separate statement. Nothing serializes
   the two: no transaction wraps them, the read takes no lock, and the column
   carries no constraint. The route is reachable by any authenticated holder of
   the wallet and no throttle applies to it.

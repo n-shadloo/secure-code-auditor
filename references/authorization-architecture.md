@@ -460,7 +460,7 @@ type (BOPLA)".
 
 ## Search indexes and denormalised copies
 
-A search index, a materialised report table, an analytics export, and a replica
+A search index, a materialized report table, an analytics export, and a replica
 are the same shape of problem: a second copy of the data with **its own query
 path**, which does not pass through the queryset scoping, permission classes, or
 database policies that guard the source rows. Authorization was implemented once,
@@ -548,7 +548,7 @@ the suite is exhaustive rather than representative.
 
 Long-lived systems accumulate role explosion, **permission creep** (grants
 added, never removed), and **orphaned grants** (permissions on deactivated users
-or deleted objects). The code-level artefacts that make periodic access review
+or deleted objects). The code-level artifacts that make periodic access review
 possible:
 
 - permissions defined declaratively in one place, not scattered `if` checks;

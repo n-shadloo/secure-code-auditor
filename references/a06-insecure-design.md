@@ -5,7 +5,7 @@ limits and anti-automation, business-logic and notification abuse, and unsafe
 defaults. Overlaps OWASP API4:2023 (Unrestricted Resource Consumption) and
 API6:2023 (Unrestricted Access to Sensitive Business Flows).
 
-This file owns **which flows need a limit, and why** — the catalogue of what is
+This file owns **which flows need a limit, and why** — the catalog of what is
 worth attacking when nothing caps it, and the design rule that every input
 which multiplies work carries a server-enforced bound. It does not own the
 mechanism that enforces one: `api-drf-specific.md` owns DRF throttling and the
@@ -178,7 +178,7 @@ Investigate flows where "valid" requests cause harm:
 - Referral/coupon/invite systems that can be replayed or self-referred.
 - State machines that can be skipped (e.g. marking an order paid without a
   payment event), or transitioned twice concurrently because the guard is a
-  Python check rather than a conditional update. This file catalogues the flows
+  Python check rather than a conditional update. This file catalogs the flows
   worth attacking; `a10-exceptional-conditions.md`, "Races, TOCTOU, and
   adversarial sequencing" owns the concurrency mechanics that enforce them.
 

@@ -12,7 +12,7 @@ consumption, API5 BFLA, API8 misconfiguration, API9 inventory) and to A01:2025
 and A02:2025.
 
 Three files share the authorization material and the split is deliberate: A01
-owns the per-request access-control failure and how to recognise it,
+owns the per-request access-control failure and how to recognize it,
 `authorization-architecture.md` owns the permission *model* and the table of
 which DRF paths invoke the object hook, and this file owns the **call sites** —
 the DRF routes, actions, and defaults where a correct model still fails to run.
@@ -20,7 +20,7 @@ Read the other two for the model; read this one for where DRF lets it leak.
 
 This file is about DRF specifically. For a GraphQL schema, or a non-DRF
 framework such as Django Ninja whose defaults differ from DRF's, read
-`graphql-and-alternative-api-surfaces.md` — several patterns below generalise
+`graphql-and-alternative-api-surfaces.md` — several patterns below generalize
 there with the unit of measurement changed, and the framework defaults do
 not carry over at all.
 
@@ -61,7 +61,7 @@ a legacy concern but a second, less-maintained copy of every control.
 In DRF the object decision is invoked in exactly one place the framework
 controls, the response shape is decided by serializers, filter backends, and
 pagination classes, and several of the relevant defaults are permissive. Those
-three facts organise everything below.
+three facts organize everything below.
 
 ## Where the object check runs, and the routes that skip it
 
@@ -483,10 +483,10 @@ Three constraints travel with it, and none is optional.
   than the default keeps the counter off a cache someone later repoints at
   LocMemCache for a test suite, and off one whose eviction policy discards
   keys under memory pressure. An evicted counter is a reset counter.
-- **Choose the outage behaviour.** When the cache is unreachable, `incr()`
+- **Choose the outage behavior.** When the cache is unreachable, `incr()`
   raises, and the flow either denies (fail closed, correct for credential and
   payment flows) or allows (fail open, which turns a cache outage into an open
-  door). Letting the exception reach a 500 is a third behaviour nobody chose.
+  door). Letting the exception reach a 500 is a third behavior nobody chose.
 
 **Write-time.** When generating a login, password-reset, payment, or
 invitation endpoint, write the atomic counter in the same change as the view
@@ -625,7 +625,7 @@ the change between two generations rather than in any single one. Generate it
 in CI, keep the generated document as a build artifact, and diff it on every
 dependency upgrade and every release. An upgrade is where operations appear
 that nobody wrote — a router that began mounting a route, a package that
-stopped honouring an exclusion, a serializer that gained a field from a model
+stopped honoring an exclusion, a serializer that gained a field from a model
 change — and a release diff turns "a new field reached the API" into a
 reviewable line instead of something found later.
 
@@ -668,7 +668,7 @@ they prove:
   Its value in an audit is the diff: **anything in the URL map that is not in
   the schema is a candidate shadow endpoint.**
 
-Shadow, zombie, and orphan routes arise in recognisable Django ways: an
+Shadow, zombie, and orphan routes arise in recognizable Django ways: an
 `include()` left behind for an app whose views still resolve; a debug or
 browsable route behind `if settings.DEBUG` on a deployment where `DEBUG` is
 accidentally on; an app in `INSTALLED_APPS` mounting URLs nobody chose

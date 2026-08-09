@@ -79,7 +79,7 @@ Storage is a separate requirement, met elsewhere: salted and hashed with a
 salt of at least 32 bits. `a04-cryptographic-failures.md` owns the hashing
 family and its parameters.
 
-### Django and DRF implementation layer
+### Django & DRF implementation layer
 
 `AUTH_PASSWORD_VALIDATORS` ships four validators, and mapping them onto the
 requirements above locates the one gap that matters:
@@ -202,7 +202,7 @@ review that will not clear it, or a flow that cannot take the latency — the
 offline alternative is `CommonPasswordValidator` pointed at a much larger
 local list through `password_list_path`. It needs no network and discloses
 nothing; the trade is that the file has to be obtained, reviewed for its
-licence, shipped with the image, and refreshed on a schedule somebody owns,
+license, shipped with the image, and refreshed on a schedule somebody owns,
 and a list nobody refreshed is the failure it was added to prevent.
 
 **Write-time.** When generating `AUTH_PASSWORD_VALIDATORS`, or any flow that
@@ -366,7 +366,7 @@ authorization-server duties a client depends on rather than implements, and
 ID-token claim validation sits in V9. `00-methodology-and-severity.md` holds
 the chapter mapping and the rule for when to cite one at all.
 
-### Django and DRF implementation layer
+### Django & DRF implementation layer
 
 Trace the full flow: login-start view, session/state store, provider configuration,
 callback, code exchange, token verification, adapter/pipeline, local-account lookup
@@ -484,7 +484,7 @@ prefix/secret checks without allowing easy denial of service against a known
 prefix. Return a generic authentication failure and avoid exposing whether a
 prefix exists.
 
-### Django and DRF implementation layer
+### Django & DRF implementation layer
 
 Implement authentication separately from permission classes and tenant-scoped
 querysets. Never use a raw API key as a database lookup value. A small local model

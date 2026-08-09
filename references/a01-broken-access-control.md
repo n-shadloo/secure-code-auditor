@@ -6,7 +6,7 @@ cache-mediated authorization leaks. Maps to OWASP API1:2023 (BOLA) and
 API5:2023 (BFLA).
 
 This file owns the **per-request failure** — the request that reached data it
-should not have, and how to recognise it in code. It does not own the model
+should not have, and how to recognize it in code. It does not own the model
 behind that failure: `authorization-architecture.md` owns the privilege model
 and field-level authorization, `api-drf-specific.md` owns the DRF call sites
 where a correct model still fails to run, and
@@ -479,7 +479,7 @@ def download_export(request):
     return FileResponse(stream, as_attachment=True, filename=name)
 ```
 
-The pattern generalises in one line: **let the client choose an identifier, not
+The pattern generalizes in one line: **let the client choose an identifier, not
 a path.** A key in a server-side mapping, a primary key resolved through a
 scoped queryset, or an enumerated slug all end with the server deciding every
 character of the filename, which removes the class rather than defending

@@ -377,7 +377,7 @@ rather than off documentation:
   and nothing in the settings file looks wrong.
 - `AWS_S3_FILE_OVERWRITE` defaults to `True`, so `get_available_name()`
   returns the key unchanged and a second save replaces the first, which is the
-  opposite of the deduplicating behaviour a `FileSystemStorage` habit expects.
+  opposite of the deduplicating behavior a `FileSystemStorage` habit expects.
 
 That last pair is the reason to review the *combination* of settings rather
 than each one. Grep for `AWS_S3_CUSTOM_DOMAIN`, `AWS_QUERYSTRING_AUTH`,
@@ -911,7 +911,7 @@ In order of preference: do not cache private objects at all, and return
 CDN's own signed-URL or signed-cookie mechanism so the edge validates before
 serving; or, if origin signed URLs must pass through a CDN, include the
 signing parameters in the cache key. `Vary` is not a substitute — cookie
-values are high-cardinality and every layer has to honour it for the boundary
+values are high-cardinality and every layer has to honor it for the boundary
 to hold. The general rule this is one case of, including the invalidation
 requirement, is in `a01-broken-access-control.md`, "Caching and
 authorization"; the edge and CDN configuration itself is in

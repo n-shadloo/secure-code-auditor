@@ -11,7 +11,7 @@ handling of exceptional conditions. Race conditions are not in it — OWASP 2025
 maps CWE-362 and CWE-841 to A06:2025 Insecure Design. They are documented here
 anyway, because the question a reviewer asks is the one this category is
 about: what does this code do when the expected sequence does not hold?
-`a06-insecure-design.md` keeps the catalogue of business flows worth attacking;
+`a06-insecure-design.md` keeps the catalog of business flows worth attacking;
 this file keeps the mechanics and the fixes.
 
 ## Contents
@@ -110,21 +110,21 @@ middleware, and check what each one returns.
 Maps to CWE-362 (concurrent execution using a shared resource with improper
 synchronization) and CWE-367 (time-of-check time-of-use). OWASP 2025 places
 CWE-362 and CWE-841 under A06:2025, where the business consequences —
-double-spend, duplicate provisioning, a skipped workflow step — are catalogued.
+double-spend, duplicate provisioning, a skipped workflow step — are cataloged.
 
 ### Principle layer
 
-A check and the action it authorises must be a single atomic step against the
+A check and the action it authorizes must be a single atomic step against the
 authoritative store. If any other actor can change the checked fact between the
 check and the use, the check is advisory rather than enforcing. Nothing about
 that is Django-specific; the same defect appears in Go, Rails, or hand-written
-SQL, and the same two defences close it.
+SQL, and the same two defenses close it.
 
 - **A constraint expresses an invariant about the data** — uniqueness, a value
   range, non-overlapping intervals. It is declarative, enforced on every path
   including the ones the application does not know about, and the loser of a
   concurrent race fails loudly instead of writing a corrupt row.
-- **A lock serialises operations on a specific existing row** — the
+- **A lock serializes operations on a specific existing row** — the
   read-modify-write on a balance or a counter. It is a serialization tool, not
   an integrity guarantee: it protects only the rows it actually selected.
 
@@ -252,7 +252,7 @@ class Reservation(models.Model):
   Sequencing that safely is in `a03-software-supply-chain.md`, "Migration and
   data-integrity safety".
 
-A distributed lock in Redis is not a substitute for either defence. A lock is
+A distributed lock in Redis is not a substitute for either defense. A lock is
 only as safe as the guarantee that a second holder cannot act, and in an
 asynchronous system — garbage-collection pauses, network delay, clock skew —
 that requires a fencing token which the protected resource itself checks.
@@ -391,7 +391,7 @@ and neither of those is visible in a single line.
 
 ## Idempotency
 
-Maps to CWE-362. `a06-insecure-design.md` catalogues the business flows where
+Maps to CWE-362. `a06-insecure-design.md` catalogs the business flows where
 duplicate effects hurt, and `a08-integrity-and-deserialization.md` owns webhook
 event de-duplication; both defer here for the design.
 

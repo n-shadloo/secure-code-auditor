@@ -49,7 +49,7 @@ CWE-327 (broken or risky algorithm).
 
 ### Principle layer
 
-A password hash is the only defence that still applies once the database has
+A password hash is the only defense that still applies once the database has
 already been copied. Its strength is a **cost you choose** — memory, time, and
 parallelism — so the two decisions are the family and the parameters, and the
 second is the one projects skip. A memory-hard function with defaults nobody
@@ -535,7 +535,7 @@ confidential, and anyone holding it can read it.
 Use `django.core.signing` — `Signer`, `TimestampSigner`, `dumps`/`loads` —
 rather than assembling an HMAC by hand. Verified against Django 6.0 and 5.2,
 `Signer` defaults to the project `SECRET_KEY` with `SECRET_KEY_FALLBACKS`
-honoured, `sep=":"`, `algorithm="sha256"`, and a `salt` that defaults to
+honored, `sep=":"`, `algorithm="sha256"`, and a `salt` that defaults to
 `"<module>.<ClassName>"` — so every unnamed `Signer` in the project shares the
 salt `"django.core.signing.Signer"`, and `dumps`/`loads` share
 `"django.core.signing"`. The signature is computed over `salt + "signer"`, which

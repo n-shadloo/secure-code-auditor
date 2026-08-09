@@ -366,7 +366,7 @@ is otherwise an unauthenticated public route by construction. A client
 certificate demanded at the proxy narrows who can even open the connection
 from the whole internet to the holders of a certificate you issued, so a
 forged-signature attempt has to get past the transport before it reaches the
-comparison. It is defence in depth and not a replacement: the certificate
+comparison. It is defense in depth and not a replacement: the certificate
 authenticates a connection while the HMAC authenticates a message, an
 intermediary that terminates TLS is trusted by the first and not by the
 second, and most third-party providers cannot present a certificate at all.
