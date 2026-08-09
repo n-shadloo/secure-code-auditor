@@ -66,8 +66,16 @@ identity, endpoints authenticated only by network position, downstream token
 exchange, secret storage and delivery, and `SECRET_KEY` rotation), GraphQL and
 non-DRF API surfaces (resolver-edge authorization, schema and type exposure,
 document depth/alias/token/cost limits, introspection and error masking,
-mutation mass assignment, batching, persisted operations, and framework
-defaults that authenticate nothing), the DRF API surface itself (the routes
+mutation mass assignment, batching, persisted operations, framework defaults
+that authenticate nothing, and gRPC as a second server that Django's request
+cycle never enters -- every registered method public until an authenticating
+interceptor is installed and first in the list, authorization decided per
+method rather than by the interceptor that established who is calling, a
+send-size limit and a concurrency ceiling that have no default at all beside
+a 4 MB receive cap that does, protobuf's `Any` instantiating whichever type
+the sender named, unknown fields surviving a binary round trip into whatever
+the servicer relays them to, and reflection as the introspection analogue
+alongside health checking and channelz), the DRF API surface itself (the routes
 where the object check never runs, function-level authorization on viewset
 actions, serializer and filter exposure, throttling mechanics and the owned
 atomic counter a limit that must actually hold needs instead, schema and

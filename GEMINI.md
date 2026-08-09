@@ -34,8 +34,14 @@ mutual TLS and proxy-set certificate identity, workload identity, secret
 delivery, and `SECRET_KEY` rotation), GraphQL and non-DRF API surfaces
 (authorization on every resolved edge, schema and type over-exposure, query
 depth/alias/token/cost limits, introspection and error masking, mutation mass
-assignment, persisted operations, and Django Ninja's default of no
-authentication), the DRF API surface (routes where the object check never runs,
+assignment, persisted operations, Django Ninja's default of no authentication,
+and gRPC, where the servicer answers on a second server that no middleware,
+permission class, throttle or CSRF check reaches — a server with no
+interceptor serves every registered method to anyone who can open a
+connection, an interceptor that authenticates has still authorized nothing,
+`grpc.max_send_message_length` and `maximum_concurrent_rpcs` have no default
+where the 4 MB receive cap does, an `Any` field is a constructor the sender
+picks, and reflection hands over the whole schema), the DRF API surface (routes where the object check never runs,
 function-level authorization on viewset actions, serializer and filter
 exposure, throttling mechanics and the atomic `incr` a limit that must hold
 needs instead of DRF's read-modify-write, schema and browsable-API exposure,

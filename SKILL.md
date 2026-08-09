@@ -21,7 +21,7 @@ license: MIT
 allowed-tools: Read, Grep, Glob, Bash
 metadata:
   author: n-shadloo
-  version: 1.31.0
+  version: 1.32.0
 ---
 
 # secure-code-auditor
@@ -94,7 +94,7 @@ you rather than by OWASP number.
 | Privilege model (RBAC/ABAC/ReBAC), `ModelBackend`/DRF/admin permission behavior, default-deny + URLconf audit test, field-level authz (BOPLA), search-index and denormalised-copy leakage, authz test design, permission decay | `references/authorization-architecture.md` |
 | Impersonation / "log in as user", django-hijack, break-glass & JIT elevation, operator audit identity | `references/privileged-access-and-impersonation.md` |
 | Where DRF runs the object check and the routes that skip it, `@action` and function-level authz (BFLA), serializer over-exposure/mass assignment, pagination/filter/ordering leakage, throttling mechanics and the owned atomic counter a limit that must hold needs instead, schema and browsable-API exposure, endpoint inventory and shadow routes, versioning and deprecation, bulk endpoints, unsafe DRF defaults, DRF+CSRF | `references/api-drf-specific.md` |
-| GraphQL endpoints and schemas, resolver-level authorization and nested traversal, all-fields types, query depth/alias/token/cost limits, introspection and error masking, mutation inputs and nested writes, batching, persisted queries, N+1 as resource exhaustion, Strawberry and graphene-django defaults, Django Ninja routes with no `auth=` | `references/graphql-and-alternative-api-surfaces.md` |
+| GraphQL endpoints and schemas, resolver-level authorization and nested traversal, all-fields types, query depth/alias/token/cost limits, introspection and error masking, mutation inputs and nested writes, batching, persisted queries, N+1 as resource exhaustion, Strawberry and graphene-django defaults, Django Ninja routes with no `auth=`, gRPC servicers serving every method until an interceptor is installed, protobuf message-size and recursion limits, `Any` and unknown-field handling, reflection and channelz as debug surfaces | `references/graphql-and-alternative-api-surfaces.md` |
 | Async/ASGI boundaries, sync ORM access, task/request context, WebSocket/Channels origin, authentication, authorization, and limits, subscriptions on the subscribe and publish paths | `references/async-and-channels.md` |
 | File uploads, type/content validation, safe names and storage-key design, object-storage configuration and bucket exposure, per-tenant bucket vs shared prefix, delegated upload URLs across S3 presigned POST, GCS V4 signed URLs, and Azure SAS — what each binds, what caps its size, and what it takes to withdraw one, quarantine and promotion, scan verdict caching and CDR, callback trust, SVG, image/archive bombs, size/count/quotas, metadata reflected on serve, private downloads, proxy vs signed URL, CDN caching of private objects | `references/file-uploads.md` |
 | AI agents and MCP tool surfaces, DRF viewsets republished as tools, agent tokens and audience validation, tool scope vs user permissions, model output and retrieved content as untrusted input, prompt injection reaching a backend sink, per-agent cost/concurrency limits, tool-call confirmation and audit, the entry-token mapping to the OWASP LLM Top 10 2026 and Agentic Top 10 with the entries a backend skill declares non-goals | `references/agent-and-llm-interfaces.md` |
@@ -251,8 +251,9 @@ files whose deletion `references/data-lifecycle-and-privacy.md` owns.
 
 **Client-composed requests.** `references/graphql-and-alternative-api-surfaces.md`
 owns the surface where the client composes the request — resolver-edge
-authorization, document cost limits, schema exposure, and the non-DRF framework
-defaults. It defers to A01 for the access-control failure itself,
+authorization, document cost limits, schema exposure — and the defaults of the
+non-DRF frameworks and transports, from a Django Ninja route to a gRPC
+servicer. It defers to A01 for the access-control failure itself,
 `references/authorization-architecture.md` for the field-level model,
 `references/api-drf-specific.md` for the serializer and throttling patterns it
 generalises, `references/file-uploads.md` and `references/async-and-channels.md`
