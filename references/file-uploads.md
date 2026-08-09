@@ -202,6 +202,49 @@ See `deployment-and-runtime.md` for edge and serving configuration. Serving an
 upload outside the web root is useful only if the separate serving path is also
 configured to be inert.
 
+### Metadata the store echoes back
+
+An object store persists metadata the uploader influenced and returns it on
+retrieval, which makes stored metadata an input to the response rather than a
+record about it. Custom metadata lives under `x-amz-meta-*` on S3,
+`x-goog-meta-*` on GCS, and `x-ms-meta-*` on Azure, and all three come back as
+response headers on a read. Those are the obvious half. The dangerous half is
+the content-type and content-disposition pair, because that is what decides
+whether a browser renders the bytes or saves them, and every provider offers a
+route by which it is chosen somewhere other than your serving code:
+
+- **S3** stores `Content-Type` at upload and returns it on a read, and a
+  signed request can override it for that request through the
+  `response-content-type` and `response-content-disposition` query
+  parameters, which take precedence over the stored value.
+- **GCS** stores `Content-Type`, `Content-Disposition`, `Content-Encoding`,
+  `Cache-Control`, and `Content-Language` as object metadata and serves them
+  back as given.
+- **Azure** stores the blob content-type and content-disposition system
+  properties and serves them as the corresponding response headers, unless
+  the SAS carries an `rsct` or `rscd` override, which wins for that request.
+
+So whoever controlled the upload controls how the object is later
+interpreted, and a filename that reaches a disposition header unescaped
+controls the header itself: `text/html` served from an origin holding session
+cookies is stored XSS (CWE-79), and an unsanitized filename in a disposition
+is header injection (CWE-116). Neither needs a second bug — a stored value
+being trusted is the whole of it.
+
+The serving rules above are the answer, applied one layer earlier: the content
+type and disposition belong to the server's validated verdict at serve time,
+not to anything the upload supplied, so set them explicitly on the response
+and let the stored copy be a record rather than an instruction. Where a
+display name has to survive into a disposition, encode it as `filename*`
+rather than interpolating it, and treat every `*-meta-*` value as untrusted
+text wherever it is rendered.
+
+**Write-time.** When writing the code that serves an upload back, pass the
+content type from the server's own record of what the file was found to be and
+set the disposition explicitly, in the same edit as the read. The default in
+every one of these APIs is to hand back what was stored, so the value that was
+never chosen is the uploader's.
+
 ## Object storage configuration
 
 Storage configuration decides whether any of the controls above are reachable:
@@ -253,6 +296,30 @@ disabled on new buckets since April 2023, and server-side encryption with
 S3-managed keys has applied to every new object since January 2023 and cannot
 be turned off. Encryption at rest is therefore not the finding; which key
 protects it, and who may use that key, still is.
+
+**A bucket per tenant, or one bucket with a prefix per tenant.** Both are
+defensible, the choice is an architecture decision rather than a security
+verdict, and it is made once and is expensive to undo — so it is worth making
+deliberately rather than by default:
+
+| Dimension | Bucket per tenant | Shared bucket, prefix per tenant |
+| --- | --- | --- |
+| Blast radius | A wrong policy exposes one tenant | A wrong policy exposes every tenant at once |
+| Policy granularity | Public-access blocking, versioning, retention, and the encryption key are all set per tenant | Those are bucket-level, so every tenant gets one setting: the strictest tenant's cost or the weakest tenant's risk |
+| Credential scoping | A credential cannot name a bucket it was not given; the boundary is structural | The boundary is a prefix condition in the policy, which holds only if it was written correctly and is absent silently |
+| Operational cost | Provisioning, per-account bucket limits, and per-bucket configuration drift become the scaling constraint | One bucket to configure, monitor, and reason about |
+
+The failure that decides most cases is the third row meeting the second: a
+shared bucket is sound when the prefix condition on the upload and download
+credentials is real and tested, and is a cross-tenant read the moment it is
+merely intended. A per-tenant bucket makes that failure structurally
+unavailable, which is what makes it the stronger default for
+high-sensitivity content and the wrong default at high tenant counts, where
+the bucket limit and the configuration drift become the larger risk. Either
+way the tenant component of the key stays a surrogate identifier rather than a
+name, for the reasons in "Filenames and storage keys" above, and either way
+the prefix or bucket restriction on the signing credential is the control that
+a check in view code cannot promise.
 
 ### Django & DRF implementation layer
 
@@ -357,18 +424,71 @@ Severity turns on combinations. An unbounded size on a private bucket is a
 cost and availability finding; a predictable key plus an unsigned public URL
 is a mass-exposure primitive.
 
-**A delegated URL cannot be revoked individually, and not within its
-lifetime.** What is actually available: the URL dies when the credential that
-signed it dies, so signing with a short-lived session credential rather than a
-long-lived key is the real control — on S3 an assumed-role session lasts one
-hour by default and an instance-profile credential roughly six, against the
-seven days a long-lived key permits, and the URL expires with the credential
-even when a longer expiry was requested. Rotating or deactivating that
-credential invalidates every URL it signed, which is blunt but works. A bucket
-policy can independently refuse requests whose signature is older than a
-chosen age, capping lifetime regardless of what the issuer asked for. And an
-object that is still in quarantine grants a URL holder access to nothing that
-is served. Design for expiry, not for recall.
+The size bound is where the three major stores diverge, so what to look for
+depends on which one is behind the URL rather than on one rule generalized
+from S3:
+
+- **S3** — a presigned PUT binds no size at all. The enforced form is a
+  presigned POST whose policy carries a `content-length-range` condition.
+- **GCS** — a V4 signed PUT *can* bind one, by signing an
+  `x-goog-content-length-range` header of `MIN,MAX` bytes into the URL. Cloud
+  Storage rejects a body outside that inclusive range with `400`, and the POST
+  policy supports a `content-length-range` condition as well.
+- **Azure** — a SAS binds no size in any form. Its whole signed field set is
+  the permission, the resource, the window, an IP range, the protocol, a
+  stored-policy identifier, and five response-header overrides; none of them
+  is a length. The ceiling has to be applied after the object exists, which
+  makes the verification step the only thing between a SAS and an unmetered
+  write.
+
+**No delegated URL can be recalled one at a time, and not within its lifetime.
+What differs by provider is how much else you have to break to withdraw one
+early** — and on that, the rule the rest of this section is written around
+holds for S3 and GCS but is too strong for Azure. On S3 and GCS the only lever
+is the signing credential, so the URL dies when it does. Signing with a
+short-lived session credential rather than a long-lived key is therefore the
+real control — on S3 an assumed-role session lasts one hour by default and an
+instance-profile credential roughly six, against the seven days a long-lived
+key permits, and the URL expires with the credential even when a longer expiry
+was requested. Rotating or deactivating that credential invalidates every URL
+it signed, which is blunt but works. And an object that is still in quarantine
+grants a URL holder access to nothing that is served.
+
+Azure's shared access signature comes in three forms, and which one was issued
+decides how blunt the withdrawal is. A **user-delegation SAS** is signed with a
+user-delegation key obtained through Entra credentials, so the signing identity
+is a security principal and no account key is involved; it is Blob-only. A
+**service SAS** is signed with the storage account key and scoped to one
+service. An **account SAS** is signed with the account key and spans services
+and service-level operations. Only Azure offers a withdrawal that leaves the
+signing credential in place:
+
+| Form | Withdrawn before expiry by | Granularity, and on what timeline |
+| --- | --- | --- |
+| S3 presigned URL or POST policy | Rotating or deactivating the signing credential | Immediate, and takes every URL that credential signed with it |
+| GCS V4 signed URL | Rotating the signing service account's key, or removing its IAM permission | Immediate, and takes every URL that key signed with it |
+| Azure account SAS, or a service SAS with no stored policy | Regenerating the storage account key | Immediate, and takes every SAS in the account with it |
+| Azure service SAS bound to a stored access policy | Deleting the policy, renaming it, or moving its expiry into the past | Per policy, so one grant goes without touching the account key; timeline not published |
+| Azure user-delegation SAS | Revoking the user-delegation key, or removing the signing principal's role assignment | Per key or per principal, still not per URL; timeline not published, and both the key and the role assignments are cached |
+
+Those two are worth preferring on Azure for that reason, and the
+user-delegation SAS additionally keeps the account key out of the process.
+Neither is a recall button: the granularity is a policy or a key rather than a
+URL, and Azure publishes no number for how long a revocation takes to land,
+stating only that there may be a delay. Treat any specific latency you are
+told as unverified.
+
+So the lifetime cap remains the control that does not depend on anyone
+noticing, and every provider tops out in the same place — 604800 seconds,
+seven days, on a GCS V4 signature, an S3 SigV4 presigned URL, and an Azure
+user-delegation key regardless of the expiry requested. An upload URL has no
+business near that ceiling; minutes is the right order of magnitude. Where the
+platform can cap it centrally instead of trusting the issuer it should, and
+that control is provider-specific rather than the S3 one generalized: an S3
+bucket policy can refuse requests whose signature is older than a chosen age,
+and an Azure storage account can carry a SAS expiration policy. GCS has no
+server-side equivalent, so there the bound the signer chose is the only one
+there is. Design for expiry, not for recall.
 
 The flow that keeps the controls attached:
 
@@ -402,6 +522,27 @@ the uploader and why object versioning is worth having. Selecting a scanning
 engine is a separate decision and belongs to the dependency gate in
 `a03-software-supply-chain.md`.
 
+A verdict is a fact about bytes, not about a row, so cache it under a hash of
+the content rather than under the object key or the filename. Keyed that way,
+identical content uploaded twice reuses the existing verdict, a rename cannot
+launder a rejected object into a fresh scan, and two different objects can
+never share one. A verdict is also only as good as the signatures that
+produced it, so record the engine and signature version beside it and treat a
+version advance as invalidating — content admitted before a signature existed
+stays admitted otherwise, and that window is exactly the one a novel sample
+occupies. Re-scanning lazily on next access is usually enough; the requirement
+is that a stale "clean" cannot become permanent.
+
+Where a detection gap is not tolerable at all, content disarm and
+reconstruction is the other shape of the control. Rather than deciding whether
+a file is malicious, CDR decomposes it, discards every component outside an
+allowlist — macros, embedded scripts, other active content — and rebuilds a
+functionally equivalent file from what is left. Depending on no signature, it
+is unaffected by novel or polymorphic content; rewriting the file, it can
+break what the file was for, and editability, embedded logic, and fidelity all
+move. That trade is why it is a control to choose deliberately rather than a
+default, and it sits alongside scanning rather than replacing it.
+
 Confirmations and event notifications are the weak point, because they are the
 step that grants availability. An unauthenticated callback that moves a row
 from `PENDING` to `AVAILABLE` lets an attacker approve their own object
@@ -421,8 +562,11 @@ On S3 the two delegated-upload forms are not interchangeable. A presigned
 element for a maximum body size — so a presigned PUT cannot bound how much is
 uploaded at all. A presigned POST carries a policy document that S3 itself
 evaluates, and `content-length-range` is the only mechanism either form offers
-for capping object size. Prefer POST wherever size, key, or type has to be
-enforced rather than merely expected:
+for capping object size. Re-checked against `boto3` 1.43.67 on 9 Aug 2026 and
+still true: `generate_presigned_url` accepts an operation, its parameters, and
+an expiry, and admits no condition of any kind, while the POST policy carries
+`content-length-range` as a first-class condition. Prefer POST wherever size,
+key, or type has to be enforced rather than merely expected:
 
 ```python
 from uuid import uuid4
@@ -488,6 +632,138 @@ keep the promotion — copy to the served prefix, then mark `AVAILABLE` — in
 that order, so a crash leaves an object that is present but unreachable rather
 than reachable but unverified. Enforcing the transition itself against
 concurrent confirmations is in `a10-exceptional-conditions.md`.
+
+#### GCS: the signed PUT that does bound size
+
+`google-cloud-storage` expresses the binding through the `headers` argument of
+`generate_signed_url`. Anything passed there is folded into the canonical
+headers that the V4 string-to-sign covers and is named in the URL's
+`X-Goog-SignedHeaders`, so the client must send each one, unaltered, or the
+signature fails. That is what makes an `x-goog-content-length-range` header a
+constraint rather than a suggestion:
+
+```python
+from datetime import timedelta
+
+from google.cloud.storage import Client
+
+MAX_UPLOAD_BYTES = 5 * 1024 * 1024
+
+
+# Wrong: the same shape as the unbounded S3 PUT above and wrong for the same
+# reason — the signature covers the key and the method, so the holder may send
+# anything of any size for the whole hour.
+def gcs_presign_upload_unbounded(*, tenant_id):
+    blob = Client().bucket("uploads").blob(quarantine_key(tenant_id))
+    return blob.generate_signed_url(
+        version="v4",
+        expiration=timedelta(hours=1),
+        method="PUT",
+    )
+
+
+# Correct: both constraints are signed, so neither can be dropped or edited by
+# the holder. The range is MIN,MAX in bytes and is inclusive at both ends;
+# Cloud Storage answers an out-of-range body with 400.
+def gcs_presign_upload(*, tenant_id):
+    blob = Client().bucket("uploads").blob(quarantine_key(tenant_id))
+    return blob.generate_signed_url(
+        version="v4",
+        expiration=timedelta(minutes=2),
+        method="PUT",
+        content_type="image/jpeg",
+        headers={"x-goog-content-length-range": f"1,{MAX_UPLOAD_BYTES}"},
+    )
+```
+
+Verified against `google-cloud-storage` 3.13.1 on 9 Aug 2026: signing that
+call puts `x-goog-content-length-range` into `X-Goog-SignedHeaders`, and the
+seven-day ceiling is enforced by the library itself — an expiration over
+604800 seconds raises `ValueError` rather than producing a URL. That check is
+specific to V4; a `version="v2"` signature accepts a longer expiration without
+complaint, which is one more reason to sign V4.
+
+Two bucket-level settings that sound like they would interfere do not. Uniform
+bucket-level access, which disables object ACLs and leaves IAM as the only
+grant, is the posture to want and does not restrict signed URLs. Neither does
+public access prevention: a signed URL derives its authority from the signing
+service account's own IAM permissions rather than from any public grant, so it
+keeps working under both. The corollary is the one that matters for review —
+under UBLA the signing service account's IAM role *is* the ceiling on every
+URL it issues, so that role is the thing to scope down.
+
+#### Azure: a SAS binds less than you would expect
+
+Two things about `generate_blob_sas` have to be read off the source, because
+its own docstring is wrong about the first. `protocol` is not defaulted: pass
+nothing and no `spr` field is emitted at all, which leaves the SAS usable over
+plain HTTP — while the docstring states that the default is HTTPS. State it.
+The second is that `permission` and `expiry`, ordinarily required, are both
+waived by supplying a `policy_id`: the resulting token carries only `si`, `sr`,
+`sv`, and the signature, and takes its permission and its expiry from a stored
+access policy on the container that no amount of reading the codebase will
+show you. That is one of the two forms the revocation table above prefers, so
+the trade is explicit — the withdrawable SAS is also the one whose grant is
+invisible in code, and reviewing it means reading the container's policy.
+
+```python
+from datetime import datetime, timedelta, timezone
+
+from azure.storage.blob import (
+    BlobSasPermissions,
+    BlobServiceClient,
+    generate_blob_sas,
+)
+
+
+# Wrong: signed with the account key, so the only way to withdraw it is to
+# regenerate that key and break every other SAS in the account; no protocol is
+# stated, so the token is valid over HTTP.
+def sas_upload_url_account_key(*, tenant_id, account_key):
+    return generate_blob_sas(
+        account_name="acct",
+        container_name="uploads",
+        blob_name=quarantine_key(tenant_id),
+        account_key=account_key,
+        permission=BlobSasPermissions(create=True, write=True),
+        expiry=datetime.now(timezone.utc) + timedelta(hours=1),
+    )
+
+
+# Correct: signed with a user-delegation key, which can be revoked without
+# regenerating the account key and never brings that key into the process;
+# HTTPS is stated rather than assumed; the window is minutes. There is no
+# size argument to add, because Azure has no SAS field for one — the byte
+# ceiling belongs to the verification step that follows.
+def sas_upload_url(*, tenant_id, service: BlobServiceClient):
+    start = datetime.now(timezone.utc)
+    expiry = start + timedelta(minutes=2)
+    return generate_blob_sas(
+        account_name=service.account_name,
+        container_name="uploads",
+        blob_name=quarantine_key(tenant_id),
+        user_delegation_key=service.get_user_delegation_key(start, expiry),
+        permission=BlobSasPermissions(create=True, write=True),
+        expiry=expiry,
+        start=start,
+        protocol="https",
+    )
+```
+
+Verified against `azure-storage-blob` 12.30.0 on 9 Aug 2026. The delegation
+key carries its own seven-day maximum, so the `expiry` above is bounded by the
+key as well as by the argument.
+
+**Write-time.** When generating a delegated upload URL, settle the provider
+before the constraints, because the provider decides which of them can be
+signed at all: on GCS write the `x-goog-content-length-range` header into the
+same call as the key and the expiry, on S3 reach for the presigned POST rather
+than the PUT the moment a size matters, and on Azure write the verification
+step in the same change as the SAS, since nothing in the token will bound the
+bytes. State the protocol and the expiry explicitly on every provider rather
+than inheriting a default, and sign with the narrowest credential the platform
+offers — a session credential on S3, a scoped service account on GCS, a
+user-delegation key on Azure.
 
 ## SVG and other active content
 
@@ -646,7 +922,9 @@ does not delete its file, so erasure and retention have to remove the bytes
 explicitly. One property of delegated delivery bounds what an erasure can
 promise, and it belongs here rather than there: a signed URL that has already
 been issued cannot be recalled, so the only controls over it are the expiry it
-was given and rotation of the credential that signed it. That is the practical
+was given, rotation of the credential that signed it, and, on Azure alone,
+revocation of the stored access policy or user-delegation key behind it on a
+timeline Microsoft does not publish. That is the practical
 argument for short expiries on private content — every minute of lifetime is a
 minute an erasure cannot reach. A generated export archive is this same
 delivery primitive wrapped around a subject's whole record, with its own
@@ -677,6 +955,18 @@ leaves behind on a versioned bucket, is in `data-lifecycle-and-privacy.md`.
       the callback that announced the upload.
 - [ ] The upload state machine has a terminal rejected state and a sweeper for
       objects that were uploaded and never confirmed.
+- [ ] On S3, a bucket taking multipart uploads carries an
+      `AbortIncompleteMultipartUpload` lifecycle rule with a
+      `DaysAfterInitiation` value — the parts of an abandoned upload bill as
+      storage and appear in no object listing.
+- [ ] On GCS, the same rule under Object Lifecycle Management: an
+      `AbortIncompleteMultipartUpload` action keyed on `age`, for the same
+      invisible-cost reason.
+- [ ] On Azure there is nothing to configure, and that is the finding: blocks
+      left by a `Put Block` that no `Put Block List` ever committed are
+      collected on a fixed seven-day schedule no policy can shorten, so the
+      cleanup is the application's and the storage-versus-listing gap is what
+      there is to monitor.
 - [ ] Storage keys are opaque and disclose no name, address, sequence, or
       original filename.
 - [ ] Private objects have no permanent public URL, and any CDN in front of one
