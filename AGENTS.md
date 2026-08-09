@@ -26,10 +26,13 @@ third-party dependency vetting and maintained-package decisions including the
 development-only package that reaches the production requirements file,
 file uploads end to end (content validation, storage keys that disclose nothing,
 object-store configuration and the platform state a code review cannot see,
-delegated upload URLs and the constraints each one has to bind,
+per-tenant buckets against a shared bucket with prefixes, delegated upload URLs
+and the constraints each one has to bind across S3, GCS, and Azure — including
+which of them can bind a size and what withdrawing one early actually costs —
 direct-to-storage uploads held in a quarantine prefix until the server
-verifies them against the store, callback and event trust, private downloads,
-and CDN caching of private objects),
+verifies them against the store, scan verdict caching and content disarm,
+callback and event trust, the metadata a store echoes back on serve, private
+downloads, and CDN caching of private objects),
 async/Channels including the subscription on its subscribe and publish paths,
 caching, migrations, signals, email/notification abuse, algorithmic resource
 exhaustion and the server-enforced bound every caller-controlled input that

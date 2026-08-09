@@ -69,10 +69,14 @@ tooling and profilers reachable in production, and the container image as a
 build artifact with a non-root user, a pinned base, and no secret left in a
 layer), file uploads from the request through storage to the reader
 (content validation, storage keys that disclose nothing, object-store
-configuration and the platform state a code review cannot answer, delegated
-upload URLs and what each unbound constraint permits, direct-to-storage
-uploads held in quarantine until the server verifies them against the store,
-callback trust, private downloads, and CDN cache keys for private objects),
+configuration and the platform state a code review cannot answer, per-tenant
+buckets against a shared bucket with prefixes, delegated upload URLs and what
+each unbound constraint permits across S3, GCS, and Azure — which of the three
+can bind a size, and what withdrawing one early costs on each —
+direct-to-storage uploads held in quarantine until the server verifies them
+against the store, scan verdict caching and content disarm, callback trust, the
+metadata a store echoes back on serve, private downloads, and CDN cache keys
+for private objects),
 path traversal on a read whose path the request named, which is the half of
 that boundary with no upload in it and where `os.path.join` is not a
 containment function -- it never normalizes `..` and an absolute value discards

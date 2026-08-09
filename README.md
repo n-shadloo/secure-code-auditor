@@ -60,14 +60,17 @@ rule for generating that code.
 - Privileged access: impersonation ("log in as user"), break-glass and
   just-in-time elevation, and the operator audit identity both require.
 - File uploads: type/content validation, safe names and storage keys that leak
-  nothing, inert storage and serving, the object-store settings a code review
-  can see and the platform state it cannot, delegated upload URLs and what
-  each unbound constraint hands an attacker, direct-to-storage uploads with a
-  quarantine prefix and a verification step that reads size and type back from
-  the store, callback and event-notification trust, SVG, image/archive bombs,
-  size/count limits, quotas, private downloads, the choice between proxying
-  and signing, and CDN cache keys that turn a signed URL into a cross-user
-  read.
+  nothing, inert storage and serving, the metadata an object store echoes back
+  on serve, the object-store settings a code review can see and the platform
+  state it cannot, per-tenant buckets against a shared bucket with prefixes,
+  delegated upload URLs and what each unbound constraint hands an attacker
+  across S3, GCS, and Azure — which of the three can bind a size at all, and
+  what it takes to withdraw a URL early on each — direct-to-storage uploads
+  with a quarantine prefix and a verification step that reads size and type
+  back from the store, scan verdict caching and content disarm, callback and
+  event-notification trust, SVG, image/archive bombs, size/count limits,
+  quotas, private downloads, the choice between proxying and signing, and CDN
+  cache keys that turn a signed URL into a cross-user read.
 - Injection: the sink inventory every other reference defers to — every
   interpreter a request can reach, and which file owns each one — with the
   method for tracing a source to it, worked end to end on the stored field

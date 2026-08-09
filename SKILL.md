@@ -21,7 +21,7 @@ license: MIT
 allowed-tools: Read, Grep, Glob, Bash
 metadata:
   author: n-shadloo
-  version: 1.27.0
+  version: 1.28.0
 ---
 
 # secure-code-auditor
@@ -96,7 +96,7 @@ you rather than by OWASP number.
 | Where DRF runs the object check and the routes that skip it, `@action` and function-level authz (BFLA), serializer over-exposure/mass assignment, pagination/filter/ordering leakage, throttling mechanics and the owned atomic counter a limit that must hold needs instead, schema and browsable-API exposure, endpoint inventory and shadow routes, versioning and deprecation, bulk endpoints, unsafe DRF defaults, DRF+CSRF | `references/api-drf-specific.md` |
 | GraphQL endpoints and schemas, resolver-level authorization and nested traversal, all-fields types, query depth/alias/token/cost limits, introspection and error masking, mutation inputs and nested writes, batching, persisted queries, N+1 as resource exhaustion, Strawberry and graphene-django defaults, Django Ninja routes with no `auth=` | `references/graphql-and-alternative-api-surfaces.md` |
 | Async/ASGI boundaries, sync ORM access, task/request context, WebSocket/Channels origin, authentication, authorization, and limits, subscriptions on the subscribe and publish paths | `references/async-and-channels.md` |
-| File uploads, type/content validation, safe names and storage-key design, object-storage configuration and bucket exposure, presigned URLs and direct-to-storage uploads, quarantine and promotion, callback trust, SVG, image/archive bombs, size/count/quotas, private downloads, proxy vs signed URL, CDN caching of private objects | `references/file-uploads.md` |
+| File uploads, type/content validation, safe names and storage-key design, object-storage configuration and bucket exposure, per-tenant bucket vs shared prefix, delegated upload URLs across S3 presigned POST, GCS V4 signed URLs, and Azure SAS — what each binds, what caps its size, and what it takes to withdraw one, quarantine and promotion, scan verdict caching and CDR, callback trust, SVG, image/archive bombs, size/count/quotas, metadata reflected on serve, private downloads, proxy vs signed URL, CDN caching of private objects | `references/file-uploads.md` |
 | AI agents and MCP tool surfaces, DRF viewsets republished as tools, agent tokens and audience validation, tool scope vs user permissions, model output and retrieved content as untrusted input, prompt injection reaching a backend sink, per-agent cost/concurrency limits, tool-call confirmation and audit | `references/agent-and-llm-interfaces.md` |
 | Database roles and privilege separation, row-level security, tenant context on pooled connections, verified DB TLS, field-level encryption and blind indexes, raw-SQL isolation bypass, NoSQL/Redis injection, read-replica staleness, transaction isolation and the serialization-failure retry a raised level requires, connection exhaustion, backups and production-data copies | `references/data-layer-and-database.md` |
 | Deletion completeness and erasure, soft-delete tombstones leaking through related-object/admin/serializer/raw paths, files left after a row is deleted, retention and scheduled purges, anonymization vs pseudonymization, personal-data inventory and model-layer classification, data export/DSAR endpoints, copies in indexes, caches, history tables, and lower environments | `references/data-lifecycle-and-privacy.md` |
@@ -223,7 +223,9 @@ cache-mediated leak that a CDN cache key dropping its signing parameters is
 one case of, and the traversal question on a read whose path the request named.
 `references/data-lifecycle-and-privacy.md` keeps whether the bytes
 are gone, while `references/file-uploads.md` keeps only the fact that an
-already-issued signed URL is beyond the reach of any erasure.
+already-issued signed URL is beyond the reach of any erasure — and the
+per-provider qualification of that fact, since an Azure SAS is the one form
+that can be withdrawn without rotating the credential that signed it.
 
 **The database as a boundary.** `references/data-layer-and-database.md` owns
 roles, row-level security, connection verification, encrypted columns, the
