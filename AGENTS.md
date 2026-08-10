@@ -116,7 +116,8 @@ hardware that runs them, upgrade-on-login and the wrapped-hasher migration that
 moves the dormant accounts it never reaches, randomness and token generation,
 scoped constant-time comparison, per-purpose salt discipline on signed values
 including the salt-namespace collision Django fixed in its own signed-cookie
-helper and the transitional setting that keeps accepting the old derivation,
+helper and the transitional setting that accepts the old derivation by default
+on 5.2 and 6.0 but no longer on 6.1,
 key lifecycle and envelope encryption with versioned rotation and a data key
 wrapped by a KMS under an encryption context bound to its row, and post-quantum
 posture), the DNS-published configuration that decides whether the domain

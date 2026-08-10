@@ -185,8 +185,10 @@ rule for generating that code.
   secrets live and how they reach the process; `SECRET_KEY` rotation and what
   it does and does not invalidate; and the ordered response to a leak.
 - Configuration: the `SECURE_*`/`SESSION_*`/`CSRF_*` matrix, the signed-cookie
-  salt collision Django fixed in June 2026 and the transitional setting that
-  goes on accepting the old cookies until you turn it off, CORS, headers, the
+  salt collision Django fixed in June 2026 and the transitional setting whose
+  default flipped in 6.1, so whether the old cookies are still accepted is a
+  question about the installed line rather than about the settings file, CORS,
+  headers, the
   DNS records that decide whether your domain can be forged (SPF's ten-lookup
   ceiling, DKIM alignment through a third-party sender, and the DMARC rollout
   under the 2026 specification that removed `pct` and added `np`), CAA and
@@ -233,7 +235,10 @@ rule for generating that code.
   the edge rather than to this repository, request smuggling between two
   parsers that frame a request differently and cache deception by a rule that
   decides what is cacheable from what a URL looks like, each recorded as a
-  cross-team recommendation with the repository-side half named.
+  cross-team recommendation with the repository-side half named — for
+  smuggling that half is the pinned version of the application server and of
+  whichever async worker its command line selects, which is an ordinary
+  dependency finding even though the exposure itself is not.
 - Supply chain: third-party dependency vetting, maintained-package gates, the
   development-only package that reaches the production requirements file and
   ships a debugger with it, pinning, hashing, advisory scanning, EOL
@@ -283,6 +288,10 @@ Django are flagged. Each area carries the date it was last checked.
 | 9 Aug 2026 | gRPC and protobuf | The stack enters the index instead of being deferred on. `grpcio` 1.83.0 (23 Jul 2026) and `protobuf` 7.35.1 (11 Jun 2026) are **recommend, pinned**, the protobuf floors being `>=6.33.5` on the 6.x line or `>=5.29.6` on 5.x for the two recursion advisories, both of which the current 7.x line already clears. `grpcio-tools` 1.83.0 is **recommend as a build-time dependency** and does not belong in a production requirements file. The grpcio floor is unusual and is stated as such: neither 2024 C-core advisory that reaches Python has a PyPI-ecosystem record in OSV, so `pip-audit` raises neither against an old wheel and currency is the control rather than a scanner result. `django-socio-grpc` 0.25.0 (24 Sep 2025) moves from a scoping note to **existing-install audit only** — pre-1.0 after five years, no Django classifier at all, `django>=4.2` with no upper bound, `djangorestframework` with no floor, no release in ten months, and authentication, permission, interceptor, server-option and client-auth defaults that are all open. |
 | 9 Aug 2026 | gRPC research corrections | Four claims in the research for this release did not survive re-checking against PyPI and the distributions themselves. `django-socio-grpc` is 0.25.0 from 24 Sep 2025, not 0.24.4 from May — two releases missed, and a ten-month gap rather than fifteen. The three grpcio siblings were each reported at a different older version when `grpcio-reflection`, `grpcio-health-checking` and `grpcio-channelz` all ship at 1.83.0 in lockstep with grpcio. The Django and DRF floors the research left unsettled are in the distribution metadata and are the main reason the row is audit-only. And OSV holds no PyPI-ecosystem record for either grpcio CVE, nor any advisory at all for django-socio-grpc, which settles the coverage question the research flagged and is what the grpcio row is now built around. |
 | 9 Aug 2026 | Pipeline research corrections | Four claims in the research for this release were wrong or unsettled and were fixed against primary sources. `cyclonedx-py` records no hashes — generating from a `--generate-hashes` requirements file emits components with no `hashes` member in either mode, which the research had left open and which is what lets the guidance say plainly that only `--require-hashes` is integrity evidence. No `setup-trivy` tag was safe in the March 2026 compromise: all seven were force-pushed, so the research's "safe baseline v0.2.6" named the exact reference that was hijacked, and the Docker Hub images were a second wave on 22 March rather than part of the 19 March window. `actions/attest` is the current action rather than `attest-build-provenance`, it needs three permissions rather than one, and a step given `sbom-path` produces an SBOM attestation instead of provenance. cosign is v3.1.3 as of 6 Aug 2026, not v3.1.1. |
+| 10 Aug 2026 | Django currency re-check | A currency report for this date was checked against the tree and largely did not survive it: the baseline it called stale was already Django 6.1, 6.0.8, and 5.2.17, and on eight library rows the report was behind the index rather than ahead of it, including DRF, django-allauth, social-auth-app-django, django-hijack and PyCA cryptography. The index date therefore stays at 9 Aug 2026, because nothing in it was re-checked against PyPI on this date and re-dating it would assert a sweep that did not happen. Five findings the tree genuinely lacked did land, all of them application-code patterns rather than version pins. |
+| 10 Aug 2026 | Signed-cookie default flip | `SIGNED_COOKIE_LEGACY_SALT_FALLBACK` defaults to `False` from Django 6.1, released 5 Aug 2026, so the default now depends on the installed line: 5.2 and 6.0 still accept the pre-June-2026 derivation and 6.1 does not. The skill previously stated the `True` default without qualification, which made it wrong on the current release. The migration consequence is recorded with it — cookies minted before the fix stop validating on 6.1 — along with the ruling that re-enabling the fallback to rescue them is the wrong response. |
+| 10 Aug 2026 | Application-server floors | Request smuggling stays a cross-team recommendation and produces no code finding, unchanged. What was missing is the half that is a repository finding: `gunicorn>=22.0.0` for CVE-2024-1135 and CVE-2024-6827, scored identically at 7.5 HIGH by the GitHub Advisory Database and IBM X-Force, plus the async-worker floors that arrive through a `-k` flag rather than as a chosen dependency — `eventlet>=0.40.3`, `gevent>=24.10.1`, and `tornado>=6.5.0`. uvicorn and Daphne are recorded as no advisory found, which is not a clean bill. |
+| 10 Aug 2026 | Cryptographic floor | PyCA `cryptography` gains a minimum-safe floor at the 48.x line, which it had never carried: CVE-2026-39892, a buffer overflow on a non-contiguous buffer; CVE-2026-34073, name constraints skipped under a wildcard DNS SAN; and CVE-2026-26007, a private-key leak on the binary elliptic curves whose remediation deprecates the SECT curves and so implies a migration rather than only an upgrade. The recommended pin stays 50.0.0. |
 
 ## Install
 

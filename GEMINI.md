@@ -100,8 +100,9 @@ because its verification does not re-derive through `encode` the way PBKDF2's
 does and a wrapper missing that rejects every correct password — randomness and
 token generation, constant-time comparison scoped to where it matters,
 per-purpose salt discipline on signed values — including the signed-cookie salt
-collision Django fixed in June 2026 and the transitional setting that goes on
-accepting the old derivation until 7.0 — key lifecycle and envelope encryption
+collision Django fixed in June 2026 and the transitional setting that accepts
+the old derivation on 5.2 and 6.0, defaults to off on 6.1, and is removed in
+7.0 — key lifecycle and envelope encryption
 down to a KMS data key wrapped under an encryption context bound to its own
 row, and post-quantum posture), the configuration published in
 DNS rather than in code (SPF lookup limits and alignment, DKIM signing through
