@@ -28,12 +28,18 @@ Django codebases and usually settled by reading two files; then verification as
 a six-item gate — attacker control, reachability, the protections that should
 have stopped it, the insufficiency of whatever sanitization is present,
 concrete impact, and a catalogue of the benign Django and DRF patterns that
-look exactly like defects — with anything failing attacker control or matching
+look exactly like defects, each discharged against retrieved text rather than
+against remembered behavior — with anything failing attacker control or matching
 a benign pattern dropped rather than reported as a caveat, and everything that
-survives carrying the shortest source-to-sink path it was confirmed on; and a
+survives carrying the shortest source-to-sink path it was confirmed on; every
+phase handing the next a written artifact and closing on a property of its
+coverage rather than on an amount of reading, which is what lets a tree too
+large to read closely be enumerated in full while only the close reading is
+rationed per area and any sampled family is recorded as sampled; and a
 coverage ledger throughout that keeps what was examined and found clean apart
 from what was never opened, since the report's limitations section is written
-from the second of those; and a mapping of that sweep onto the OWASP Web
+from the second of those, and that is read back at each phase boundary rather
+than recalled; and a mapping of that sweep onto the OWASP Web
 Security Testing Guide at section granularity — not at test granularity,
 because the guide states its own identifiers change between versions — naming
 the sections this skill covers and declaring the client-side chapter, the

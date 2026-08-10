@@ -44,7 +44,15 @@ enumerated is not reviewed by a skill that knows everything about routes. So
 the sweep is a procedure of its own, run inventory-first: establish every way
 a request, a message, or a schedule reaches application code, work out which
 principals arrive there, and derive the reading list from that rather than
-from the files that looked interesting. It ends in a coverage ledger that
+from the files that looked interesting. Each phase hands the next one a written
+artifact and ends on a property of its coverage rather than on an amount of
+reading, because a phase that hands forward an impression makes the next one
+re-derive it, and re-derivation is how a review narrows onto whatever it read
+most recently. Where the tree is larger than the reading available, the
+inventory is still completed over all of it and only the close reading is
+rationed — per area rather than spent on the first lead, and with any family
+read as a sample recorded as a sample, so that a partial audit is not delivered
+in the shape of a complete one. It ends in a coverage ledger that
 keeps *examined and clean* separate from *not examined*, because a report that
 blurs the two is read as though everything was covered. That same file maps the
 sweep onto the OWASP Web Security Testing Guide, section by section, and says

@@ -21,7 +21,7 @@ license: MIT
 allowed-tools: Read, Grep, Glob, Bash
 metadata:
   author: n-shadloo
-  version: 1.38.0
+  version: 1.39.0
 ---
 
 # secure-code-auditor
@@ -67,7 +67,7 @@ decide which file is authoritative.
 
 | Concern | Reference file |
 |---|---|
-| How a codebase is swept before anything is judged: the phase order, the entry-point inventory across URLconf chains, routers and actions, Django Ninja, GraphQL, gRPC, Channels, Celery and beat, management commands, signals, admin, webhooks, MCP tools, and middleware, the principals and trust boundaries a Django backend actually distinguishes, source-to-sink pairing, hypothesis ordering by impact against effort to confirm, the six-item gate every hypothesis discharges before it is written as a finding and the disposition rule for one that fails an item, the Django and DRF patterns commonly mistaken for findings together with the question that decides each, the coverage ledger that keeps examined-and-clean apart from not-examined, the attack chains worth searching for with the file that owns each hop, and the WSTG mapping at section granularity naming which of the testing guide's sections this skill covers, which it declares non-goals, and why any test identifier it cites is version-tagged | `references/01-audit-workflow.md` |
+| How a codebase is swept before anything is judged: the phase order together with the artifact each phase hands the next and the coverage property that closes it, the entry-point inventory across URLconf chains, routers and actions, Django Ninja, GraphQL, gRPC, Channels, Celery and beat, management commands, signals, admin, webhooks, MCP tools, and middleware, the principals and trust boundaries a Django backend actually distinguishes, source-to-sink pairing with the intervening functions retrieved rather than the path inferred from its two ends, hypothesis ordering by impact against effort to confirm, the budget rule for a tree too large to read closely — enumerate exhaustively, read selectively, and record a sampled family as sampled — the six-item gate every hypothesis discharges before it is written as a finding, each discharge resting on retrieved text rather than remembered behavior, and the disposition rule for one that fails an item, the Django and DRF patterns commonly mistaken for findings together with the question that decides each, the coverage ledger that keeps examined-and-clean apart from not-examined and is read back at each phase boundary rather than recalled, the attack chains worth searching for with the file that owns each hop, and the WSTG mapping at section granularity naming which of the testing guide's sections this skill covers, which it declares non-goals, and why any test identifier it cites is version-tagged | `references/01-audit-workflow.md` |
 | Method & severity model including how a race and a privacy failure are rated, the baseline-severity table that makes an ordinary finding class reproducible beside the rubric that decides the borderline one, the evidence line every finding carries, report format, the ASVS 5.0 chapter mapping with the chapters this skill treats as non-goals, mode selection, the write-time secure-default contract and the index of which file holds each generation moment's rule, what to do when a secure default conflicts with the request, the security-decisions note write-time returns instead of a findings report, and the two-mode convention every control follows | `references/00-methodology-and-severity.md` |
 
 ### The OWASP Top 10:2025 spine
@@ -122,8 +122,9 @@ codebase is swept; `references/00-methodology-and-severity.md` owns how a
 finding is scored and written. The split is procedural against evaluative. The
 first decides what gets opened and in what order, and carries the entry-point
 inventory, the principal and trust-boundary model, hypothesis ordering, the
-coverage ledger, and the rule that a chain is one finding at the severity of
-its outcome. The second keeps the severity rubric, the confidence scale, the
+budget rule for a tree larger than the reading available to it, the coverage
+ledger, and the rule that a chain is one finding at the severity of its
+outcome. The second keeps the severity rubric, the confidence scale, the
 finding schema, the ASVS mapping, the report structure, and the standing
 write-time contract. The handoff runs one way at write-up: the ledger's
 not-examined lines become the report's limitations section, whose shape the

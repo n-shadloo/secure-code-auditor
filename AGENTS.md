@@ -28,10 +28,17 @@ cheapest to settle; then verification as a gate rather than as advice, where a
 hypothesis discharges attacker control, reachability, the protections that
 should have stopped it, the insufficiency of any sanitization present,
 concrete impact, and a catalogue of benign Django and DRF patterns before it
-is written up, and one that fails attacker control or matches a benign pattern
-is dropped rather than reported with a hedge; and throughout, a coverage ledger
-that records what was examined and found clean separately from what was never
-opened, which is what the report's limitations section is written from.
+is written up, each discharge resting on retrieved text rather than on what a
+decorator or a base class is remembered to do, and one that fails attacker
+control or matches a benign pattern is dropped rather than reported with a
+hedge. Each phase hands the next a written artifact and closes on a property of
+its coverage rather than on an amount of reading, so a tree too large to read
+closely is still enumerated in full while only the close reading is rationed,
+per area rather than spent on the first lead, with any family read as a sample
+recorded as a sample. Throughout, a coverage ledger records what was examined
+and found clean separately from what was never opened, which is what the
+report's limitations section is written from, and it is read back at each phase
+boundary rather than carried in the head.
 Confirmed issues are escalated one step before write-up, so a chain is
 reported as one finding at the severity of its outcome with its links named
 rather than as several low-severity findings nobody connects. Coverage
