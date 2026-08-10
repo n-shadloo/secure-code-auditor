@@ -1,11 +1,18 @@
 # Methodology, Severity, and Report Format
 
-This file owns **how a review is conducted and how its output is written** —
-mode selection, the severity rubric and the confidence score beside it, the
-finding schema and report structure, the ASVS 5.0 chapter mapping and when to
-cite one, the standing write-time contract, and the convention that every
-control in this skill is stated in a review form and a write-time form
-together. It owns no vulnerability and no control. Each per-task rule lives
+This file owns **how a finding is scored and written** — mode selection, the
+severity rubric and the confidence score beside it, the finding schema and
+report structure, the ASVS 5.0 chapter mapping and when to cite one, the
+standing write-time contract, and the convention that every control in this
+skill is stated in a review form and a write-time form together. It does not
+own how a codebase is swept. The phase order, the entry-point inventory, the
+principal and trust-boundary model, hypothesis generation and its ordering,
+the coverage ledger, and attack-chain reasoning are in `01-audit-workflow.md`,
+which review-time loads first and which hands this file the coverage that
+"Report structure" below turns into a limitations section. The split is
+procedural against evaluative: that file decides what gets opened and in what
+order, this one decides what an opened file is worth once something turns up
+in it. It owns no vulnerability and no control. Each per-task rule lives
 beside the control it governs, in the reference that owns it, and the
 write-time table below is an index to those files rather than a copy of them.
 `SKILL.md` owns the router that chooses between them and the ownership rules
@@ -46,7 +53,9 @@ that settle a topic more than one file could claim.
 ## Choosing the mode
 
 - **Review-time** when asked to review/audit/scan, when code is pasted for a
-  security opinion, or right after a feature is built. Output: a findings report.
+  security opinion, or right after a feature is built. Load
+  `01-audit-workflow.md` before the topic file — it owns the sweep this report
+  is written from. Output: a findings report.
 - **Write-time** when generating or editing backend code. Output: secure code
   plus a security-decisions note. The standing defaults, the rule for when one
   of them conflicts with what was asked for, and the shape of the note are all

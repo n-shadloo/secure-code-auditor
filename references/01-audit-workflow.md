@@ -1,0 +1,480 @@
+# The Audit Workflow
+
+This file owns **how a codebase is swept**: the phase order, the entry-point
+inventory, the principal and trust-boundary model, hypothesis generation and
+the order the work runs in, the coverage ledger, and the attack-chain
+reasoning that turns several confirmed links into one finding. It owns no
+vulnerability and no control — every phase names the reference that owns the
+rules for whatever it turns up.
+
+`00-methodology-and-severity.md` owns the other half: how a finding is scored
+and written, which is the severity rubric, the confidence scale, the finding
+schema, the ASVS mapping, the report structure, and the standing write-time
+contract. The split is procedural against evaluative. This file decides what
+gets opened and in what order; that one decides what an opened file is worth
+once something turns up in it. Neither works alone — a sweep with no scoring
+model produces a list nobody can prioritize, and a scoring model with no sweep
+scores only what someone happened to look at. `SKILL.md` owns the router that
+sends you to the topic files both of them point at.
+
+## Contents
+- [Principle](#principle)
+- [Phase 0 — scope, mode, and what the repository cannot tell you](#phase-0--scope-mode-and-what-the-repository-cannot-tell-you)
+- [Phase 1 — entry-point inventory](#phase-1--entry-point-inventory)
+- [Phase 2 — principals and trust boundaries](#phase-2--principals-and-trust-boundaries)
+- [Phase 3 — sources to sinks](#phase-3--sources-to-sinks)
+- [Phase 4 — hypothesis generation and ordering](#phase-4--hypothesis-generation-and-ordering)
+- [Phase 5 — verification](#phase-5--verification)
+- [Phase 6 — the coverage ledger](#phase-6--the-coverage-ledger)
+- [Attack-chain reasoning](#attack-chain-reasoning)
+- [Write-time: the inventory run forward](#write-time-the-inventory-run-forward)
+- [Review checklist](#review-checklist)
+
+## Principle
+
+A review is bounded by what the reviewer thought to open. Depth of analysis,
+quality of fix, and accuracy of severity are all properties of code that was
+read, and none of them says anything about the route nobody enumerated. So the
+sweep is built inventory-first: establish the complete set of places where
+execution begins on input the application did not author, and derive the work
+from that set rather than from the files that looked interesting.
+
+Two consequences make this a procedure rather than advice.
+
+- **Coverage has to be recorded, not felt.** An unexamined surface and a clean
+  one read identically in a report that does not separate them, and the reader
+  will assume the second. The ledger in phase 6 exists to keep the difference
+  visible.
+- **Order is a decision with a cost.** Time spent on a low-yield class is time
+  not spent on the authorization surface. The default order in phase 4 is the
+  one that finds the most per file read in a Django codebase, and departing
+  from it should follow from something specific that was seen rather than from
+  a keyword that matched.
+
+## Phase 0 — scope, mode, and what the repository cannot tell you
+
+Settle three things before reading application code: which mode is running,
+what the tree contains, and where the tree stops.
+
+Mode decides the output rather than the sweep. Review-time runs the phases
+below over code that exists and ends in a findings report; write-time runs the
+same inventory questions forward over code that does not exist yet. Both are
+defined in `00-methodology-and-severity.md`, "Choosing the mode", and the
+forward form is at the end of this file.
+
+Scope is the set of directories, apps, and services in front of you, stated
+before the sweep rather than inferred from it afterwards. Where a service the
+application depends on is outside it, that is a scope decision and belongs in
+the ledger — not a gap discovered at write-up time.
+
+### Principle layer
+
+The third question is the one that produces wrong findings, and it fails in
+both directions:
+
+- **Absence in the repository is not evidence of absence in production.** No
+  rate limit in the code does not mean no rate limit runs; the gateway in
+  front of the application may enforce one. Reporting the absence as a finding
+  asserts something about a system that was never read.
+- **An assertion in the repository is not evidence of presence.** A comment
+  saying the proxy strips the header, a README describing a WAF rule, a
+  setting named `ENFORCE_TENANT_ISOLATION` — none of these is the control.
+  Each is a claim about a control, made by someone who may have been right on
+  the day they wrote it.
+
+Both errors have one fix. Name the thing, say which side of the boundary it
+sits on, and record it as a question addressed to whoever operates that side,
+written together with the answer that would settle it. A question is an honest
+output. A finding resting on an assumption is not, and neither is silence,
+because silence is read as a pass.
+
+### Django & DRF implementation layer
+
+`a03-software-supply-chain.md`, "The artifact boundary" already draws this
+line for the build pipeline and states the form the output takes. The rows
+below extend the same rule to the rest of the environment rather than
+restating it. Each row that matters to a finding is carried as
+confirm-with-operator; none of them is assumed in either direction.
+
+| Not in the tree | The question that settles it |
+|---|---|
+| Reverse-proxy and ingress configuration, where it is not committed | How many proxies sit in front of the application, and which forwarded headers does the edge strip and re-set? `deployment-and-runtime.md`, "Reverse proxy and forwarded headers" states what the answer has to be for a client IP to mean anything |
+| WAF and API-gateway rules | Which authentication, filtering, and rate limits apply before a request reaches Django, and does any of it fail open when the edge is bypassed? `a06-insecure-design.md`, "Rate limiting and anti-automation" |
+| Object-store bucket policy and public-access settings | Is the bucket reachable anonymously, and does a policy or ACL grant more than the application's own credential does? `file-uploads.md`, "Object storage configuration" |
+| Orchestrator and deployment-platform state | Does anything at deploy time enforce the posture the image only declares — the non-root user, the read-only filesystem, the dropped capabilities? `deployment-and-runtime.md`, "Container images" |
+| Secret-manager contents and the values actually injected | Does the running process receive the values the settings module reads, and was any of them ever committed to this history? `service-identity-and-secrets.md`, "Where secrets live and how they reach the process" |
+| Registry and CI runner state | Is the signature or attestation present beside the image, and does anything block a rollout without one? `a03-software-supply-chain.md`, "The artifact boundary" |
+
+**Write-time.** When generating code whose correctness depends on something
+outside the repository — a header the proxy is trusted to set, a bucket the
+policy is trusted to keep private, an environment variable that has to exist —
+write the dependency as a startup check or a comment at the site in the same
+edit, and carry it into the security-decisions note as caller-owned, because
+an assumption held only in the author's head is indistinguishable at review
+time from an oversight.
+
+## Phase 1 — entry-point inventory
+
+This is the operational core of the sweep. Everything after it is derived from
+it, and everything before it is preparation for it.
+
+### Principle layer
+
+An entry point is any place where execution begins on input the application
+did not author: a request, a message, a schedule, a signal, a console
+invocation. Enumerate by construct rather than by convention, because the
+families that get missed are the ones that do not look like a view — a task
+consuming a queue, a command an operator runs, a receiver firing on a save.
+
+Three rules keep the inventory honest.
+
+- **Enumerate from the declaration, not from the documentation.** A generated
+  schema, an API reference, and a README each describe what someone pointed
+  them at. The declaration is what runs.
+- **Resolve to the full path, not the leaf pattern.** A route is the
+  concatenation of every prefix an `include()` chain contributed, and the leaf
+  module is the one file that does not contain that information.
+- **A family with no members is a recorded result.** "No Channels routing in
+  this project" belongs in the ledger. "Channels not mentioned" does not,
+  because the next reader cannot tell it apart from an oversight.
+
+### Django & DRF implementation layer
+
+Each row is a family, where a Django project declares it, what finds it, and
+the reference that owns its rules. The rules are not repeated here; the point
+of the row is that the family was looked for at all.
+
+| Family | Declared in | Find it with | Rules |
+|---|---|---|---|
+| URLconf routes | `ROOT_URLCONF` and every module an `include()` chain reaches | `path(`, `re_path(`, `include(`, `format_suffix_patterns` | `authorization-architecture.md`, "Default-deny architecture" |
+| DRF routers, viewsets, and views | a `urls.py` that constructs a router; the view modules it names | `DefaultRouter`, `SimpleRouter`, `.register(`, `ViewSet`, `APIView`, `GenericAPIView` | `api-drf-specific.md`, "Where the object check runs, and the routes that skip it" |
+| Viewset actions, including `detail=False` | the viewset body, not the router | `@action(` | `api-drf-specific.md`, "Function-level authorization on actions (API5)" |
+| Django Ninja operations | the module that constructs `NinjaAPI()` or a `Router()` | `NinjaAPI(`, `Router(`, `@api.`, `@router.` | `graphql-and-alternative-api-surfaces.md`, "Django Ninja: nothing is authenticated by default" |
+| GraphQL fields and resolvers | the schema module and every type it composes | `strawberry.type`, `ObjectType`, `Mutation`, `resolve_`, `DjangoObjectType` | `graphql-and-alternative-api-surfaces.md`, "Resolver authorization: a check at the root is not a check" |
+| gRPC methods | the servicer class, and the `service` blocks in the `.proto` behind it | `grpc.server(`, `_Servicer_to_server`, `service ` in `*.proto` | `graphql-and-alternative-api-surfaces.md`, "gRPC: nothing from the DRF request cycle applies" |
+| Channels consumers | `ASGI_APPLICATION` and the routing module it reaches | `ProtocolTypeRouter`, `URLRouter`, `Consumer`, `websocket_urlpatterns` | `async-and-channels.md`, "WebSocket authentication and origin validation" |
+| Celery tasks and beat schedules | task modules, `beat_schedule`, and the `PeriodicTask` rows a database scheduler holds | `@shared_task`, `@app.task`, `.delay(`, `.apply_async(`, `beat_schedule` | `a08-integrity-and-deserialization.md`, "Celery and task queues" |
+| Management commands | `<app>/management/commands/` | `BaseCommand`, `add_arguments`, `call_command(` | `a05-injection.md`, "OS command injection" |
+| Signals and lifecycle hooks | `signals.py` and whatever `AppConfig.ready()` imports | `@receiver`, `post_save`, `pre_delete`, `m2m_changed`, `.connect(` | `a09-logging-and-alerting.md`, "Lifecycle hooks and audit guarantees" |
+| Admin registrations, custom admin views, and admin actions | `admin.py`, plus any `get_urls()` override | `admin.register`, `ModelAdmin`, `get_urls`, `actions =`, `@admin.action` | `authorization-architecture.md`, "Django admin: the permission surface"; exposure of the surface itself in `a01-broken-access-control.md`, "Admin exposure" |
+| Inbound webhook receivers | a URLconf route that authenticates nothing because the sender cannot log in | `csrf_exempt`, `AllowAny` on a POST route, `request.body` | `a08-integrity-and-deserialization.md`, "Webhook and callback integrity" |
+| MCP tools published over the application | the tool-registration module, and any viewset it republishes | the integration package's registration decorator or `ModelAdmin`-style class, plus every viewset it names | `agent-and-llm-interfaces.md`, "What survives when a DRF view is republished as a tool" |
+| Middleware | `MIDDLEWARE`, in order | `MIDDLEWARE`, `__call__`, `process_view`, `process_exception` | `authorization-architecture.md`, "Default-deny architecture" |
+
+Middleware is the family most often left out of an inventory, and it is the
+one that is an entry point for every request at once. Read it in declared
+order: a component above the authentication middleware runs for anonymous
+traffic, one that returns a response short-circuits everything below it, and
+one that writes to `request` establishes a value every view underneath it
+treats as trustworthy.
+
+The include chain is the other recurring miss, because the grep that finds the
+route is not the file that defines it:
+
+```python
+# The chain, in three files. Only the third holds a `path(` that a grep will
+# land in, and it is the one file that cannot tell you what the route is.
+
+# config/urls.py
+urlpatterns = [path("internal/", include("ops.urls"))]
+
+# ops/urls.py
+urlpatterns = [path("v2/", include("ops.api.urls"))]
+
+# ops/api/urls.py
+urlpatterns = [path("reports/<int:pk>/", ReportView.as_view())]
+
+# Wrong: the inventory records "reports/<int:pk>/", which is not a route and
+# is indistinguishable from the public reports route three apps away.
+# Correct: the inventory records "internal/v2/reports/<int:pk>/", which is
+# what an attacker sends. Resolving the chain is also what catches a second
+# mount -- an include() left under an older prefix serves the same view twice,
+# and only the resolved form lists both entries.
+```
+
+The served OpenAPI schema is not the inventory. `api-drf-specific.md`,
+"Endpoint inventory (API9)" owns that point together with the three techniques
+behind it and the diff that makes a schema useful at all — anything in the URL
+map that is not in the schema is a shadow-endpoint candidate. Take it from
+there rather than re-deriving it here.
+
+**Write-time.** When adding a route, a task, a consumer, a command, a
+receiver, or a tool, name which family it joins before writing the body, and
+write that family's access rule in the same edit that makes it reachable,
+because a family is chosen at the moment the decorator is typed and every
+control that applies to the new code follows from which one it was.
+
+## Phase 2 — principals and trust boundaries
+
+An entry point is only half of the question. The other half is who arrives at
+it, and the useful form of that question is not "is this authenticated" but
+"what proves the caller is this principal, and what does being it reach".
+
+### Principle layer
+
+Enumerate the principals the application actually distinguishes, not the ones
+its documentation names. A principal the code cannot tell apart from another
+is not a principal; it is a comment. Then enumerate the boundaries, which are
+the places where something crosses from one trust domain into another and the
+crossing is where a check either exists or does not.
+
+`authorization-architecture.md` owns the privilege model these principals are
+expressed in, including which of RBAC, ABAC, and ReBAC fits, and
+`privileged-access-and-impersonation.md` owns operator identity.
+
+### Django & DRF implementation layer
+
+| Principal | What proves it is this one | What being it reaches |
+|---|---|---|
+| Anonymous | nothing; it is the absence of a credential | every view that stated no rule, since DRF's own default is `AllowAny` — `api-drf-specific.md`, "Unsafe DRF defaults, enumerated" |
+| Authenticated user | a session cookie or a token that resolved to a user row | the authenticated surface, and nothing about ownership — `a01-broken-access-control.md`, "IDOR / BOLA" |
+| Tenant member | a stored relationship between the user row and the tenant, never a header, a body field, or a subdomain the client chose | the tenant's rows, if and only if every queryset says so — `a01-broken-access-control.md`, "Multi-tenancy and data isolation" |
+| Staff | the `is_staff` boolean | admin login and every check written as `IsAdminUser`, which is a much larger set than most projects intend |
+| Superuser | the `is_superuser` boolean | everything, because `has_perm` short-circuits before any backend runs — `authorization-architecture.md`, "Django's permission layer: what it actually does" |
+| Service account | a machine token, a client certificate, or a platform workload identity | whatever its scope says, which is frequently the whole API — `service-identity-and-secrets.md`, "Choosing a machine-authentication mechanism" |
+| Agent or tool caller | a token whose audience is this application, plus the end user it is acting for | the intersection of the tool's scope and that user's permissions, never the union — `agent-and-llm-interfaces.md`, "Effective authority: tool scope intersected with user permissions" |
+| Worker consuming a queue | nothing at all; possession of broker access is the entire credential | whatever the task body does, under whatever database role the worker holds — `a08-integrity-and-deserialization.md`, "Celery and task queues" |
+| Operator through impersonation | two identities at once, the operator who initiated and the subject being acted as | the subject's surface, with the operator's accountability — `privileged-access-and-impersonation.md`, "Impersonation: design requirements" |
+
+| Boundary | What has to hold at the crossing |
+|---|---|
+| Client to view | authentication resolves a principal and authorization is decided from it, not from an identifier in the request — `a01-broken-access-control.md`, "Principle" |
+| View to ORM | the queryset is scoped by the principal before a lookup runs, rather than filtered after one — `authorization-architecture.md`, "DRF: where the object check actually runs" |
+| Model to serializer | the fields crossing outward are an allowlist and the writable ones exclude anything the server owns — `api-drf-specific.md`, "Serializer exposure and mass assignment (API3)" |
+| Request to background task | the task re-derives tenant and permission from arguments it can verify, instead of inheriting the request's authority by assumption — `data-layer-and-database.md`, "Tenant context on a pooled connection" |
+| Application to broker | a task message is input from anyone who can reach the broker, and the serializer decides whether that input can construct objects — `a08-integrity-and-deserialization.md`, "Celery and task queues" |
+| Application to object store | the key is server-chosen, the bucket is not public, and a signed URL binds what it is supposed to bind — `file-uploads.md`, "Object storage configuration" |
+| Application to a third party | the outbound destination is allowlisted after DNS resolution, and the response is untrusted input on the way back — `a01-broken-access-control.md`, "SSRF" |
+| Proxy to application | the number of trusted hops is known, and the client IP is read from the position that survives a forged header — `deployment-and-runtime.md`, "Reading the client IP" |
+
+**Write-time.** When generating an endpoint, a task, or a tool, write down
+which principals can reach it before writing its body, and derive tenant,
+owner, and role from the authenticated identity in that same edit, because a
+principal that is not distinguished at the moment the handler is written
+cannot be distinguished by any check added later without changing the handler.
+
+## Phase 3 — sources to sinks
+
+`a05-injection.md`, "Tracing input to a sink" owns the method, and the
+inventory in that section is the sink map for the whole sweep, not for the
+injection topic alone. It is complete by design so that nothing needs a
+partial copy; read it there and walk it once per entry point.
+
+What belongs to the sweep rather than to that file is the pairing rule, which
+decides how much of the result is worth carrying forward:
+
+- **A sink with no source reaching it is not a finding.** A `subprocess` call
+  with a constant argument vector is a grep hit, and reporting it teaches the
+  reader to distrust the rest of the report.
+- **A source with no sink is a validation question, not an injection one.** It
+  belongs to the bound that the flow needs, not to this phase — see
+  `a06-insecure-design.md`, "Algorithmic resource exhaustion".
+- **The second-order path is found as two unrelated hits unless the stored
+  field is tracked on purpose.** The writer contains no sink and the reader
+  contains no request, so each half reviews clean. Carry the field name
+  forward from phase 1 as a source in its own right; that is the only thing
+  the two halves have in common.
+
+**Write-time.** When generating code that writes a value to a model field
+another process will later hand to an interpreter, constrain the field where
+it is written and keep the value as data where it is read, in the same change,
+because the writer and the reader are edited on different days and by then
+neither side shows the other.
+
+## Phase 4 — hypothesis generation and ordering
+
+Generate candidates per entry point rather than per keyword. For each route,
+task, consumer, or tool from phase 1, ask what it would take for this specific
+one to fail: which principal from phase 2 is missing a check, which sink from
+phase 3 it reaches, which of its parameters the server should own. A keyword
+sweep produces leads that are already sorted by how common the keyword is; an
+entry-point sweep produces leads sorted by nothing, which is why they then
+need ordering.
+
+Order by expected impact against effort to confirm. The default:
+
+1. **Object- and function-level authorization.** First because it is the
+   highest-yield class in Django codebases and among the cheapest to settle —
+   the queryset and the permission list are usually two files, and the answer
+   is either in them or absent from them.
+2. **Authentication and session handling.** Second because a failure here
+   invalidates the authorization work above it, but confirming it usually
+   means reading a settings module and a backend rather than a data path.
+3. **Injection at the sinks phase 3 paired.** Third because the pairing has
+   already been done, so what remains is reading the construction at each
+   site.
+4. **Flows that move money, entitlements, or state.** Fourth because the
+   impact is unambiguous but confirmation costs the most: it means reasoning
+   about ordering, concurrency, and retries rather than reading a declaration.
+5. **Configuration and deployment posture.** Last because much of it is
+   confirm-with-operator from phase 0, and because a settings finding is worth
+   less than an authorization finding on the same application.
+
+The order is a default, not a gate. A surface carrying a known-weak pattern
+jumps the queue on sight: a viewset with `queryset = Model.objects.all()` and
+a `pk` in its route, a `@shared_task` that takes a tenant id as an argument,
+a `.proto` served with no interceptor, a signed cookie read with no salt. Note
+the jump in the ledger so the phases that were deferred are visibly deferred
+rather than quietly skipped.
+
+## Phase 5 — verification
+
+A hypothesis becomes a finding only when four things have each been
+established rather than assumed: that an attacker controls the input, that the
+path is reachable in the deployed configuration, that the protections which
+should have stopped it are insufficient rather than merely unexamined, and
+that the impact is concrete enough to state as an outcome. Record the
+discharge of each one — what was read and what it showed — because the
+discharge is what a later reader needs to disagree with the finding, and a
+hypothesis that fails any of the four is a "worth checking" item with the
+specific unresolved question named, not a silent deletion.
+
+## Phase 6 — the coverage ledger
+
+The ledger is working state the sweep populates as it goes and reports at the
+end. Its one job is to keep *examined and clean* distinguishable from *not
+examined*, because a report that conflates them is a report that says nothing:
+the reader takes silence for coverage, and the surface nobody opened is the
+one the next incident comes from.
+
+Five dimensions, each recorded as a count or a list rather than as a
+judgement:
+
+- **Entry-point families** examined against families found, from phase 1,
+  including the families found to be absent.
+- **Authorization surfaces exercised** — object, function, field, and tenant,
+  each separately, because a sweep that checked object-level scoping on every
+  route has still said nothing about field-level exposure.
+- **Data-lifecycle paths walked** — delete, erasure fan-out, retention,
+  export — since these are the paths a route-driven sweep does not reach.
+- **Reference files loaded**, which is the honest record of which rule sets
+  were actually applied rather than recalled.
+- **Explicit non-goals** for this pass, stated as decisions rather than as
+  omissions.
+
+```
+Coverage ledger
+- Entry-point families: 14 looked for, 9 present, 8 examined. Not examined:
+  the Celery beat schedule, which is defined in a deployment chart this
+  repository does not contain.
+- Routes: 61 resolved from the URLconf, 58 in the generated schema, 3 shadow
+  candidates carried into the findings.
+- Authorization surfaces: object yes, function yes, field yes, tenant
+  partially -- the reporting app was read, the export app was not.
+- Data-lifecycle paths: delete yes, erasure fan-out no, retention no.
+- References loaded: 01-audit-workflow, a01, a05, api-drf-specific,
+  authorization-architecture, a08.
+- Non-goals this pass: the frontend, the Terraform module, and the vendored
+  SDKs under third_party/.
+```
+
+The ledger is working state, not report structure. At write-up it collapses
+into the fourth section of the report, whose shape
+`00-methodology-and-severity.md`, "Report structure" owns. Every line that
+reads *not examined* becomes a line there; every line that reads *examined and
+clean* stays out of it, because a limitations section that lists what was read
+buries the two lines that matter.
+
+**Write-time.** When generating a feature that adds an entry point, record the
+family it joined and the principals that reach it in the security-decisions
+note whose shape `00-methodology-and-severity.md`, "The security-decisions
+note" owns, because the next review starts from an inventory and a surface
+introduced without one is the surface that inventory will be missing.
+
+## Attack-chain reasoning
+
+When an issue is confirmed, the question before writing it up is what it
+enables next. Most real compromises are three cheap defects in sequence, and
+each of the three, rated alone, is a Medium nobody schedules.
+
+Rate the chain, not the link. A chain is reported as **one finding at the
+severity of its outcome**, with the links named in order inside it, rather
+than as several low-severity findings that read as unrelated and get closed
+one at a time. Where a link is confirmed and the next one is only plausible,
+say so at that link rather than downgrading the whole chain — the reader needs
+to know which hop is the assumption.
+
+The chains worth searching for, with the file that owns each hop:
+
+| Chain | The links, in order | Files that own the hops |
+|---|---|---|
+| Enumeration into takeover | a login, reset, or signup response that distinguishes a known account; credential stuffing at whatever rate the endpoint permits; a session | `a07-authentication-failures.md`, "Brute force and enumeration"; `a06-insecure-design.md`, "Rate limiting and anti-automation"; `a07-authentication-failures.md`, "Sessions" |
+| IDOR into a credential | an object read the requester should not have reached, whose serialized form carries an API key, an invite token, or a tenant identifier that is itself an authorization input | `a01-broken-access-control.md`, "IDOR / BOLA"; `api-drf-specific.md`, "Serializer exposure and mass assignment (API3)"; `authorization-architecture.md`, "Field-level authorization (BOPLA)" |
+| SSRF into the object store | a server-side fetch on a caller-influenced URL; the cloud metadata endpoint; a workload credential; the bucket that credential can read | `a01-broken-access-control.md`, "SSRF"; `service-identity-and-secrets.md`, "Choosing a machine-authentication mechanism"; `file-uploads.md`, "Object storage configuration" |
+| Soft delete through a relation | a row flagged deleted but still present, reached through a serializer that traverses a related object rather than through the manager that filters | `data-lifecycle-and-privacy.md`, "Soft delete and what it does not hide"; `api-drf-specific.md`, "Serializer exposure and mass assignment (API3)" |
+| A won race a later step trusts | concurrent requests past a limit, quota, or balance check; a downstream step that treats the resulting state as validated | `a10-exceptional-conditions.md`, "Races, TOCTOU, and adversarial sequencing"; `api-drf-specific.md`, "Throttling as quota, not security (API4)" |
+| Webhook into an entitlement | an inbound callback that is unsigned, or signed but replayable; a state transition that grants a plan, a credit, or a role | `a08-integrity-and-deserialization.md`, "Webhook and callback integrity"; `a10-exceptional-conditions.md`, "Idempotency" |
+| A job more privileged than its caller | a task queued by a request; a worker that runs as a service account and never re-derives the tenant or permission the request had | `a08-integrity-and-deserialization.md`, "Celery and task queues"; `data-layer-and-database.md`, "Tenant context on a pooled connection" |
+| A version left behind | an old API version still routed; a permission class or queryset scoping that never received the fix the current version did | `api-drf-specific.md`, "Versioning and deprecation lifecycle"; `a01-broken-access-control.md`, "Function-level authorization" |
+| Impersonation with half an audit trail | an operator acting as a user; a record naming the operator but not the subject, or the subject but not the operator | `privileged-access-and-impersonation.md`, "Impersonation: design requirements"; `a09-logging-and-alerting.md`, "Log the right security events" |
+
+**Write-time.** When generating the second step of a flow — the handler that
+consumes a token another endpoint issued, the worker that acts on a row a
+request created, the callback that completes a purchase — state what that step
+re-verifies rather than inherits, in the same edit, because a chain is built
+out of steps each of which was correct on the assumption that the previous one
+had already checked.
+
+## Write-time: the inventory run forward
+
+The workflow has a forward grammar, and it is the same four questions asked
+before the code exists instead of after. Before generating a feature: which
+entry-point family is being added, which principals reach it, which sinks it
+introduces, and — following from those three — which standing defaults apply
+at this moment.
+
+The defaults themselves are not restated here. The six standing rules and the
+index of which reference carries the per-task rule for each generation moment
+are in `00-methodology-and-severity.md`, "The write-time contract". What this
+file adds is the trigger: the moment a new entry point is declared is the
+moment to consult that index, because the family determines which row of it
+applies, and a feature written without asking which family it joined gets the
+defaults of whichever file the author happened to have open.
+
+## Review checklist
+
+### Stack-neutral
+
+- [ ] Scope and mode were stated before the sweep, and anything outside scope
+      was recorded as a decision rather than discovered as a gap at write-up.
+- [ ] Every claim about a control outside the repository is carried as a
+      question to its operator, with the answer that would settle it, rather
+      than assumed present or assumed absent.
+- [ ] Entry points were enumerated from declarations, resolved to full paths,
+      and families with no members were recorded as examined rather than left
+      unmentioned.
+- [ ] Principals were enumerated by what proves each one, and every trust
+      boundary the feature crosses was named.
+- [ ] Sources were paired to sinks before anything was called a finding, and
+      the stored-then-used path was tracked across requests rather than left
+      as two unrelated hits.
+- [ ] Work was ordered by impact against effort to confirm, and any surface
+      that jumped the queue is recorded together with what was deferred.
+- [ ] Each finding discharges attacker control, reachability, insufficiency of
+      the protections that should have stopped it, and concrete impact.
+- [ ] Confirmed issues were escalated one step — what does this enable next —
+      before write-up, and a chain is one finding at the severity of its
+      outcome with its links named.
+- [ ] The ledger distinguishes examined-and-clean from not-examined on every
+      dimension, and its not-examined lines are what the report's limitations
+      section carries.
+
+### Django & DRF
+
+- [ ] The URLconf was walked through every `include()` chain, and each route
+      recorded at its resolved prefix rather than at its leaf pattern.
+- [ ] Routers, viewsets, `@action` methods including `detail=False`, and
+      plain `APIView` subclasses were each enumerated, not inferred from the
+      served schema.
+- [ ] The non-DRF surfaces were looked for by name — Django Ninja, GraphQL,
+      gRPC, Channels — and their absence recorded where they are absent.
+- [ ] The families that are not routes were enumerated: Celery tasks and beat
+      entries, management commands, signal receivers, admin registrations and
+      actions, webhook receivers, and MCP tools.
+- [ ] `MIDDLEWARE` was read in declared order, including what runs above
+      authentication and what writes to `request`.
+- [ ] The worker, the service account, and the impersonating operator were
+      treated as principals in their own right rather than folded into
+      "authenticated user".
+- [ ] Object, function, field, and tenant authorization were each exercised
+      separately and recorded separately in the ledger.
