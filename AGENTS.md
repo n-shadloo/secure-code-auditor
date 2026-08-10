@@ -126,9 +126,13 @@ dangling-DNS subdomain takeover), deployment/runtime hardening including
 hybrid post-quantum key exchange at the TLS edge, where a current OpenSSL
 already negotiates the group and the finding is a pinned list that excludes it,
 forwarded-header trust and reading the client IP behind proxies, development
-tooling and profilers reachable in production, and the container image as a
+tooling and profilers reachable in production, the container image as a
 build artifact with a non-root user, a pinned base, and no secret surviving in
-a layer, path traversal on a file read whose path the request named -- what
+a layer, and the two edge-owned classes recorded as cross-team recommendations
+rather than repository findings (request smuggling between two parsers that
+frame a request differently, and cache deception where the edge decides what is
+cacheable from what a URL looks like), path traversal on a file read whose path
+the request named -- what
 `safe_join` and the storage API reject, what `FileResponse` and the
 development static view do not, and the identifier-not-a-path pattern that
 removes the class -- and injection treated as one bug at many interpreters (the
@@ -139,13 +143,16 @@ the ORM does not parameterize, GeoDjango's raster band index and the spatial
 lookup that reads its value as a raster source,
 the shell and the option parser of the program behind it,
 template injection and server-rendered output, LDAP filters and distinguished
-names, response and mail headers, and the log line as a record boundary an
-attacker can forge).
+names, response and mail headers, the log line as a record boundary an
+attacker can forge, and the duplicated request parameter that a check and a use
+read differently because one calls `getlist` and the other subscripts the
+`QueryDict`).
 
 ## Two modes
 - Review-time: audit existing code, produce prioritized findings (severity,
-  location, CWE + OWASP mapping, an optional ASVS 5.0 chapter or LLM/Agentic
-  Top 10 entry token where the project is actually held to that standard, the
+  location, CWE + OWASP mapping, an optional ASVS 5.0 chapter, WSTG section, or
+  LLM/Agentic Top 10 entry token where the project is actually held to that
+  standard, the
   shortest source-to-sink path the finding was confirmed on together with the
   protection that failed, concrete fix). Read-only by default. Load
   `references/01-audit-workflow.md` before any topic file; it owns the sweep
@@ -169,7 +176,10 @@ are defined in `references/00-methodology-and-severity.md`.
 1. Read `SKILL.md` for the router, mode logic, and severity summary.
 2. At review-time, read `references/01-audit-workflow.md` next and run its
    phases; the entry-point inventory decides which topic files are needed and
-   the coverage ledger records what each pass reached.
+   the coverage ledger records what each pass reached. That file also carries
+   the WSTG mapping at section granularity, which says which testing-guide
+   sections this sweep covers and which are declared non-goals rather than
+   gaps.
 3. Open the `references/*.md` file(s) for the concern in front of you. The
    router is grouped — the OWASP Top 10:2025 spine, then cross-cutting
    surfaces, then package decisions — so pick the group, then the row.

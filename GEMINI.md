@@ -33,7 +33,12 @@ a benign pattern dropped rather than reported as a caveat, and everything that
 survives carrying the shortest source-to-sink path it was confirmed on; and a
 coverage ledger throughout that keeps what was examined and found clean apart
 from what was never opened, since the report's limitations section is written
-from the second of those. Confirmed issues are escalated one step
+from the second of those; and a mapping of that sweep onto the OWASP Web
+Security Testing Guide at section granularity — not at test granularity,
+because the guide states its own identifiers change between versions — naming
+the sections this skill covers and declaring the client-side chapter, the
+reconnaissance tests, and everything needing a proxy or a live target as
+non-goals rather than gaps. Confirmed issues are escalated one step
 before write-up, so a chain — enumeration into takeover, SSRF into a workload
 credential into the object store, a job running with more privilege than the
 request that queued it — is one finding at the severity of its outcome with
@@ -106,9 +111,13 @@ post-quantum key exchange at the edge, where OpenSSL 3.5 already offers and
 prefers X25519MLKEM768 and the finding is a pinned group list that excludes it
 rather than a feature nobody enabled, forwarded-header trust and reading the
 client IP behind proxies, development
-tooling and profilers reachable in production, and the container image as a
+tooling and profilers reachable in production, the container image as a
 build artifact with a non-root user, a pinned base, and no secret left in a
-layer), file uploads from the request through storage to the reader
+layer, and the two edge-owned classes carried as cross-team recommendations
+rather than repository findings — request smuggling, where two parsers frame
+the same request differently, and cache deception, where the edge decides what
+is cacheable from what a URL looks like), file uploads from the request through
+storage to the reader
 (content validation, storage keys that disclose nothing, object-store
 configuration and the platform state a code review cannot answer, per-tenant
 buckets against a shared bucket with prefixes, delegated upload URLs and what
@@ -130,8 +139,10 @@ identifier positions the ORM does not parameterize, GeoDjango's raster band
 index, which PostGIS inlines into the statement rather than binding, and the
 spatial lookup that reads a `str` or `dict` value as a raster source to open,
 the shell and a program's own option parser, template
-injection and server-rendered output, LDAP filters and distinguished names, and
-response and mail headers), the build pipeline as reviewable configuration —
+injection and server-rendered output, LDAP filters and distinguished names,
+response and mail headers, and the duplicated request parameter one reader
+takes from `getlist` while another subscripts the `QueryDict`), the build
+pipeline as reviewable configuration —
 where the useful question is never whether a control is present but what
 happens when it says no, so a scanner behind `continue-on-error` or a trailing
 `|| true` gates nothing, an SBOM is an inventory and `--require-hashes` on the
@@ -155,7 +166,9 @@ single source of truth. Modes (review-time / write-time), the severity rubric
 and how it rates a race and a surviving-personal-data failure, the baseline
 severity table under it that makes an ordinary finding class rate the same way
 between runs, the findings format including the evidence line every finding
-carries, the ASVS 5.0 chapter mapping and the chapters declared out of scope,
+carries, the ASVS 5.0 chapter mapping and the chapters declared out of scope
+alongside the terms on which a WSTG section is admissible in the same optional
+position,
 the write-time secure-default contract with the security-decisions note it
 returns in place of a report, and the rule for a default that conflicts with
 the request are in `references/00-methodology-and-severity.md`. That file also

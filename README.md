@@ -46,7 +46,15 @@ a request, a message, or a schedule reaches application code, work out which
 principals arrive there, and derive the reading list from that rather than
 from the files that looked interesting. It ends in a coverage ledger that
 keeps *examined and clean* separate from *not examined*, because a report that
-blurs the two is read as though everything was covered.
+blurs the two is read as though everything was covered. That same file maps the
+sweep onto the OWASP Web Security Testing Guide, section by section, and says
+which of the guide's twelve web-application sections this skill covers and
+which it declares non-goals: the client-side chapter, the reconnaissance tests,
+and everything that needs a proxy or a live target, since this skill reads
+source rather than exercising a deployment. The mapping stops at section
+granularity because the guide's own referencing guidance says its test
+identifiers change between versions — the same reason the ASVS mapping cites
+chapters rather than requirement numbers.
 
 Every control is written twice, in two grammars: a review form that says what
 to flag in code that exists, and a write-time form that says what to write
@@ -108,7 +116,9 @@ rule for generating that code.
   and a spatial-lookup value read as a raster source to open rather than as a
   value to bind), command and argument injection,
   template injection and server-side output handling, LDAP/directory
-  injection, and header/email injection.
+  injection, header/email injection, and the duplicated request parameter that
+  a check and a use read differently because one calls `getlist` and the other
+  subscripts the `QueryDict`.
 - Authentication: password policy stated as the standard actually states it —
   fifteen characters where the password is a single factor, no composition
   rule, no expiry job, and a blocklist that reaches a breach corpus rather
@@ -219,7 +229,11 @@ rule for generating that code.
   profilers reachable in production, Gunicorn/systemd, the container image as a
   build artifact of its own (non-root, pinned base, and the secrets that stay
   readable in a layer after a later layer deletes them), origin-isolated media,
-  caching, and brokers.
+  caching, and brokers — plus the two classes that belong to whoever operates
+  the edge rather than to this repository, request smuggling between two
+  parsers that frame a request differently and cache deception by a rule that
+  decides what is cacheable from what a URL looks like, each recorded as a
+  cross-team recommendation with the repository-side half named.
 - Supply chain: third-party dependency vetting, maintained-package gates, the
   development-only package that reaches the production requirements file and
   ships a debugger with it, pinning, hashing, advisory scanning, EOL
