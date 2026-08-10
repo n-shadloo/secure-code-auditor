@@ -307,7 +307,8 @@ A state machine that is checked in Python and saved later is decorative
 guard is still an in-memory check followed by a `save()`, and no row lock is
 added. The bypassable shape to grep for is `get()` → `if` → `save()`; the
 enforced shapes are a conditional `.update()` or a `select_for_update()` read
-inside `atomic()`.
+inside `atomic()`. Which transitions are worth enforcing at all is the flow
+inventory in `a06-insecure-design.md`, "Business-logic abuse".
 
 #### Side effects and the commit boundary
 
