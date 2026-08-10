@@ -65,10 +65,13 @@ rule for generating that code.
   actions, webhook receivers, MCP tools, and middleware; the principals a
   Django backend actually distinguishes and the boundaries between them;
   pairing sources to sinks; ordering hypotheses by impact against the effort
-  to confirm them; a coverage ledger that reports what was examined and found
-  clean separately from what was never opened; and the attack chains worth
-  looking for, each rated as one finding at the severity of its outcome rather
-  than as three unrelated Mediums.
+  to confirm them; the six-item gate a hypothesis has to discharge before it
+  is written up at all, with the benign Django and DRF patterns that look
+  exactly like defects catalogued beside the controls they qualify; a coverage
+  ledger that reports what was examined and found clean separately from what
+  was never opened; and the attack chains worth looking for, each rated as one
+  finding at the severity of its outcome rather than as three unrelated
+  Mediums.
 - Access control: object- and function-level authorization, IDOR/BOLA,
   cache-mediated data leaks, SSRF and the egress control behind it —
   allowlist-by-destination, deny-by-default egress for the workers whose
@@ -353,9 +356,13 @@ Review this Django app for security issues before we ship.
 ```
 
 You'll get findings ordered by severity, each with a location, a CWE and OWASP
-mapping, the concrete problem, the impact, and a fix — and at the end an
-explicit account of what was examined and what was not, so a quiet report is
-distinguishable from a clean one. For fast triage there are
+mapping, the concrete problem, the shortest source-to-sink path the finding was
+actually confirmed on together with the protection that failed, the impact, and
+a fix — and at the end an explicit account of what was examined and what was
+not, so a quiet report is distinguishable from a clean one. Nothing reaches
+that list until it has discharged the verification gate, so a keyword that
+turned out to be the framework working correctly is dropped rather than
+reported with a hedge. For fast triage there are
 two read-only helper scripts (no network access, they don't run your project):
 
 ```
@@ -382,6 +389,9 @@ silently.
 - Problem: InvoiceDetail uses Invoice.objects.all() and looks up by pk from the
   URL with permission_classes = [IsAuthenticated]. Authentication is checked but
   ownership is not, so any logged-in user can read /invoices/<id>/ for any id.
+- Evidence: GET /invoices/<pk>/ -> InvoiceDetail -> Invoice.objects.all().get(
+  pk=pk), with pk taken straight from the URL kwarg. The protection that failed
+  is queryset scoping: no get_queryset() override and no object permission.
 - Impact: Authenticated horizontal privilege escalation; read access to other
   accounts' billing records by incrementing the id.
 - Fix: scope the queryset to the requester.

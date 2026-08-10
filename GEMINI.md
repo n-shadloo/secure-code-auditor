@@ -22,10 +22,16 @@ access and the operator who is two identities at once — and the boundaries
 between them; then sources paired to the sink inventory; then hypotheses
 ordered by impact against the effort to confirm them, object- and
 function-level authorization first because it is the highest-yield class in
-Django codebases and usually settled by reading two files; then verification;
-and a coverage ledger throughout that keeps what was examined and found clean
-apart from what was never opened, since the report's limitations section is
-written from the second of those. Confirmed issues are escalated one step
+Django codebases and usually settled by reading two files; then verification as
+a six-item gate — attacker control, reachability, the protections that should
+have stopped it, the insufficiency of whatever sanitization is present,
+concrete impact, and a catalogue of the benign Django and DRF patterns that
+look exactly like defects — with anything failing attacker control or matching
+a benign pattern dropped rather than reported as a caveat, and everything that
+survives carrying the shortest source-to-sink path it was confirmed on; and a
+coverage ledger throughout that keeps what was examined and found clean apart
+from what was never opened, since the report's limitations section is written
+from the second of those. Confirmed issues are escalated one step
 before write-up, so a chain — enumeration into takeover, SSRF into a workload
 credential into the object store, a job running with more privilege than the
 request that queued it — is one finding at the severity of its outcome with
@@ -144,8 +150,10 @@ dependencies.
 
 Primary integration is Claude; this file exists so Gemini CLI uses the same
 single source of truth. Modes (review-time / write-time), the severity rubric
-and how it rates a race and a surviving-personal-data failure, the findings
-format, the ASVS 5.0 chapter mapping and the chapters declared out of scope,
+and how it rates a race and a surviving-personal-data failure, the baseline
+severity table under it that makes an ordinary finding class rate the same way
+between runs, the findings format including the evidence line every finding
+carries, the ASVS 5.0 chapter mapping and the chapters declared out of scope,
 the write-time secure-default contract with the security-decisions note it
 returns in place of a report, and the rule for a default that conflicts with
 the request are in `references/00-methodology-and-severity.md`. That file also

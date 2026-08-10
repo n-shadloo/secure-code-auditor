@@ -24,8 +24,13 @@ entry point for every request at once; then the principals a Django backend
 distinguishes and the boundaries between them; then sources paired to the sink
 inventory; then hypotheses ordered by impact against the effort to confirm
 them, authorization first because it is the highest-yield class and the
-cheapest to settle; then verification; and throughout, a coverage ledger that
-records what was examined and found clean separately from what was never
+cheapest to settle; then verification as a gate rather than as advice, where a
+hypothesis discharges attacker control, reachability, the protections that
+should have stopped it, the insufficiency of any sanitization present,
+concrete impact, and a catalogue of benign Django and DRF patterns before it
+is written up, and one that fails attacker control or matches a benign pattern
+is dropped rather than reported with a hedge; and throughout, a coverage ledger
+that records what was examined and found clean separately from what was never
 opened, which is what the report's limitations section is written from.
 Confirmed issues are escalated one step before write-up, so a chain is
 reported as one finding at the severity of its outcome with its links named
@@ -140,8 +145,9 @@ attacker can forge).
 ## Two modes
 - Review-time: audit existing code, produce prioritized findings (severity,
   location, CWE + OWASP mapping, an optional ASVS 5.0 chapter or LLM/Agentic
-  Top 10 entry token where the project is actually held to that standard,
-  concrete fix). Read-only by default. Load
+  Top 10 entry token where the project is actually held to that standard, the
+  shortest source-to-sink path the finding was confirmed on together with the
+  protection that failed, concrete fix). Read-only by default. Load
   `references/01-audit-workflow.md` before any topic file; it owns the sweep
   the findings are produced by, and the topic files answer the questions that
   sweep generates.
@@ -152,10 +158,12 @@ attacker can forge).
   reference the router already sends you to, so opening a file for the concern
   loads the rule for writing it.
 Mode selection, both output formats, the severity rubric including how a race
-and a surviving-personal-data failure are rated, the ASVS 5.0 chapter mapping
-with the chapters this skill treats as non-goals, the conflict rule, and the
-convention that every control is stated in a review form and a write-time form
-together are defined in `references/00-methodology-and-severity.md`.
+and a surviving-personal-data failure are rated, the baseline severity table
+that makes an ordinary finding class reproducible between runs while the rubric
+keeps deciding the borderline one, the ASVS 5.0 chapter mapping with the
+chapters this skill treats as non-goals, the conflict rule, and the convention
+that every control is stated in a review form and a write-time form together
+are defined in `references/00-methodology-and-severity.md`.
 
 ## How to use the content
 1. Read `SKILL.md` for the router, mode logic, and severity summary.

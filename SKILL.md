@@ -21,7 +21,7 @@ license: MIT
 allowed-tools: Read, Grep, Glob, Bash
 metadata:
   author: n-shadloo
-  version: 1.33.0
+  version: 1.34.0
 ---
 
 # secure-code-auditor
@@ -67,8 +67,8 @@ decide which file is authoritative.
 
 | Concern | Reference file |
 |---|---|
-| How a codebase is swept before anything is judged: the phase order, the entry-point inventory across URLconf chains, routers and actions, Django Ninja, GraphQL, gRPC, Channels, Celery and beat, management commands, signals, admin, webhooks, MCP tools, and middleware, the principals and trust boundaries a Django backend actually distinguishes, source-to-sink pairing, hypothesis ordering by impact against effort to confirm, what verification has to discharge before a hypothesis is a finding, the coverage ledger that keeps examined-and-clean apart from not-examined, and the attack chains worth searching for with the file that owns each hop | `references/01-audit-workflow.md` |
-| Method & severity model including how a race and a privacy failure are rated, report format, the ASVS 5.0 chapter mapping with the chapters this skill treats as non-goals, mode selection, the write-time secure-default contract and the index of which file holds each generation moment's rule, what to do when a secure default conflicts with the request, the security-decisions note write-time returns instead of a findings report, and the two-mode convention every control follows | `references/00-methodology-and-severity.md` |
+| How a codebase is swept before anything is judged: the phase order, the entry-point inventory across URLconf chains, routers and actions, Django Ninja, GraphQL, gRPC, Channels, Celery and beat, management commands, signals, admin, webhooks, MCP tools, and middleware, the principals and trust boundaries a Django backend actually distinguishes, source-to-sink pairing, hypothesis ordering by impact against effort to confirm, the six-item gate every hypothesis discharges before it is written as a finding and the disposition rule for one that fails an item, the Django and DRF patterns commonly mistaken for findings together with the question that decides each, the coverage ledger that keeps examined-and-clean apart from not-examined, and the attack chains worth searching for with the file that owns each hop | `references/01-audit-workflow.md` |
+| Method & severity model including how a race and a privacy failure are rated, the baseline-severity table that makes an ordinary finding class reproducible beside the rubric that decides the borderline one, the evidence line every finding carries, report format, the ASVS 5.0 chapter mapping with the chapters this skill treats as non-goals, mode selection, the write-time secure-default contract and the index of which file holds each generation moment's rule, what to do when a secure default conflicts with the request, the security-decisions note write-time returns instead of a findings report, and the two-mode convention every control follows | `references/00-methodology-and-severity.md` |
 
 ### The OWASP Top 10:2025 spine
 
@@ -303,8 +303,8 @@ feature and wants it looked at. Behavior:
   sink. Do not pattern-match a keyword into a finding.
 - Produce a findings report in the exact format in
   `references/00-methodology-and-severity.md`: ordered by severity, each with
-  location, CWE, OWASP mapping, and a concrete fix. End with what you did *not*
-  review.
+  location, CWE, OWASP mapping, the evidence the finding was confirmed on, and
+  a concrete fix. End with what you did *not* review.
 
 **Write-time.** Trigger when you're generating or modifying backend code for a
 feature. Behavior:
@@ -355,5 +355,6 @@ personal data alive past a promised deletion is rated on that promise as well
 as on attacker value.
 
 Report findings you're ≥80% confident are real and reachable. Full rubric, the
-ASVS 5.0 chapter mapping and when to cite one, and the report template:
+baseline severity table beneath it, the ASVS 5.0 chapter mapping and when to
+cite one, and the report template:
 `references/00-methodology-and-severity.md`.
