@@ -713,6 +713,9 @@ they prove:
   `show_urls` does the same thing and is a reasonable development-only
   convenience on an existing install. Django 6.2 adds a built-in `listurls`
   command, which will become the first choice once a project is on it.
+  `scripts/entrypoint_inventory.py` resolves the same chain from the source
+  without starting Django, which is the form available when the project cannot
+  be run.
 - **Expand the routers.** Enumerate `router.urls` to see every generated viewset
   route including custom actions. Note that `DefaultRouter` additionally mounts
   an API root view and format-suffixed variants of every route, where

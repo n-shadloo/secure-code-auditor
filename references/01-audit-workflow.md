@@ -192,6 +192,27 @@ urlpatterns = [path("reports/<int:pk>/", ReportView.as_view())]
 # and only the resolved form lists both entries.
 ```
 
+`scripts/entrypoint_inventory.py` is the instrument for this phase. It parses
+every module in the tree and reports the families above as declarations:
+routes resolved through the include chain to their full prefix, router
+registrations at the prefix they are actually mounted on, actions with whatever
+the decorator declares, and, given `--settings`, `MIDDLEWARE` in declared
+order. Every HTTP-reachable row says whether authorization is declared at the
+site, inherited from a base class or a framework default and therefore not
+visible there, or absent — the second and third are different facts and the run
+keeps them apart. Its closing line names the families found and the families
+looked for and not found, which is what phase 6 records. Confirm what it
+surfaces by reading the code; the run is a starting set for the phase, not the
+phase's output.
+
+It finds declarations, and only declarations. A route registered at runtime — a
+URLconf assembled in a loop, a viewset built by a factory, a tool registered
+from a table when the app loads — is written nowhere a parser can see it, so it
+appears in no run and in no diff of two runs. That is the residual gap this
+phase closes by reading, and it is the reason the first rule above is to
+enumerate from the declaration: a tool that reads declarations tells you what
+was declared, and the question of what else runs is still yours.
+
 The served OpenAPI schema is not the inventory. `api-drf-specific.md`,
 "Endpoint inventory (API9)" owns that point together with the three techniques
 behind it and the diff that makes a schema useful at all — anything in the URL

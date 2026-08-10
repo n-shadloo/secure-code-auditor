@@ -340,7 +340,9 @@ In order of leverage:
    The single highest-value lever for APIs — and it covers DRF only, not plain
    Django views, admin, or non-DRF endpoints.
 2. **A URLconf-enumerating audit test**, the only mechanism that makes "a new
-   endpoint is unreachable until someone decides" enforceable in CI.
+   endpoint is unreachable until someone decides" enforceable in CI —
+   `scripts/entrypoint_inventory.py` enumerates the same surface read-only,
+   which is what an audit has before there is a test to run.
 3. Middleware that asserts a view was authorized. Effective, but it fights
    third-party views.
 4. `django-decorator-include` to apply a decorator across an included URLconf.

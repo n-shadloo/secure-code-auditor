@@ -1,41 +1,221 @@
 # scripts
 
-Two read-only triage helpers used by the secure-code-auditor skill. They read
-files and print indicators; confirm everything they surface by reading the code.
+Three read-only triage helpers used by the secure-code-auditor skill. They read
+files and print what they find; confirm everything they surface by reading the
+code.
+
+- `entrypoint_inventory.py` answers **where does execution begin**, which is
+  the question the audit workflow's first phase runs on.
+- `settings_scan.py` answers **what does the settings surface declare**.
+- `dangerous_patterns.py` answers **which call sites are worth reading first**.
 
 ## Invariants
 
-These hold for both scripts and are not negotiable:
+These hold for all three scripts and are not negotiable:
 
-- **Read-only.** Neither writes, moves, or deletes anything.
+- **Read-only.** None of them writes, moves, or deletes anything.
 - **Standard library only, Python 3.9+.** No third-party dependency, no
   vendored code.
 - **No network.** Nothing here opens a connection.
-- **Neither imports or executes the audited project.** Both parse with the
-  `ast` module; neither runs a line of the code it reads.
-- **Exit code is always 0.** Findings are output, never exit codes; these are
-  aids, not gates.
-- **Findings are indicators to verify, not confirmed vulnerabilities.** Each
-  one names the reference file that owns the follow-up.
+- **None of them imports or executes the audited project.** All three parse
+  with the `ast` module; none runs a line of the code it reads.
+- **Exit code is always 0.** Output is the product, never the exit code; these
+  are aids, not gates.
+- **Output is indicators to verify, not confirmed vulnerabilities.** Each row
+  names the reference file that owns the follow-up.
 - **A file that cannot be parsed is reported, never skipped in silence.** A
   silent skip is a false negative wearing the clothes of a clean result.
+- **`--json` is the mode intended for agent use.** It is JSON Lines in all
+  three: one object per record, one record per line, so a large tree streams
+  and a partial read is still parseable. The default output is for a human
+  reading a terminal.
 
 Values computed at runtime (`env("DEBUG")`, `os.environ[...]`, a call that
 builds a dict) are reported as dynamic and left for manual verification rather
 than guessed at, so a hit is a hit and not an inference.
 
-Because both scanners parse rather than match text, they can tell a string
-literal from an expression, a call carrying a parameter sequence from one that
-does not, a local rebinding from a module constant, and a real call from the
-same characters inside a docstring.
+Because all three parse rather than match text, they can tell a string literal
+from an expression, a call carrying a parameter sequence from one that does
+not, a local rebinding from a module constant, and a real call from the same
+characters inside a docstring.
+
+What none of them can do is see a declaration that is not written down. A route
+registered in a loop, a viewset assembled by a factory, a task registered at
+import time from a table — each is invisible to a parser and stays a residual
+gap that reading closes.
+
+## entrypoint_inventory.py
+
+Static, AST-based inventory of every declared way execution enters application
+code. It is the instrument for `01-audit-workflow.md`, "Phase 1 — entry-point
+inventory", which is the phase everything after it is derived from.
+
+```
+python scripts/entrypoint_inventory.py path/to/project
+python scripts/entrypoint_inventory.py . --settings config/settings
+python scripts/entrypoint_inventory.py . --kind url,drf,action
+python scripts/entrypoint_inventory.py . --json
+```
+
+`--settings` takes a settings module or a settings package and supplies the
+context the tree alone does not carry: `ROOT_URLCONF`, `MIDDLEWARE` in declared
+order, and the DRF `DEFAULT_PERMISSION_CLASSES` a viewset that declares nothing
+falls back on. `--kind` restricts the run to named families, comma-separated
+and repeatable.
+
+It reports what is declared and stops there. It never prints a verdict, and it
+does not decide whether a surface is adequately protected; each family names
+the reference file that answers that.
+
+### Families collected, by owning reference
+
+| Family | What it reports | Rules |
+| --- | --- | --- |
+| `url` | `path()`, `re_path()`, and legacy `url()` entries at their full prefix, with the view and the route name, following `include()` through the chain | `authorization-architecture.md` |
+| `drf` | router constructions, `register()` calls with prefix, viewset and basename, and viewset/generic-view/`APIView` classes with their declared `permission_classes`, `authentication_classes`, `throttle_classes`, `queryset` and `serializer_class`, and which of `get_queryset`, `get_object`, `get_serializer_class`, `perform_create` and `check_object_permissions` are overridden | `api-drf-specific.md` |
+| `action` | `@action` methods with `detail`, `methods`, and any `permission_classes` on the decorator | `api-drf-specific.md` |
+| `ninja` | `NinjaAPI(...)` and `Router(...)` constructions with the presence or absence of `auth=`, and operation decorators with their own `auth=` | `graphql-and-alternative-api-surfaces.md` |
+| `graphql` | schema constructions, `Query`/`Mutation` type definitions, and resolver methods | `graphql-and-alternative-api-surfaces.md` |
+| `grpc` | classes deriving from a generated `Servicer` base, with their method names | `graphql-and-alternative-api-surfaces.md` |
+| `channels` | `ProtocolTypeRouter` and `URLRouter` entries and consumer classes | `async-and-channels.md` |
+| `celery` | functions decorated with `shared_task` or an app `task` attribute, and literal beat-schedule entries | `a08-integrity-and-deserialization.md` |
+| `command` | modules under a `management/commands/` path with a `Command` class | `a05-injection.md` |
+| `signal` | `@receiver` decorators and `.connect()` calls, with the signal and the sender where literal | `a09-logging-and-alerting.md` |
+| `admin` | `@admin.register`, `admin.site.register`, `ModelAdmin` subclasses, and their declared `actions` | `authorization-architecture.md` |
+| `middleware` | `MIDDLEWARE` in declared order, only when `--settings` is supplied | `authorization-architecture.md` |
+
+### The include chain
+
+A route is reported at the concatenation of every prefix an `include()` chain
+contributed, because the leaf module is the one file that cannot tell you what
+the route is. Three consequences worth knowing before reading the output:
+
+- **A second mount shows up as a second row.** An `include()` left under an
+  older prefix serves the same view twice, and only the resolved form lists
+  both.
+- **`include(router.urls)` is followed.** Router registrations carry the full
+  mounted prefix rather than the fragment passed to `register()`, and one that
+  no URLconf root reaches says so instead of being reported as though it were
+  mounted.
+- **An include target that cannot be resolved statically is reported as an
+  unresolved edge, not dropped.** So is an include chain that returns to a
+  module already on it.
+
+Roots are the modules defining `urlpatterns` that no other module includes.
+`--settings` adds the declared `ROOT_URLCONF` to that set; without it every
+unincluded URLconf is walked, which is wider rather than narrower.
+
+### The authorization column
+
+Every HTTP-reachable row carries one of exactly three states, and the
+difference between the last two is the whole value of the column:
+
+- **`declared`** — this site declares it, and the value is printed beside the
+  row.
+- **`inherited`** — this site declares nothing and something upstream supplies
+  it: a base class, `DEFAULT_PERMISSION_CLASSES`, a router-level `auth=`, an
+  admin permission check, a Channels middleware stack. **Not visible from
+  here**, which is a different fact from its absence.
+- **`absent`** — this site declares nothing and the construct has no default
+  that would supply one: a Ninja API, router, or operation with no `auth=`, a
+  gRPC servicer, a plain Django view carrying no decorator or mixin. Middleware
+  or a check inside the body may still apply; this column looks for neither, so
+  `absent` is a statement about declarations and never a finding.
+
+Collapsing `inherited` and `absent` into "missing" would rebuild exactly the
+false positive this script exists to avoid.
+
+### Output
+
+Default output groups by family with a count per family and the owning
+reference in the heading, then two lines per row: the label with its
+authorization state, and the location with the family-specific fields.
+
+It closes with a coverage line — the families found, the families looked for
+and not found, and the families not examined at all. An empty family is
+information: it says that surface is absent rather than unexamined, which is
+the distinction `01-audit-workflow.md`, "Phase 6 — the coverage ledger" is
+built on.
+
+`--json` emits JSON Lines. A `kind` field discriminates the two shapes, as in
+`dangerous_patterns.py`:
+
+| field | `kind: "entry"` | `kind: "unparsed"` |
+| --- | --- | --- |
+| `file` | path as walked from the command-line root | same |
+| `line` | 1-based line | 1-based line of the syntax error, `0` if unknown |
+| `column` | 1-based column | column reported by the parser |
+| `family` | one of the families above | absent |
+| `label` | the entry's identity: a resolved route, a class name, a task name | absent |
+| `authorization` | `declared`, `inherited`, `absent`, or `null` where the family has no such concept | absent |
+| `reference` | the reference file that owns the family | absent |
+| `detail` | an object of family-specific fields, empty values omitted | absent |
+| `error` | absent | the parser's message |
+
+### Limits
+
+- It finds **declarations**. A route registered at runtime, a viewset built by
+  a factory, a task registered from a loop — none of them is written down as a
+  construct, so none appears here. That is a residual gap the phase closes by
+  reading, not a bug to work around.
+- Two families the workflow's inventory lists are not families here, because
+  neither is a distinct construct: an inbound **webhook receiver** is an
+  ordinary route that authenticates nothing, and an **MCP tool** is whatever
+  the integration package's registration decorator makes it. Find them in the
+  `url` and `drf` rows.
+- A view name that resolves to more than one class in the tree, or to none, is
+  reported as `inherited` rather than guessed at.
+- `re_path` patterns are concatenated verbatim, so an anchored child pattern
+  appears with its anchor inside the resolved route.
 
 ## settings_scan.py
 
-Static, AST-based posture check for a single Django settings file.
+Static, AST-based posture check for a Django settings module, or for a settings
+package and the import chain behind it.
 
 ```
 python scripts/settings_scan.py path/to/settings.py
+python scripts/settings_scan.py path/to/settings/
+python scripts/settings_scan.py path/to/settings/ --json
 ```
+
+### Settings packages
+
+The dominant Django layout is a package rather than a file: a base module and
+per-environment modules that star-import it. Pointed at `settings/production.py`
+alone, a single-file scan reports most of its checks as unset, which is the
+same output a genuinely empty module produces — a scan that looks clean because
+it could not see anything.
+
+- Given a **file**, the module and everything it imports are resolved.
+- Given a **directory**, every module directly inside it is resolved. A module
+  another module in the package imports is folded into that importer's chain
+  rather than scanned on its own, so `config/settings/` reports the environment
+  modules with `base` merged in rather than reporting `base` several times. A
+  module that assigns nothing — the usual empty `__init__.py` — is named rather
+  than scanned, because running the checks against it would print a page of
+  "not set".
+- `from .base import *`, `from .base import NAME`, and the equivalent absolute
+  forms are followed. Assignments merge **later-wins** along the chain, and
+  every reported value carries the module it came from, so a setting that is
+  safe in `base.py` and overridden in `production.py` is visible as exactly
+  that.
+- An import is resolved only inside the **package root** the module belongs to
+  — the nearest ancestor directory without an `__init__.py`. Nothing outside it
+  is ever opened, nothing is imported, and nothing is executed.
+- An unresolvable import is reported and the scan continues. An import **cycle**
+  is reported and stopped rather than recursed.
+- A setting assigned inside an `if` is reported as **conditional** with the
+  module it appears in, rather than read as a literal, because the scan reads
+  the assignment and not the condition. An `INSTALLED_APPS +=` append is
+  reported as an augmentation for the same reason — the previous behaviour of
+  declining to judge it is kept, and now says so out loud.
+
+`--json` emits JSON Lines with three record shapes: `setting`, carrying `file`,
+`origin` (the module the effective value came from, `null` when unset), `line`,
+`setting`, `severity`, `message`, `reference`, and `conditional`; `note`, for a
+cycle, an unresolvable import, or a module named rather than scanned; and
+`unparsed`, for a module that could not be read.
 
 ### Checks, by owning reference
 
@@ -53,7 +233,7 @@ python scripts/settings_scan.py path/to/settings.py
 - `X_FRAME_OPTIONS` is set to something other than `DENY`.
 - `CORS_ALLOW_ALL_ORIGINS` is `True`, raised in severity when
   `CORS_ALLOW_CREDENTIALS` is `True` alongside it.
-- `CSRF_TRUSTED_ORIGINS` is absent from this file.
+- `CSRF_TRUSTED_ORIGINS` is absent from the module and everything it imports.
 
 **`a02-security-misconfiguration.md` and `deployment-and-runtime.md`**:
 
@@ -63,8 +243,9 @@ python scripts/settings_scan.py path/to/settings.py
 **`deployment-and-runtime.md`**:
 
 - `INSTALLED_APPS` installs `debug_toolbar`, `silk`, or `django_extensions`
-  unconditionally. An `if DEBUG:` append is not a module-level assignment and
-  is deliberately not reported.
+  unconditionally. An `if DEBUG:` append is still not judged as an
+  unconditional install — it is reported as an augmentation naming the module
+  it lives in, so the reader knows the branch exists and has to be read.
 
 **`data-layer-and-database.md`** — per `DATABASES` alias:
 
