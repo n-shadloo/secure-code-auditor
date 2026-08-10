@@ -183,6 +183,62 @@ data import writes the same column without passing through the serializer at
 all. Neither is sufficient, because a stored field is as tainted as its worst
 writer and the worst writer is rarely the one in front of you.
 
+One property of the source itself breaks the trace before any sink is reached:
+**a parameter can arrive more than once, and which value a reader sees depends
+on how it reads.** `request.GET`, `request.POST`, and DRF's `query_params` are
+`QueryDict` instances, where subscripting and `.get()` return the **last**
+occurrence while `.getlist()` returns all of them. A request carrying
+`?next=/dashboard&next=//attacker.example` therefore presents two different
+values to two pieces of code that both look correct in isolation, and the
+defect is that the value which was checked is not the value that was used:
+
+```python
+# Wrong: the guard and the redirect each read the parameter on their own line,
+# and getlist() and subscripting do not agree about which occurrence they mean.
+# The guard passes if any value is allowed; the redirect then goes to the last
+# one. Reversing which side calls getlist() is the same bug mirrored.
+from django.utils.http import url_has_allowed_host_and_scheme
+
+if any(
+    url_has_allowed_host_and_scheme(candidate, allowed_hosts={request.get_host()})
+    for candidate in request.GET.getlist("next")
+):
+    return redirect(request.GET["next"])
+```
+
+```python
+# Correct: one read, bound to a name, and every later use is that name. Where a
+# parameter is genuinely single-valued, rejecting the duplicate is better than
+# silently picking an occurrence, because a caller sending two never meant one.
+from django.conf import settings
+from django.core.exceptions import SuspiciousOperation
+from django.utils.http import url_has_allowed_host_and_scheme
+
+values = request.GET.getlist("next")
+if len(values) > 1:
+    raise SuspiciousOperation("duplicate 'next' parameter")
+target = values.pop() if values else settings.LOGIN_REDIRECT_URL
+if not url_has_allowed_host_and_scheme(target, allowed_hosts={request.get_host()}):
+    target = settings.LOGIN_REDIRECT_URL
+return redirect(target)
+```
+
+The pattern generalizes past redirects to any parameter a security decision
+reads — a tenant identifier, an object id, an amount, a scope. It also reaches
+outward: where a gateway, a WAF, or a proxy inspects a request before Django
+does, that component picks an occurrence by its own rule, and nothing
+guarantees it is the one Django will read. Which occurrence the edge chooses is
+not visible in this repository, so it is carried as a question to whoever
+operates it under `01-audit-workflow.md`, "Phase 0 — scope, mode, and what the
+repository cannot tell you" rather than assumed.
+
+**Write-time.** When generating a handler that reads a query or form parameter
+a security decision depends on, read it once into a local name and use that
+name everywhere, and reject a duplicate outright where the parameter is
+single-valued, because a check and a use that each read the `QueryDict` on
+their own line are reading two different values the moment a caller sends the
+parameter twice.
+
 ### Tracing review checklist
 
 #### Stack-neutral
@@ -202,6 +258,9 @@ writer and the worst writer is rarely the one in front of you.
       than judged locally against a partial rule.
 - [ ] DRF `validated_data` is treated as a source: serializer validation
       constrains shape, and does not make a value safe at a sink.
+- [ ] A parameter a security decision reads is read once from the `QueryDict`
+      and reused by name, so a duplicated parameter cannot be validated on one
+      occurrence and acted on with another.
 
 ## SQL and the ORM
 

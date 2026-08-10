@@ -9,7 +9,7 @@ schema and type over-exposure, document cost limits, introspection and error
 leakage, mutation inputs and nested writes, batching, persisted operations,
 protobuf message and recursion limits, and the framework defaults a DRF
 engineer will assume are present and are not. Maps primarily to CWE-285,
-CWE-639, CWE-213, CWE-770, CWE-915, CWE-799, CWE-306, and CWE-200; relevant
+CWE-639, CWE-213, CWE-770, CWE-915, CWE-799, and CWE-306; relevant
 OWASP categories include A01:2025, A05:2025, A06:2025, and API1, API2, API3,
 and API4:2023.
 
@@ -401,7 +401,7 @@ Strawberry provides a `MaskErrors` extension; graphene requires a formatter
 that replaces messages for non-allowlisted exception types. The underlying
 rules are unchanged: `a10-exceptional-conditions.md`, "Don't leak on error",
 and `a09-logging-and-alerting.md`, "Scrub error reports" — log the detail
-server-side, return an opaque reference to the client. Maps to CWE-200 and
+server-side, return an opaque reference to the client. Maps to CWE-209 and
 A05:2025.
 
 ## Mutations: allow-listed inputs and nested writes

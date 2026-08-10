@@ -27,6 +27,7 @@ sends you to the topic files both of them point at.
 - [Phase 5 — verification](#phase-5--verification)
 - [Phase 6 — the coverage ledger](#phase-6--the-coverage-ledger)
 - [Attack-chain reasoning](#attack-chain-reasoning)
+- [Mapping to the OWASP Testing Guide](#mapping-to-the-owasp-testing-guide)
 - [Write-time: the inventory run forward](#write-time-the-inventory-run-forward)
 - [Review checklist](#review-checklist)
 
@@ -533,6 +534,95 @@ request created, the callback that completes a purchase — state what that step
 re-verifies rather than inherits, in the same edit, because a chain is built
 out of steps each of which was correct on the assumption that the previous one
 had already checked.
+
+## Mapping to the OWASP Testing Guide
+
+The Web Security Testing Guide answers a third question, and the three do not
+substitute for one another. The Top 10 ranks what goes wrong most often, and is
+the spine the topic references are arranged on. ASVS enumerates what has to be
+demonstrably true before someone signs the application off, which
+`00-methodology-and-severity.md` maps at chapter level because that is an
+output-side question. The WSTG says **how to go and look**, which is the
+input-side question this file owns, and that is why the mapping is here: the
+guide is the closest published counterpart to the phases above, written for
+someone exercising a running target rather than reading a repository. The
+difference between those two positions is what most of this section is about.
+
+**Map at section level, and cite nothing finer.** The guide's own referencing
+guidance states that its test identifiers may change between versions, and
+tells anyone citing one to carry the version inside the identifier — the
+`WSTG-v42-INFO-02` form rather than a bare `WSTG-INFO-02`, because a bare
+identifier is read as naming the current content, which is not the content it
+named on the day it was written. That is the same defect the ASVS mapping
+avoids by citing chapters instead of requirement numbers, and it has the same
+answer: a section name stays correct for as long as the section exists. The
+current stable release is v4.2 and v5.0 is in development as of 10 August 2026;
+shipping v5.0 renumbers identifiers and is the event that requires this table to
+be redone.
+
+Chapter 4, "Web Application Security Testing", is the only chapter carrying
+material a source reviewer can act on. Its twelve sections:
+
+| WSTG v4.2 section | Where this skill covers it |
+|---|---|
+| 4.1 Information Gathering | Phase 1 above is the source-side form of identifying entry points; `a02-security-misconfiguration.md` for what a debug or verbose setting publishes, `deployment-and-runtime.md` for an operational endpoint left reachable. Partial — the fingerprinting tests need a running target |
+| 4.2 Configuration and Deployment Management Testing | `a02-security-misconfiguration.md` for what a settings module or a DNS zone declares, including the dangling record behind a subdomain takeover; `deployment-and-runtime.md` for the proxy, the process, and the image; `file-uploads.md` for object-storage exposure. Partial — see below |
+| 4.3 Identity Management Testing | `a07-authentication-failures.md` for registration, provisioning, and enumeration; `authorization-architecture.md` for the privileges a new account is given |
+| 4.4 Authentication Testing | `a07-authentication-failures.md` for the human principal; `service-identity-and-secrets.md` for the machine one |
+| 4.5 Authorization Testing | `a01-broken-access-control.md` for the per-request failure, `authorization-architecture.md` for the model behind it, `api-drf-specific.md` for the call sites where a correct model still fails to run |
+| 4.6 Session Management Testing | `a07-authentication-failures.md` for sessions and fixation; the cookie and CSRF matrix in `a02-security-misconfiguration.md` |
+| 4.7 Input Validation Testing | `a05-injection.md`, which owns the sink inventory the whole skill defers to; SSRF in `a01-broken-access-control.md` |
+| 4.8 Testing for Error Handling | `a10-exceptional-conditions.md` for the error path itself; `a09-logging-and-alerting.md` for what the failure records |
+| 4.9 Testing for Weak Cryptography | `a04-cryptographic-failures.md`; transport in `deployment-and-runtime.md`; encrypted columns in `data-layer-and-database.md` |
+| 4.10 Business Logic Testing | `a06-insecure-design.md` for which flows are worth attacking, `a10-exceptional-conditions.md` for sequencing and concurrency, `file-uploads.md` for upload logic |
+| 4.11 Client-side Testing | **Non-goal.** |
+| 4.12 API Testing | `api-drf-specific.md`; `graphql-and-alternative-api-surfaces.md` where the client composes the request |
+
+### Where the two do not line up
+
+Say this rather than stretching a mapping to hide it. The non-goals below are
+declared, not missing, and a reader who knows what this skill deliberately does
+not do can trust what it says it does.
+
+- **4.11 Client-side Testing is a permanent non-goal**, on the same reasoning
+  as ASVS V3. DOM XSS, clickjacking, browser storage, web messaging, and
+  cross-site script inclusion are properties of a document a browser executes,
+  not of Django code. Only the half a server controls appears here, as headers
+  and cookie flags in `a02-security-misconfiguration.md`.
+- **Anything requiring a proxy, intercepted traffic, or a live deployment is a
+  non-goal as a procedure**, because this skill reads source and does not
+  exercise a deployment: padding-oracle testing in 4.9, request splitting and
+  smuggling in 4.7, and the timing-dependent tests in 4.10. Where the
+  underlying weakness is still worth naming, it is named as a recommendation to
+  whoever operates that layer — `deployment-and-runtime.md`, "Request smuggling
+  and the parser chain" is the worked case.
+- **Within 4.1, the reconnaissance tests are non-goals.** Search-engine
+  discovery, server fingerprinting, and mapping an application's architecture
+  from the outside all need a running target. The two tests with a source
+  analogue are covered elsewhere and by a different means: identifying entry
+  points is phase 1 of this file, read from the declarations rather than from
+  the traffic, and what the application publishes about itself is the settings
+  and operational-endpoint material the table above names.
+- **Within 4.2, the split is by where the configuration lives**, not by whether
+  the topic is interesting. What a settings module or a DNS zone declares is
+  read directly; what the network infrastructure does with a request, and how
+  the server chain answers an unusual HTTP method, is a deployment property and
+  belongs to whoever operates it. `SKILL.md`, "Ownership and boundaries" draws
+  the same line for the whole skill.
+- **This skill also sweeps surfaces the WSTG has no section for**, so a
+  guide-complete test is not a complete review. The guide is written for a web
+  application reached over HTTP; phase 1 enumerates Celery tasks and beat
+  schedules, management commands, signal receivers, admin actions, and MCP
+  tools, none of which a tester with a proxy ever sees.
+
+Carry a WSTG identifier in a finding **only where the project is genuinely
+being tested against the guide** — a penetration test scoped in WSTG terms, a
+report that has to reconcile with one. Everywhere else it is a third identifier
+for a reader with no use for it, and the optional position it would occupy is
+already described in `00-methodology-and-severity.md`, "Mapping to ASVS 5.0".
+CWE and the OWASP mapping are not optional. Where one is carried, name the
+section rather than a test, and where a test identifier is unavoidable, write
+it version-tagged for the reason given above.
 
 ## Write-time: the inventory run forward
 

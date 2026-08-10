@@ -216,6 +216,41 @@ CWE-348 (Use of Less Trusted Source), CWE-290 (Authentication Bypass by
 Spoofing), CWE-807 (Reliance on Untrusted Inputs in a Security Decision).
 Severity: high.
 
+### Request smuggling and the parser chain
+
+Request smuggling is not a defect in application code and there is no Django
+line that causes or prevents it. It exists when two components in front of the
+same request disagree about where that request ends — an edge proxy honoring
+`Content-Length` where the origin honors `Transfer-Encoding`, or either one
+accepting a malformed framing header the other rejects — so that bytes the
+first treats as the tail of one request the second treats as the head of the
+next. The consequence lands on the application anyway: a smuggled prefix is
+attributed to whoever's connection it was appended to, which forges
+authentication and poisons any cache in the path.
+
+Treat it the way this file treats orchestrator enforcement: **record it as a
+recommendation to whoever operates the proxy chain, not as a repository
+finding.** What a review can say from the tree is which components are in the
+chain and what versions they are pinned to, and the question addressed outward
+is whether every hop parses framing identically and rejects a request carrying
+both framing headers rather than choosing between them. A repository containing
+no proxy configuration cannot answer that, and asserting either way is the
+phase 0 error in `01-audit-workflow.md`, "Phase 0 — scope, mode, and what the
+repository cannot tell you". `01-audit-workflow.md`, "Mapping to the OWASP
+Testing Guide" declares the corresponding WSTG test a non-goal on the same
+reasoning.
+
+CWE-444 (Inconsistent Interpretation of HTTP Requests). Severity: not rated as
+a repository finding; where a chain is confirmed vulnerable by whoever operates
+it, the impact is authentication bypass and cache poisoning together.
+
+**Write-time.** When generating or editing a proxy configuration this
+repository actually holds, keep the chain to one edge parser in front of the
+application server, pin both to current versions in the same edit, and do not
+introduce a third component that re-parses the request body, because the
+vulnerability is created by two parsers disagreeing rather than by either one
+being wrong on its own.
+
 ## Security headers at the edge
 
 Set HSTS, `X-Frame-Options`/frame-ancestors, `X-Content-Type-Options: nosniff`,
@@ -302,9 +337,9 @@ exposure is owned by `api-drf-specific.md`, "Schema and browsable-API
 exposure", and the `DEBUG` error page itself by A02.
 
 CWE-215 (Insertion of Sensitive Information Into Debugging Code), CWE-489
-(Active Debug Code), CWE-200 (Exposure of Sensitive Information). Severity:
-critical for a reachable Werkzeug console or Debug Toolbar, medium for metrics
-and health disclosure.
+(Active Debug Code), and CWE-287 (Improper Authentication) for an operational
+endpoint that requires none. Severity: critical for a reachable Werkzeug
+console or Debug Toolbar, medium for metrics and health disclosure.
 
 ## Gunicorn hardening
 
@@ -559,6 +594,40 @@ as, and what stays readable in a layer after a later layer deleted it.
   and 5.2.16. See A01 for audience-safe keys, authorization ordering,
   invalidation, and private-response policy; infrastructure configuration
   cannot repair a key that omits security context.
+
+### Cache deception at the edge
+
+Cache deception is the mirror image of the leak A01 owns. There, an application
+key omits an authorization dimension and one principal is served another's
+cached bytes. Here the application key is irrelevant, because the edge decided
+on its own that the response was static — the URL ends in something that looks
+like a file extension, or sits under a prefix a CDN rule marks cacheable — and
+stored a personalized response under a path any anonymous caller can request.
+Two things have to be true at once, which is why it splits across two teams:
+the edge caches by what the URL looks like rather than by what the origin said,
+and the application answers a decorated URL with the same personalized response
+it gives the undecorated one.
+
+The second half is the one this repository can act on, and it is a routing
+question rather than a caching one. A route ending in a catch-all segment, a
+loose `re_path`, or a resolver that tolerates a trailing suffix is what makes
+the decorated URL reach the authenticated view at all; a route that matches
+exactly returns 404 and there is nothing to cache. The first half — which paths
+and extensions the CDN treats as static, and whether it honors the origin's
+`Cache-Control` — is a recommendation to whoever operates the edge, in the same
+register as orchestrator enforcement above, and the question to send them is
+whether any cache rule can override a `private` or `no-store` response.
+
+CWE-524 (Use of Cache Containing Sensitive Information). Severity: rated on
+what the cached response holds, per A01's cache section rather than separately
+here.
+
+**Write-time.** When generating a route that serves authenticated or
+personalized content, match the path exactly rather than with a trailing
+catch-all, and put `never_cache` or an explicit `Cache-Control: private,
+no-store` on the response in the same edit, because an edge rule keyed on what
+a URL looks like will cache anything the origin did not mark private, and the
+decorated URL is one an attacker chooses.
 
 ## Queue and broker exposure
 

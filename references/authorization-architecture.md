@@ -467,7 +467,7 @@ are the same shape of problem: a second copy of the data with **its own query
 path**, which does not pass through the queryset scoping, permission classes, or
 database policies that guard the source rows. Authorization was implemented once,
 at the table, and the copy silently reintroduces an unguarded door. Maps to
-CWE-639, CWE-284, and CWE-200; A01:2025 and API1:2023.
+CWE-639, CWE-284, and CWE-285; A01:2025 and API1:2023.
 
 The failure has two halves and a review has to test both:
 

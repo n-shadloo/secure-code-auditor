@@ -155,7 +155,7 @@ Inert means the key discloses nothing by being seen. Keys travel further than
 the objects they name — into access logs, referrer headers, support tickets,
 and analytics — so treat the key itself as published text. Customer and tenant
 names, email addresses, sequential identifiers, original filenames, document
-titles, and dates in a key path all leak (CWE-200, CWE-201): a sequential
+titles, and dates in a key path all leak (CWE-201): a sequential
 identifier discloses volume and invites enumeration, and a retained filename
 such as `redundancy-letter-2026.pdf` discloses the content of a file nobody
 was authorized to read.

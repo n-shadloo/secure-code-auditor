@@ -8,7 +8,7 @@ field-level encryption and searchable lookups, injection into document and
 key-value stores, read-replica staleness in authorization decisions, connection
 exhaustion, and where copies of production data are allowed to travel. Maps
 primarily to CWE-250, CWE-269, CWE-284, CWE-295, CWE-311, CWE-89, CWE-943,
-CWE-400, and CWE-200; relevant OWASP categories include A01:2025, A02:2025,
+and CWE-400; relevant OWASP categories include A01:2025, A02:2025,
 A04:2025, A05:2025, and A06:2025, and API1:2023.
 
 This file owns **the database as a boundary of its own** — privilege

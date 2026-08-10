@@ -160,10 +160,11 @@ to write on this line.
 
 ## Mapping to ASVS 5.0
 
-OWASP ASVS 5.0.0, released 30 May 2025 and still the current version, holds
-around 350 requirements in 17 chapters at three cumulative levels — L1 is
-roughly a fifth of the standard, L2 about seventy per cent of it including all
-of L1, and L3 the remainder. It answers a different question from the Top 10
+OWASP ASVS 5.0.0, released 30 May 2025 and still the current version as of
+10 August 2026, holds around 350 requirements in 17 chapters at three
+cumulative levels — L1 is roughly a fifth of the standard, L2 about seventy per
+cent of it including all of L1, and L3 the remainder. It answers a different
+question from the Top 10
 spine this skill is organized on. The Top 10 ranks what goes wrong most often;
 ASVS enumerates what has to be demonstrably true before someone signs the
 application off. A finding is discovered against the first and defended against
@@ -175,7 +176,10 @@ verification level. Everywhere else it is a third identifier for a reader with
 no use for it. CWE and the OWASP mapping are not optional; this one is. An LLM
 Top 10 2026 or Agentic Top 10 entry token is admissible in the same optional
 position on the same only-where-held-to-it terms, mapped section by section in
-`agent-and-llm-interfaces.md`.
+`agent-and-llm-interfaces.md`. A WSTG section is admissible there on those same
+terms, where the engagement is scoped in testing-guide language;
+`01-audit-workflow.md`, "Mapping to the OWASP Testing Guide" owns that mapping
+and the version-tag discipline any test identifier has to carry.
 
 **Cite the chapter, and a section only where one sub-chapter is the whole
 subject** — `V8` for an authorization finding, `V15.4` for a concurrency one.

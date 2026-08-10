@@ -5,7 +5,7 @@ what a "deleted" flag actually hides, where copies of it live, how long it is
 kept, when anonymization is real, and how it leaves the system through an
 export. The threat model is time and duplication rather than access — the same
 row, still readable after the account was closed, or still present in a copy
-nobody listed. Maps primarily to CWE-212, CWE-359, CWE-459, CWE-200, and
+nobody listed. Maps primarily to CWE-212, CWE-359, CWE-459, and
 CWE-532; relevant OWASP categories include A01:2025, A06:2025, and A09:2025,
 and API1:2023 and API3:2023.
 
@@ -533,7 +533,7 @@ model needs, since it does not call `Model.delete()`.
 
 ## Export and subject-access endpoints
 
-Maps to CWE-200 and CWE-639; A01:2025 and API1:2023.
+Maps to CWE-285 and CWE-639; A01:2025 and API1:2023.
 
 An export endpoint assembles everything the system holds about one subject into
 a single downloadable artifact. That is a legitimate feature and simultaneously
