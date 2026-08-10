@@ -1,11 +1,12 @@
 # The Audit Workflow
 
-This file owns **how a codebase is swept**: the phase order, the entry-point
+This file owns **how a codebase is swept**: the phase order, what each phase
+hands the next and the coverage property that closes it, the entry-point
 inventory, the principal and trust-boundary model, hypothesis generation and
-the order the work runs in, the coverage ledger, and the attack-chain
-reasoning that turns several confirmed links into one finding. It owns no
-vulnerability and no control — every phase names the reference that owns the
-rules for whatever it turns up.
+the order the work runs in, the budget rule for a tree too large to read
+closely, the coverage ledger, and the attack-chain reasoning that turns several
+confirmed links into one finding. It owns no vulnerability and no control —
+every phase names the reference that owns the rules for whatever it turns up.
 
 `00-methodology-and-severity.md` owns the other half: how a finding is scored
 and written, which is the severity rubric, the confidence scale, the finding
@@ -40,7 +41,7 @@ sweep is built inventory-first: establish the complete set of places where
 execution begins on input the application did not author, and derive the work
 from that set rather than from the files that looked interesting.
 
-Two consequences make this a procedure rather than advice.
+Three consequences make this a procedure rather than advice.
 
 - **Coverage has to be recorded, not felt.** An unexamined surface and a clean
   one read identically in a report that does not separate them, and the reader
@@ -51,6 +52,15 @@ Two consequences make this a procedure rather than advice.
   one that finds the most per file read in a Django codebase, and departing
   from it should follow from something specific that was seen rather than from
   a keyword that matched.
+- **A phase ends on a property of its coverage, not on a quantity of reading.**
+  Each phase below hands the next one a written artifact — the scope statement
+  and the environment questions, the inventory, the principals and boundaries,
+  the source-to-sink pairs, the ordered hypotheses, the dispositions — and is
+  finished when that artifact is complete over the surface the previous phase
+  named, rather than when some number of files have been read. A phase that
+  hands forward an impression instead of an artifact makes the next one
+  re-derive it by re-reading, and re-derivation is how a sweep narrows onto
+  whatever was re-read.
 
 ## Phase 0 — scope, mode, and what the repository cannot tell you
 
@@ -67,6 +77,12 @@ Scope is the set of directories, apps, and services in front of you, stated
 before the sweep rather than inferred from it afterwards. Where a service the
 application depends on is outside it, that is a scope decision and belongs in
 the ledger — not a gap discovered at write-up time.
+
+The phase hands forward the scope statement and the list of
+confirm-with-operator questions below, and it is finished when every dependency
+a finding might rest on has been placed on one side of the repository boundary
+or the other. Not when the settings module has been read: the settings module
+is where this phase looks, and the question is about what is not in it.
 
 ### Principle layer
 
@@ -220,6 +236,13 @@ behind it and the diff that makes a schema useful at all — anything in the URL
 map that is not in the schema is a shadow-endpoint candidate. Take it from
 there rather than re-deriving it here.
 
+The phase hands every later phase its list, and it is finished when every
+family in the table has a recorded result — members enumerated at their
+resolved paths, or the family recorded absent. It is not finished when the
+routes look complete. Routes are the family a reviewer finds without trying,
+and a sweep that stops at them has enumerated the surface it was already going
+to read.
+
 **Write-time.** When adding a route, a task, a consumer, a command, a
 receiver, or a tool, name which family it joins before writing the body, and
 write that family's access rule in the same edit that makes it reachable,
@@ -269,6 +292,12 @@ expressed in, including which of RBAC, ABAC, and ReBAC fits, and
 | Application to a third party | the outbound destination is allowlisted after DNS resolution, and the response is untrusted input on the way back — `a01-broken-access-control.md`, "SSRF" |
 | Proxy to application | the number of trusted hops is known, and the client IP is read from the position that survives a forged header — `deployment-and-runtime.md`, "Reading the client IP" |
 
+The phase hands phase 4 a principal set and the boundaries each entry point
+crosses, and it is finished when every entry point from phase 1 has at least
+one principal named against it — including the ones whose answer is anonymous,
+since that is both the answer nobody writes down and the one that most often
+turns out to be wrong.
+
 **Write-time.** When generating an endpoint, a task, or a tool, write down
 which principals can reach it before writing its body, and derive tenant,
 owner, and role from the authenticated identity in that same edit, because a
@@ -296,6 +325,20 @@ decides how much of the result is worth carrying forward:
   contains no request, so each half reviews clean. Carry the field name
   forward from phase 1 as a source in its own right; that is the only thing
   the two halves have in common.
+- **The middle of the path is retrieved, not inferred from the two ends.** A
+  view that calls a service that calls a helper is three files, and the
+  construction that decides the question is in whichever of them nobody opened.
+  Open each function between the entry point and the sink and read the call it
+  makes, because the defect that survives a review is the one whose two ends
+  each look correct in isolation — the parameter is validated where it arrives
+  and the sink is called with a variable that looks local, and the layer that
+  joined the two is where it stopped being data.
+
+The phase hands phase 4 the source-to-sink pairs, and it is finished when every
+entry point from phase 1 has been walked once against that inventory —
+walked, and recorded as reaching no sink where it reaches none. An entry point
+that paired with nothing and an entry point nobody walked are the same blank
+line in any record that does not distinguish them.
 
 **Write-time.** When generating code that writes a value to a model field
 another process will later hand to an interpreter, constrain the field where
@@ -339,6 +382,44 @@ a `.proto` served with no interceptor, a signed cookie read with no salt. Note
 the jump in the ledger so the phases that were deferred are visibly deferred
 rather than quietly skipped.
 
+The phase hands phase 5 an ordered list of hypotheses, each attached to an
+entry point rather than to a keyword, and it is finished when every entry point
+from phase 1 has been triaged: a hypothesis was generated against it, or it was
+recorded as generating none. Triaged is not investigated. Investigation is
+phase 5, it is the expensive half, and on a large tree it is the half that runs
+out.
+
+### Budget on a large tree
+
+A tree with more entry points than can be read closely forces a choice about
+where the reading goes. The failure is not choosing badly, it is choosing
+silently — a partial audit delivered in the shape of a complete one, with
+nothing on the page that lets the reader tell. Two rules keep the choice
+visible.
+
+**Enumerate exhaustively, read selectively.** Phase 1 is cheap because it reads
+declarations rather than logic, so it is completed over the whole tree whatever
+the size, and it is the one thing never sampled: a family nobody enumerated
+cannot be sampled from, only missed. What gets rationed is the close reading in
+phases 3 and 5, and the ration is per area — a bounded pass over each area the
+inventory named, before an unbounded one over any single area. The reason is in
+this phase's own premise. An entry-point sweep produces leads sorted by
+nothing, so the first interesting one is not the most valuable one, and a
+budget spent confirming it is spent before anything else has been priced. Treat
+that as a preference with a reason rather than as a gate — a lead already most
+of the way to confirmed is worth finishing — but the default runs breadth
+first, because depth first on the first lead is the shape a review takes when
+nobody decided.
+
+**A sample is recorded as a sample.** Where a family is large and repetitive —
+forty viewsets over one base class, a hundred tasks in one module — read the
+base class, the shared defaults, and a named subset of members, then write into
+the ledger which members were read and on what basis they were chosen. The
+ledger does not prevent a sample being substituted for a sweep and is not meant
+to; what it does is make the substitution legible, so that the reader sees
+twelve of eighty-three viewsets read as the ones carrying a `pk` in the route,
+rather than a findings list that reads as though all eighty-three were opened.
+
 ## Phase 5 — verification
 
 This phase is written as a gate rather than as advice, because pattern
@@ -354,6 +435,15 @@ A hypothesis is promoted to a finding only after each of the six below has been
 assumed. The record is what a later reader needs in order to disagree with the
 finding, and a discharge nobody wrote down is indistinguishable from one that
 never happened.
+
+Recorded means the retrieved text, not remembered behavior. Name the file the
+discharge rests on and quote the line it turns on, because a claim about what a
+decorator, a base class, or a library function does, made without opening it,
+is how a report comes to describe code the project does not contain. That
+failure costs more than the finding was worth. One citation a reader checks and
+cannot find turns every other line in the report into something they now have
+to confirm by hand, and the findings that were real go down with the one that
+was not.
 
 - **Attacker control.** Name the principal that supplies the value, the
   parameter it arrives in, and the route it arrives on. All three, by name. A
@@ -393,6 +483,11 @@ interchangeable:
   mentioned anywhere. A dropped hypothesis is not a caveat: a list of things
   that turned out to be fine is padding, and it pushes the findings that
   survived down the page.
+
+The phase hands the write-up those dispositions, and it is finished when every
+hypothesis phase 4 ordered carries one of the three. One left in none of them
+is the hypothesis that reaches the report as a hedge, which is the form this
+gate exists to keep out.
 
 Every finding carries the shortest source-to-sink path it was actually
 confirmed on and the specific protection that failed. Two lines, not a
@@ -456,6 +551,18 @@ end. Its one job is to keep *examined and clean* distinguishable from *not
 examined*, because a report that conflates them is a report that says nothing:
 the reader takes silence for coverage, and the surface nobody opened is the
 one the next incident comes from.
+
+Write it down as the sweep goes and read it back at each phase boundary rather
+than carrying it in your head. Attention over a long input is a budget rather
+than a constant: material in the middle of a long context is used measurably
+less reliably than the same material near either end, and reliability falls
+further as the input grows whatever position the material holds — which is the
+condition a sweep of a real codebase has produced by the time it reaches phase
+5. So phase 4's ordering is re-derived from what the ledger records rather than
+from whatever the last few files made salient, and a family it still lists as
+unexamined stays on the list even when nothing has referred to it for a long
+while. A review that narrows late narrows towards what it read most recently,
+and the written ledger is the only thing still holding what it did not read.
 
 Five dimensions, each recorded as a count or a list rather than as a
 judgement:
@@ -657,13 +764,23 @@ defaults of whichever file the author happened to have open.
 - [ ] Sources were paired to sinks before anything was called a finding, and
       the stored-then-used path was tracked across requests rather than left
       as two unrelated hits.
+- [ ] The functions between an entry point and its sink were opened and read,
+      rather than the path inferred from its two ends.
 - [ ] Work was ordered by impact against effort to confirm, and any surface
       that jumped the queue is recorded together with what was deferred.
+- [ ] Where the tree was too large to read closely, the inventory was still
+      completed over all of it, the close reading was budgeted per area rather
+      than spent on the first lead, and every family read as a sample is
+      recorded in the ledger as a sample together with the basis it was chosen
+      on.
 - [ ] Each finding discharges all six gate items — attacker control,
       reachability, the protections that should have stopped it, the
       insufficiency of whatever sanitization is present, concrete impact, and
       the benign-pattern catalogue — with each discharge recorded rather than
       assumed.
+- [ ] Every discharge names the file and quotes the line it rests on, rather
+      than resting on what a decorator, a base class, or a library function is
+      remembered to do.
 - [ ] Every finding carries the shortest source-to-sink path it was confirmed
       on and the protection that failed, and every hypothesis that failed
       attacker control or matched a benign pattern was dropped rather than
@@ -674,6 +791,9 @@ defaults of whichever file the author happened to have open.
 - [ ] The ledger distinguishes examined-and-clean from not-examined on every
       dimension, and its not-examined lines are what the report's limitations
       section carries.
+- [ ] Each phase closed on the coverage property that ends it rather than on
+      an amount of reading, handed the next phase a written artifact, and the
+      ledger was read back at each boundary rather than recalled.
 
 ### Django & DRF
 
