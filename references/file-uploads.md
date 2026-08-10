@@ -821,7 +821,11 @@ Django settings have narrower meanings than their names suggest:
   before application-level handling rejects it — and CVE-2026-5766, fixed in
   Django 6.0.5 and 5.2.14, was that failure exactly: an ASGI request with a
   missing or understated `Content-Length` bypassed
-  `FILE_UPLOAD_MAX_MEMORY_SIZE` and was read into memory. Patching closes that
+  `FILE_UPLOAD_MAX_MEMORY_SIZE` and was read into memory. Its severity is
+  recorded by two bodies that disagree — low under Django's own security
+  policy, medium in the GitHub Advisory Database — and both belong in a report,
+  because a scanner keyed to the second and a reviewer quoting the first will
+  otherwise describe the same install in different words. Patching closes that
   instance, but the size ceiling belongs at the web server either way.
 
 A direct-to-storage upload has no reverse proxy in its path, so none of the

@@ -100,7 +100,7 @@ to consult.
 | HTML | `mark_safe()`, `SafeString`, `\|safe`, `\|safeseq`, `{% autoescape off %}`, misused `format_html`, a string handed to `HttpResponse` | autoescaped template output, or `format_html("{}", value)` | "Template injection and server-side output" |
 | Template compiler | `Template(...)` or `Engine.from_string(...)` on a string the user supplied | a template file in the repository, with user data in the context | "Template injection and server-side output" |
 | Directory server | an LDAP filter string built by interpolation | `escape_filter_chars` on every assertion value | "Directory and LDAP injection" |
-| Response and mail headers | `response[name] = value`, `EmailMessage` header fields, `send_mail` arguments | reject CR and LF before construction | "Header and email injection" |
+| Response and mail headers | `response[name] = value`, `EmailMessage` header fields, `send_mail` arguments, and a value a bare `DomainNameValidator` call cleared below 6.0.7 or 5.2.16 | reject CR and LF before construction, and take the cleaning from a form or serializer field rather than from the validator | "Header and email injection" |
 | Log line | any value interpolated into a log message | structured fields, or control characters escaped in a formatter | `a09-logging-and-alerting.md`, "Log injection and integrity" |
 | Filesystem path | `open()`, `os.path.join(base, value)`, `pathlib` joins, and storage names taken from the client | a server-chosen identifier resolved against a fixed base, by an API that rejects an escape rather than normalizing it | `a01-broken-access-control.md`, "Path traversal"; the name and key an upload brings are in `file-uploads.md`, "Filenames and storage keys" |
 | Outbound HTTP | `requests`, `urllib`, `httpx`, `aiohttp` on a user-influenced URL | an allowlisted destination checked after DNS resolution, not a validated string | `a01-broken-access-control.md`, "SSRF" |
@@ -678,6 +678,25 @@ filterstr = "(uid=%s)" % ldap.filter.escape_filter_chars(username)
   rejecting newlines says nothing about where the `Location` points.
 - For reset, magic-link, invite/share, mailbox-flooding, and preview-fetch abuse,
   see the email and notification design controls in A06.
+- **A validator returning without raising is not a header-safety check.**
+  `DomainNameValidator` accepted values containing newlines below 6.0.7 and
+  5.2.16 — CVE-2026-53878, fixed 7 July 2026. Ordinary Django usage was never
+  exposed: a `CharField` strips newlines before the validator runs, and
+  `HttpResponse` rejects them on the way out, so both ends held even while the
+  validator did not. The exposure was code calling the validator directly on a
+  raw request value and then treating the result as clean enough to build a
+  header or an address from. That is the shape to look for — a validator
+  invoked outside a form or serializer field, on a value that came off the
+  request, with the header or `EmailMessage` construction downstream of it and
+  nothing rejecting CR and LF in between.
+
+**Write-time.** When generating validation for a hostname, domain, or address a
+request supplies, put it behind a form or serializer field rather than calling
+the validator on the raw value, because the field's own cleaning is what removes
+the control characters a validator is not specified to reject and a bare call
+skips. Where a direct call genuinely is the right shape, reject CR and LF
+explicitly in the same function instead of inferring their absence from the
+validator having returned.
 
 ## XML / deserialization pointers
 
@@ -719,7 +738,8 @@ that is covered in A08 (Integrity and Deserialization); cross-check there.
 - [ ] LDAP filters escape every assertion value with `escape_filter_chars`, DNs
       use `escape_dn_chars`, and `python-ldap` is 3.4.5 or later.
 - [ ] Values bound for a response or mail header are rejected for CR and LF
-      before the header is constructed, not only by the framework afterwards.
+      before the header is constructed, not only by the framework afterwards,
+      and no bare validator call is standing in for that rejection.
 - [ ] unneeded XML is disabled; required XML uses a maintained parser with DTD,
       external-entity, network, and expansion controls; deserialization is
       cross-checked against A08;

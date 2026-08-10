@@ -144,13 +144,25 @@ Two things follow for a settings module.
   the project still derives salts ambiguously and the finding is the upgrade,
   not a setting.
 - **`SIGNED_COOKIE_LEGACY_SALT_FALLBACK` decides whether the old cookies are
-  still honored.** It was added in 5.2.15 and defaults to `True`, so a
-  patched project goes on accepting cookies signed under the historical
-  `key + salt` derivation. Django accepts them until 7.0, where the
-  transitional setting is removed. Set it to `False` once cookies signed
-  before the upgrade have expired — and immediately, rather than on a
-  schedule, in any project whose own calls can collide, because until then
-  the ambiguous derivation remains a valid way to present a cookie.
+  still honored, and its default depends on the line the project runs.** It
+  was added in 5.2.15 and 6.0.6 defaulting to `True`, so a patched project on
+  either of those lines goes on accepting cookies signed under the historical
+  `key + salt` derivation. Django 6.1, released 5 Aug 2026, flipped that
+  default to `False`, which completes the remediation rather than extending
+  it: on 6.1 the ambiguous derivation is rejected unless the setting is
+  written back. Django keeps the setting until 7.0, where it is removed
+  outright. Read the default off the installed line before calling an unset
+  value safe or unsafe — on 5.2 and 6.0 an absent setting means the old
+  cookies are still accepted, and on 6.1 it means they are not.
+- **The 6.1 flip has a migration consequence worth stating before the
+  upgrade, not after.** Cookies minted by a pre-June-2026 Django stop
+  validating the moment the project moves to 6.1, so a session, preference,
+  or consent cookie still in circulation is silently dropped rather than
+  rejected loudly. Re-enabling the fallback is a way to defer that, and it is
+  the wrong instinct in any project whose own calls can collide, because
+  until it is off the ambiguous derivation remains a valid way to present a
+  cookie. Prefer letting the old cookies expire, or invalidating them
+  deliberately, over restoring the acceptance path.
 
 Auditing it is closer to a grep than a review. Collect every
 `set_signed_cookie()` and `get_signed_cookie()` call, concatenate each cookie
@@ -164,10 +176,15 @@ and the pair should be renamed as well.
 `get_signed_cookie()` call, pass an explicit `salt` naming the purpose the
 cookie serves rather than repeating its name, so the value is domain-separated
 on the same principle every other signed artifact in the project follows. On a
-new project set `SIGNED_COOKIE_LEGACY_SALT_FALLBACK = False` in the same
-settings module you generate: nothing signed under the old derivation is in
-circulation, so the default only preserves an acceptance path this project
-never needed, and it is far easier to set now than to schedule later.
+new project targeting 5.2 or 6.0, write
+`SIGNED_COOKIE_LEGACY_SALT_FALLBACK = False` into the same settings module you
+generate: nothing signed under the old derivation is in circulation, so the
+default only preserves an acceptance path this project never needed, and it is
+far easier to set now than to schedule later. On 6.1 that is already the
+default, so write nothing — and when generating the settings change for a 6.1
+upgrade, do not add the setting back at `True` to rescue cookies the upgrade
+invalidated, because that reopens the collision the release just closed for
+every cookie the project signs.
 
 ## CSRF settings and trusted origins
 
@@ -483,7 +500,9 @@ so a clean linter is never evidence of deployment posture.
 - [ ] `SECURE_PROXY_SSL_HEADER` matches the actual proxy and isn't client-spoofable.
 - [ ] Django is at 5.2.15 or 6.0.6 and later, and
       `SIGNED_COOKIE_LEGACY_SALT_FALLBACK` is `False` wherever two
-      `get_signed_cookie()` name-and-salt pairs could concatenate alike.
+      `get_signed_cookie()` name-and-salt pairs could concatenate alike —
+      read as the effective value rather than the written one, since 5.2 and
+      6.0 default it to `True` and 6.1 defaults it to `False`.
 - [ ] `CSRF_TRUSTED_ORIGINS` set with scheme; no stray `@csrf_exempt`.
 - [ ] CORS uses an allowlist; no `CORS_ALLOW_ALL_ORIGINS = True` with credentials.
 - [ ] DMARC is at `p=quarantine` or `p=reject` rather than parked at `p=none`,

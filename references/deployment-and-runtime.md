@@ -240,16 +240,48 @@ repository cannot tell you". `01-audit-workflow.md`, "Mapping to the OWASP
 Testing Guide" declares the corresponding WSTG test a non-goal on the same
 reasoning.
 
+One half of it does resolve to a repository finding, and it is the half most
+reviews skip because the exposure above is not one: the pinned version of the
+application server and of its worker dependencies, which sit in the
+requirements file the tree does hold. Gunicorn validated `Transfer-Encoding`
+loosely enough to permit TE.CL smuggling below **22.0.0** — CVE-2024-1135 and
+CVE-2024-6827 — and the two bodies that scored the first agree rather than
+diverge, which is worth stating because divergence is the usual case: the
+GitHub Advisory Database rates CVE-2024-1135 7.5 HIGH on
+`CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:H/A:N`, and IBM X-Force publishes the
+identical vector and score. Treat 22.0.0 as the floor and the 2026 line as the
+target: it refuses a request carrying both `Transfer-Encoding` and
+`Content-Length` rather than choosing between them, rejects empty transfer
+codings, and tightened chunk-extension parsing to reject a bare CR per
+RFC 9112 alongside its keepalive and PROXY-protocol handling.
+
+The async workers carry their own floors, and those are the ones a dependency
+review misses, because a worker arrives through a `-k` flag on the command line
+rather than as a package anybody chose for its security properties:
+`eventlet>=0.40.3` for CVE-2025-58068, `gevent>=24.10.1` for CVE-2023-41419,
+and `tornado>=6.5.0` for CVE-2025-47287. Read the worker class the deployment
+actually names and check the floor belonging to that one, rather than all three.
+
+For uvicorn and Daphne this file records **no advisory found**, which is not the
+same claim as none existing — the search behind that phrase was not exhaustive,
+and reporting an absence as a clean result is the error
+`a02-security-misconfiguration.md`, "check --deploy" describes in its own
+domain. Report the pinned version and say what was and was not looked for.
+
 CWE-444 (Inconsistent Interpretation of HTTP Requests). Severity: not rated as
 a repository finding; where a chain is confirmed vulnerable by whoever operates
-it, the impact is authentication bypass and cache poisoning together.
+it, the impact is authentication bypass and cache poisoning together. The
+version floors above are ordinary A03 findings and are rated there.
 
 **Write-time.** When generating or editing a proxy configuration this
 repository actually holds, keep the chain to one edge parser in front of the
-application server, pin both to current versions in the same edit, and do not
-introduce a third component that re-parses the request body, because the
-vulnerability is created by two parsers disagreeing rather than by either one
-being wrong on its own.
+application server and do not introduce a third component that re-parses the
+request body, because the vulnerability is created by two parsers disagreeing
+rather than by either one being wrong on its own. In the same edit, pin the
+application server at or above its floor — `gunicorn>=22.0.0`, and the floor
+for whichever async worker the command line selects — because the worker is
+chosen for throughput in one file and never revisited in the requirements file
+where its version is actually decided.
 
 ## Security headers at the edge
 
@@ -661,6 +693,10 @@ decorated URL is one an attacker chooses.
       endpoints are authenticated or internal-only.
 - [ ] Gunicorn non-root on a local socket; systemd unit hardened;
       `forwarded_allow_ips` names the proxy rather than `*`.
+- [ ] The application server is pinned at or above `22.0.0` for Gunicorn, and
+      whichever async worker the command line selects is pinned at its own
+      floor; the smuggling exposure itself is sent outward as a question about
+      the proxy chain rather than written up as a repository finding.
 - [ ] The image pins a maintained base, declares a numeric non-root `USER`,
       builds in stages, and writes nothing outside `/tmp` or a mounted volume.
 - [ ] `.dockerignore` excludes `.env`, `.git`, keys, and local settings, and no

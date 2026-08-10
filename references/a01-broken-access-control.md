@@ -292,12 +292,59 @@ When a response really is safe for a defined audience:
 - never assume DRF authentication or permission classes are re-run on a cache
   hit outside the view.
 
+Two of the 2026 cache advisories are reachable from something a reviewer can
+read in application code, rather than only from the installed patch level, and
+both are cheaper to check than the version is.
+
+**A hand-written `Cache-Control` whose directive is not lowercase.**
+`UpdateCacheMiddleware` compared directives case-sensitively below 6.0.6 and
+5.2.15, so a response setting `Cache-Control: Private` by hand was cached as
+though it had asked for nothing — CVE-2026-8404, disclosed 3 June 2026 and
+rated low under Django's security policy. Only manually set headers were
+affected, which is what makes it a code finding: look for a
+`response["Cache-Control"] = ...` assignment, or a DRF renderer or middleware
+that composes the header itself, and read the case of the directive rather
+than trusting that `private` is what it says. The patch closes Django's half
+and leaves the portability half open, because a directive is case-insensitive
+by specification and an intermediary that reads it the way Django used to is
+not visible from this repository at all.
+
+**Write-time.** When generating a view or middleware that has to mark a
+response uncacheable, reach for `never_cache` or `cache_control()` rather than
+assigning the header string yourself, because the decorator settles the
+directive's spelling in one place and the hand-written header was the only form
+this advisory could be reached through. Where the header genuinely must be
+composed
+by hand — a renderer, a proxy-facing shim — write the directive lowercase in
+that first version, since nothing downstream will tell you it was ignored.
+
+**`SESSION_SAVE_EVERY_REQUEST = True` in front of a cached public page.** The
+setting makes Django write a session, and therefore a `Set-Cookie`, on every
+response — including responses from views with no authentication in them. Where
+the site cache or `cache_page` sits on such a view, that `Set-Cookie` is stored
+with the page and replayed to the next anonymous caller, who is handed a session
+identifier somebody else already holds. That is CVE-2026-35192, fixed in 6.0.5
+and 5.2.14 on 5 May 2026 and rated low under Django's security policy; it is
+session fixation reached through a cache rather than through a URL. Both halves
+are a grep — the setting in the settings module, and `UpdateCacheMiddleware`
+with `FetchFromCacheMiddleware` in `MIDDLEWARE` or a `cache_page` on a view
+that requires no login. Neither half is a finding on its own.
+
+**Write-time.** When generating a settings module that turns on
+`SESSION_SAVE_EVERY_REQUEST` — usually to slide the session expiry on activity
+— check in the same edit whether the site cache middleware is installed, and if
+it is, keep the cached views off the session path with `never_cache` rather than
+relying on the patch level of whatever Django is deployed. The setting and the
+cache are written by different people on different days, and each is defensible
+alone.
+
 Keep Django at the current patch level in the supported line — 6.1, 6.0.8, or
-5.2.17 as of 9 Aug 2026. The 2026 cache security fixes landed in 6.0.7 and
-5.2.16 and covered `Authorization` variation, malformed or mixed-case cache
-directives, `Vary` parsing, and responses that set cookies. Patching is
-necessary, but it cannot repair an application key that omits tenant, user, or
-permission state.
+5.2.17 as of 9 Aug 2026. The 2026 cache security fixes are spread across the
+whole year's releases rather than concentrated in one: `Vary: *` handling in
+6.0.5 and 5.2.14, `Authorization` variation, `Vary` whitespace parsing, and the
+mixed-case directives above in 6.0.6 and 5.2.15, and the cached `Set-Cookie`
+response in 6.0.7 and 5.2.16. Patching is necessary, but it cannot repair an
+application key that omits tenant, user, or permission state.
 
 See `deployment-and-runtime.md` for proxy/CDN/cache exposure and infrastructure
 configuration.
@@ -322,6 +369,9 @@ configuration.
 - [ ] `Vary: Cookie` / `Vary: Authorization`, `private` / `no-store`, decorator
       order, and all intermediary behavior are tested with two different users
       and tenants.
+- [ ] Every hand-written `Cache-Control` header spells its directive in
+      lowercase, and no cached public view sits behind
+      `SESSION_SAVE_EVERY_REQUEST = True`.
 - [ ] Django is on a supported patch containing the 2026 cache fixes; patching
       is not treated as a substitute for scoped keys and invalidation.
 
