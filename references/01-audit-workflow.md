@@ -399,17 +399,18 @@ visible.
 
 **Enumerate exhaustively, read selectively.** Phase 1 is cheap because it reads
 declarations rather than logic, so it is completed over the whole tree whatever
-the size, and it is the one thing never sampled: a family nobody enumerated
-cannot be sampled from, only missed. What gets rationed is the close reading in
-phases 3 and 5, and the ration is per area — a bounded pass over each area the
-inventory named, before an unbounded one over any single area. The reason is in
-this phase's own premise. An entry-point sweep produces leads sorted by
-nothing, so the first interesting one is not the most valuable one, and a
-budget spent confirming it is spent before anything else has been priced. Treat
-that as a preference with a reason rather than as a gate — a lead already most
-of the way to confirmed is worth finishing — but the default runs breadth
-first, because depth first on the first lead is the shape a review takes when
-nobody decided.
+the size — at that size through `scripts/entrypoint_inventory.py --json`, whose
+JSON Lines output is taken a record at a time rather than read as a page — and
+it is the one thing never sampled: a family nobody enumerated cannot be sampled
+from, only missed. What gets rationed is the close reading in phases 3 and 5,
+and the ration is per area — a bounded pass over each area the inventory named,
+before an unbounded one over any single area. The reason is in this phase's own
+premise. An entry-point sweep produces leads sorted by nothing, so the first
+interesting one is not the most valuable one, and a budget spent confirming it
+is spent before anything else has been priced. Treat that as a preference with
+a reason rather than as a gate — a lead already most of the way to confirmed is
+worth finishing — but the default runs breadth first, because depth first on
+the first lead is the shape a review takes when nobody decided.
 
 **A sample is recorded as a sample.** Where a family is large and repetitive —
 forty viewsets over one base class, a hundred tasks in one module — read the
@@ -466,7 +467,7 @@ was not.
 - **Concrete impact.** Which data, whose privilege, which money, which
   account. A sentence that could be pasted into any finding is not an impact
   statement.
-- **Benign patterns ruled out.** The catalogue below, and the one carried by
+- **Benign patterns ruled out.** The catalog below, and the one carried by
   the topic reference that owns this control, were both consulted and the case
   in hand is not one of them.
 
@@ -520,7 +521,7 @@ Four cases are cross-cutting and belong to no single topic file:
   reads unscoped over a manager that scopes, a header set at the proxy rather
   than in Django. What decides it is reading the settings module, the manager,
   and the middleware list before concluding the control is missing — the
-  per-file catalogues named at the end of this section carry the specific
+  per-file catalogs named at the end of this section carry the specific
   pairs.
 - **Test, fixture, and factory code.** A hardcoded credential, `AllowAny`,
   `DEBUG = True`, or a disabled certificate check inside `tests/`,
@@ -565,7 +566,7 @@ while. A review that narrows late narrows towards what it read most recently,
 and the written ledger is the only thing still holding what it did not read.
 
 Five dimensions, each recorded as a count or a list rather than as a
-judgement:
+judgment:
 
 - **Entry-point families** examined against families found, from phase 1,
   including the families found to be absent.
@@ -706,7 +707,7 @@ not do can trust what it says it does.
 - **Within 4.1, the reconnaissance tests are non-goals.** Search-engine
   discovery, server fingerprinting, and mapping an application's architecture
   from the outside all need a running target. The two tests with a source
-  analogue are covered elsewhere and by a different means: identifying entry
+  analog are covered elsewhere and by a different means: identifying entry
   points is phase 1 of this file, read from the declarations rather than from
   the traffic, and what the application publishes about itself is the settings
   and operational-endpoint material the table above names.
@@ -776,7 +777,7 @@ defaults of whichever file the author happened to have open.
 - [ ] Each finding discharges all six gate items — attacker control,
       reachability, the protections that should have stopped it, the
       insufficiency of whatever sanitization is present, concrete impact, and
-      the benign-pattern catalogue — with each discharge recorded rather than
+      the benign-pattern catalog — with each discharge recorded rather than
       assumed.
 - [ ] Every discharge names the file and quotes the line it rests on, rather
       than resting on what a decorator, a base class, or a library function is

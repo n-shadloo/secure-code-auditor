@@ -119,7 +119,7 @@ Five factors do most of the moving, and a finding that does not settle them
 has not earned its rating: whether authentication is required to reach the
 path, whether the object identifier is guessable, whether the affected data is
 personal or financial, whether the path is reachable pre-authentication, and
-whether a chain was confirmed rather than hypothesised. The last is the one
+whether a chain was confirmed rather than hypothesized. The last is the one
 that inflates most: a chain rates at the severity of its outcome only where
 every hop was confirmed, and `01-audit-workflow.md`, "Attack-chain reasoning"
 owns saying which hop is still an assumption.
@@ -431,7 +431,7 @@ than applying the one-line note and moving on.
 
 Write-time does not produce a findings report. A report documents defects in
 code the agent did not write; restating "the viewset I just wrote has a
-permission class" as a finding is theatre, and it teaches the reader to skim
+permission class" as a finding is theater, and it teaches the reader to skim
 the one paragraph that mattered.
 
 The output is the code, followed by a few bullets:

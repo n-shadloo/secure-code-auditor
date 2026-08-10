@@ -22,7 +22,7 @@ CWE-639, CWE-269, and CWE-284.
 - [Django admin: the permission surface](#django-admin-the-permission-surface)
 - [Default-deny architecture](#default-deny-architecture)
 - [Field-level authorization (BOPLA)](#field-level-authorization-bopla)
-- [Search indexes and denormalised copies](#search-indexes-and-denormalised-copies)
+- [Search indexes and denormalized copies](#search-indexes-and-denormalized-copies)
 - [Authorization test suites](#authorization-test-suites)
 - [Permission-model decay and access review](#permission-model-decay-and-access-review)
 - [Review checklist](#review-checklist)
@@ -460,7 +460,7 @@ model field, where the deny-list version fails open as the model grows; see
 `graphql-and-alternative-api-surfaces.md`, "Schema exposure and the all-fields
 type (BOPLA)".
 
-## Search indexes and denormalised copies
+## Search indexes and denormalized copies
 
 A search index, a materialized report table, an analytics export, and a replica
 are the same shape of problem: a second copy of the data with **its own query
@@ -573,7 +573,7 @@ meaningful privilege tiers: it means no one can answer who holds what.
 - [ ] Unknown role, null tenant, new endpoint, and unmapped state all deny.
 - [ ] Function-, object-, and field-level decisions each exist where relevant.
 - [ ] Deactivation and revocation take effect promptly on every path.
-- [ ] Every denormalised copy — search index, report table, export, replica —
+- [ ] Every denormalized copy — search index, report table, export, replica —
       re-applies a server-derived authorization filter at its own query path and
       is refreshed on permission change, not only on content change.
 

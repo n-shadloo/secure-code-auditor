@@ -331,7 +331,7 @@ client that sends an amount is proposing one**, and a flow that accepts the
 proposal has moved pricing into the request body. The same holds for anything
 derived from an amount: a discount percentage, a tax rate, a shipping cost, a
 loyalty multiplier, and the currency the total is denominated in — a total
-that is correct in one currency and labelled as another is a manipulation that
+that is correct in one currency and labeled as another is a manipulation that
 passes every numeric validator.
 
 In DRF the form is that the field is absent from the serializer or read-only
@@ -352,7 +352,7 @@ class OrderItemSerializer(serializers.ModelSerializer):
 ```python
 # Correct: the client names what it wants and the server resolves what that
 # costs. Price and currency are read-only on the serializer and written from
-# the catalogue row, so no request body reaches them on this path -- and the
+# the catalog row, so no request body reaches them on this path -- and the
 # CheckConstraint on the model holds them on the paths that are not this one.
 class OrderItemSerializer(serializers.ModelSerializer):
     quantity = serializers.IntegerField(min_value=1, max_value=100)
@@ -411,7 +411,7 @@ questions about the flow rather than about the handler.
 - **Which are compensating rather than reversing?** A refund is a second,
   forward transaction that happens to move value the other way. It is not an
   undo: it has its own identifier, its own failure modes, its own fees, and
-  its own reasons to be refused. Modelling it as a status change back to the
+  its own reasons to be refused. Modeling it as a status change back to the
   previous state loses the record that both events happened, and a system that
   cannot distinguish "never charged" from "charged and refunded" cannot answer
   a dispute or bound a second refund against the same capture.
@@ -453,7 +453,7 @@ mechanics.
   cancelled, or fails a renewal, and the row granting access is never revisited
   because the grant was written as a durable fact rather than as a derivation
   from the subscription's current state. Prefer deriving the entitlement from
-  the subscription at read time; where it is materialised for performance, the
+  the subscription at read time; where it is materialized for performance, the
   revocation path is a feature that has to be written and tested, not an
   implication.
 - **The seat that survives its removal from a team.** Membership is deleted
@@ -463,7 +463,7 @@ mechanics.
   `authorization-architecture.md`, "Permission-model decay and access review".
 - **The cached permission that outlives the role change.** The decision was
   correct when it was computed and is served from a cache, a session, a
-  denormalised column, or a token whose claims were minted before the change.
+  denormalized column, or a token whose claims were minted before the change.
   A revocation that does not invalidate the cache is a revocation with a
   latency nobody has measured; state the window and make it deliberate.
 - **The trial that can be restarted.** A trial, an introductory rate, a
@@ -506,11 +506,11 @@ from, and materialise it only with an invalidation path written beside it.
 - [ ] Capture, refund, and reversal are each exactly-once, driven by an
       authenticated event, and the flow states which direction a partial
       failure fails in and what reconciles it.
-- [ ] Refunds and other compensating actions are modelled as forward
+- [ ] Refunds and other compensating actions are modeled as forward
       transactions with their own identifiers rather than as a status change
       back to the prior state.
 - [ ] Every entitlement grant has a revocation path with a named trigger, and
-      the caches, tokens, sessions, and denormalised copies it has to reach
+      the caches, tokens, sessions, and denormalized copies it has to reach
       are enumerated.
 
 #### Django & DRF

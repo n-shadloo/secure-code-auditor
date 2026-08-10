@@ -10,7 +10,7 @@ and resolvers, gRPC servicers, Channels routing and consumers, Celery tasks and
 beat entries, management commands, signal receivers, admin registrations, and -
 when a settings path is supplied - MIDDLEWARE in declared order.
 
-It is an inventory, not a judgement. It reports what a module declares; whether
+It is an inventory, not a judgment. It reports what a module declares; whether
 a declaration is right for the surface it sits on is a question for the
 reference file each family names, answered by reading the code. The
 authorization column says where a declaration is, never whether it is correct,
@@ -862,7 +862,7 @@ def print_text(root, entries, unparsed, families, context, notes, roots):
     if unparsed:
         print("# %d file(s) could not be parsed and were NOT scanned - a silent skip would look "
               "like a complete inventory." % len(unparsed))
-    print("# An inventory, not a judgement: every row is a declaration to read, and the "
+    print("# An inventory, not a judgment: every row is a declaration to read, and the "
           "authorization column says where a declaration is, never whether it is right.")
 
 

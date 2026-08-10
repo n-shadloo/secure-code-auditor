@@ -13,7 +13,7 @@ This file owns **the record over time** — deletion completeness, what a
 soft-delete flag fails to hide, retention and the schedule that has to be shown
 to have run, when anonymization is real, and every copy an erasure must reach.
 The boundary with its neighbors is existence rather than access:
-`authorization-architecture.md` owns who may read a denormalised copy while
+`authorization-architecture.md` owns who may read a denormalized copy while
 this file owns whether that copy still exists once the source row is gone, and
 `a09-logging-and-alerting.md` owns what must be recorded while this file owns
 the log and the history table as retained personal data. `file-uploads.md`
@@ -59,7 +59,7 @@ Five rules carry most of the weight, and each is stack-agnostic:
   write-once archives, and append-only streams cannot be rewritten per subject.
   Encrypting a subject's fields under a key held only for that subject and
   destroying the key is what makes the residue unreadable; asserting selective
-  deletion from a backup without one is theatre.
+  deletion from a backup without one is theater.
 - **Anonymization is a claim about re-identification, not about which columns
   were blanked.** If a stable key survives — a hash of an identifier, a
   surviving foreign key, a high-resolution timestamp, an unscrubbed free-text

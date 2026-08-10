@@ -421,7 +421,7 @@ What a backend can actually enforce, in order of leverage:
    has to resolve and connect. Allowlist outbound destinations from the
    tool-executing process and treat every model-influenced fetch as SSRF
    (`a01-broken-access-control.md`, "SSRF").
-3. **Provenance labelling.** Record the trust level of retrieved content and
+3. **Provenance labeling.** Record the trust level of retrieved content and
    refuse to let low-trust content trigger a high-privilege tool. A ticket body
    submitted by an anonymous reporter is not the same input class as a record
    written by the tenant's own administrator.
@@ -438,7 +438,7 @@ RAG and vector-store internals are out of scope; only the authorization
 boundary around retrieval is in scope. The general form of that boundary —
 authorization metadata written onto each indexed document, a mandatory
 server-derived filter at query time, and reindexing when permissions change —
-is in `authorization-architecture.md`, "Search indexes and denormalised
+is in `authorization-architecture.md`, "Search indexes and denormalized
 copies". What is agent-specific here is that a tool republishing retrieval must
 also intersect the tool's scope with the invoking user's own permissions.
 Maps to CWE-77; A01:2025; LLM01:2026 Prompt Injection; ASI06 Memory and

@@ -208,7 +208,7 @@ it could not see anything.
 - A setting assigned inside an `if` is reported as **conditional** with the
   module it appears in, rather than read as a literal, because the scan reads
   the assignment and not the condition. An `INSTALLED_APPS +=` append is
-  reported as an augmentation for the same reason — the previous behaviour of
+  reported as an augmentation for the same reason — the previous behavior of
   declining to judge it is kept, and now says so out loud.
 
 `--json` emits JSON Lines with three record shapes: `setting`, carrying `file`,
@@ -472,11 +472,14 @@ server-side output:
 - `CFG002` — `CORS_ALLOW_ALL_ORIGINS = True`.
 - `CFG003` — `DEBUG = True`.
 - `CFG004` — `ALLOWED_HOSTS` containing `*`.
-- `CFG005` — `@csrf_exempt`.
 
 **`api-drf-specific.md`**:
 
 - `CFG001` — `fields = "__all__"` on a serializer.
+- `CFG005` — `@csrf_exempt`. Routed here rather than to the settings file
+  because DRF enforces CSRF inside `SessionAuthentication` rather than through
+  the middleware, so what `authentication_classes` resolves to for the view
+  decides whether the decorator removed a check at all.
 
 **`graphql-and-alternative-api-surfaces.md`**:
 

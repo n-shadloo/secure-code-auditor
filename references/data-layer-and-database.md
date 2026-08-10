@@ -443,9 +443,9 @@ security decision on a replica read. Django's documented primary/replica router
 example is deliberately simple and, as the documentation notes, does not address
 replication lag at all — it is a starting point, not a security control.
 
-The same reasoning covers other denormalised copies of authorization-relevant
+The same reasoning covers other denormalized copies of authorization-relevant
 state; the general treatment is in `authorization-architecture.md`, "Search
-indexes and denormalised copies". Severity is typically High, because the
+indexes and denormalized copies". Severity is typically High, because the
 observable effect is access continuing after revocation.
 
 ## Transaction isolation and serialization failures

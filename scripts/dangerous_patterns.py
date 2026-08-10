@@ -64,11 +64,14 @@ RULES = {
                "os.system/os.popen runs its argument through a shell - use a subprocess "
                "argument list"),
     "CMD002": ("command", "HIGH", "a05-injection.md",
-               "shell=True with a command that is not a constant is command injection"),
+               "shell=True with a command that is not a constant - whether any element of it "
+               "comes from outside the source file decides whether the shell is handed input "
+               "to re-parse"),
     "CMD003": ("command", "HIGH", "a05-injection.md",
                "eval/exec/compile evaluates source at runtime"),
     "DES001": ("deser", "HIGH", "a08-integrity-and-deserialization.md",
-               "pickle on data the process did not produce is remote code execution"),
+               "pickle reconstructs arbitrary Python objects - who can write the bytes it reads "
+               "decides whether that is remote code execution"),
     "DES002": ("deser", "HIGH", "a08-integrity-and-deserialization.md",
                "yaml.load without a safe Loader constructs arbitrary Python objects"),
     "DES003": ("deser", "HIGH", "a08-integrity-and-deserialization.md",
@@ -85,7 +88,8 @@ RULES = {
     "TPL002": ("xss", "MEDIUM", "a05-injection.md",
                "format_html given an f-string interpolates before it escapes, defeating it"),
     "TPL003": ("xss", "HIGH", "a05-injection.md",
-               "template compiled from a value that is not a constant is template injection"),
+               "template compiled from a value that is not a constant - where that source comes "
+               "from decides whether a caller can author template code"),
     "TPL004": ("xss", "HIGH", "a05-injection.md",
                "autoescape disabled - every variable in the template is emitted raw"),
     "NET001": ("tls", "HIGH", "a04-cryptographic-failures.md",
@@ -101,8 +105,10 @@ RULES = {
                "DEBUG = True - verify this module is not the production settings"),
     "CFG004": ("config", "MEDIUM", "a02-security-misconfiguration.md",
                "ALLOWED_HOSTS contains '*' - do not use in production"),
-    "CFG005": ("csrf", "MEDIUM", "a02-security-misconfiguration.md",
-               "csrf_exempt on a state-changing view removes the only CSRF defense"),
+    "CFG005": ("csrf", "MEDIUM", "api-drf-specific.md",
+               "csrf_exempt on this view - what authentication_classes resolves to decides "
+               "whether a check was removed, since DRF enforces CSRF inside SessionAuthentication "
+               "rather than the middleware"),
     "CFG006": ("graphql", "HIGH", "graphql-and-alternative-api-surfaces.md",
                "graphene bypass_get_queryset makes traversal skip get_queryset, so the resolver "
                "opts out of every scope its type declares"),

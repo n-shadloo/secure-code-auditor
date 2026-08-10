@@ -235,7 +235,7 @@ limit that exists only in the documentation is not applied.
 
 ## Schema exposure and the all-fields type (BOPLA)
 
-The GraphQL analogue of serializer over-exposure is a type that publishes every
+The GraphQL analog of serializer over-exposure is a type that publishes every
 model field. It is the same finding as `api-drf-specific.md`, "Serializer
 exposure and mass assignment (API3)", and the full read/write surface is in
 `authorization-architecture.md`, "Field-level authorization (BOPLA)". Maps to

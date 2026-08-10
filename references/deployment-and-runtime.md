@@ -4,7 +4,7 @@ The layer the backend owns in production: TLS/headers, reverse proxy and
 forwarded-header trust, operational endpoint exposure, Gunicorn/systemd
 hardening, the container image as a build artifact, static/media serving, the
 database connection, and caching/queue exposure. Nginx + Gunicorn + systemd,
-optionally containerised, optionally behind Cloudflare.
+optionally containerized, optionally behind Cloudflare.
 
 This file and `a02-security-misconfiguration.md` split the configuration
 surface by where the setting lives rather than by topic. This file owns what
