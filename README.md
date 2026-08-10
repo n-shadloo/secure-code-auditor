@@ -368,7 +368,15 @@ two read-only helper scripts (no network access, they don't run your project):
 ```
 python scripts/settings_scan.py config/settings/production.py
 python scripts/dangerous_patterns.py .
+python scripts/dangerous_patterns.py . --json --min-severity MEDIUM
 ```
+
+Both parse with the `ast` module rather than grepping lines, so a hit is a
+structural match: parameterized SQL and anything inside a docstring are not
+reported, every hit carries a stable rule identifier and the reference file
+that owns it, and a file that fails to parse is reported as unparsed rather
+than skipped in silence. `python scripts/dangerous_patterns.py --selftest`
+checks the scanner against its own fixtures before you trust a quiet result.
 
 Write new code — it applies secure defaults as it goes (parameterized queries,
 scoped querysets, explicit serializer fields, correct cookie flags, secrets from
@@ -444,8 +452,8 @@ secure-code-auditor/
 │   ├── security-hardening-libraries.md
 │   └── service-identity-and-secrets.md
 ├── scripts/
-│   ├── dangerous_patterns.py           # read-only project scanner
-│   ├── settings_scan.py                # read-only Django settings scanner
+│   ├── dangerous_patterns.py           # read-only AST project scanner
+│   ├── settings_scan.py                # read-only AST Django settings scanner
 │   └── README.md
 ├── README.md
 ├── LICENSE

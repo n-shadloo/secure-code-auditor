@@ -180,7 +180,13 @@ are defined in `references/00-methodology-and-severity.md`.
 5. Optional read-only triage (standard library only, no network):
    - `python scripts/settings_scan.py path/to/settings.py`
    - `python scripts/dangerous_patterns.py path/to/project`
-Treat script output as leads to verify, not confirmed findings.
+   - `python scripts/dangerous_patterns.py path/to/project --json --min-severity MEDIUM`
+   - `python scripts/dangerous_patterns.py --selftest`
+Both parse with the `ast` module rather than grepping lines, so a hit is a
+structural match rather than a text one, every hit carries a stable rule
+identifier and the reference file that owns it, and a file that fails to parse
+is reported as unparsed rather than skipped in silence. Treat script output as
+leads to verify, not confirmed findings.
 
 ## Tool-specific entry points
 - Claude Code: `SKILL.md` (native Agent Skill).

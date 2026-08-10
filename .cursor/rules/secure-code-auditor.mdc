@@ -104,5 +104,7 @@ view — it carries the inventory of every sink and the reference that owns each
 one — and the security-hardening library index for dated package
 dispositions.
 
-Read-only triage scripts are in `scripts/`. Do not rely on this summary alone —
-read the referenced files.
+Read-only triage scripts are in `scripts/`; both parse with the `ast` module
+rather than grepping lines, so a hit is a structural match carrying a stable
+rule identifier and the reference file that owns it. Do not rely on this
+summary alone — read the referenced files.

@@ -21,7 +21,7 @@ license: MIT
 allowed-tools: Read, Grep, Glob, Bash
 metadata:
   author: n-shadloo
-  version: 1.34.0
+  version: 1.35.0
 ---
 
 # secure-code-auditor
@@ -331,10 +331,20 @@ run a review afterward.
 Both scripts are read-only, stdlib-only, and make no network calls. Run them for
 triage; always confirm what they surface by reading the code.
 
-- Settings posture (AST-based; never imports the project):
+- Settings posture (never imports the project):
   `python scripts/settings_scan.py path/to/settings.py`
 - Risky-pattern indicators across a tree:
   `python scripts/dangerous_patterns.py path/to/project`
+- The same tree as JSON Lines, filtered, for a large codebase:
+  `python scripts/dangerous_patterns.py path/to/project --json --min-severity MEDIUM`
+- Confirm the scanner itself before trusting a quiet result:
+  `python scripts/dangerous_patterns.py --selftest`
+
+Both scanners parse with the `ast` module rather than grepping lines, so a hit
+is a structural match — parameterized SQL, `mark_safe` on a constant, and
+anything inside a docstring are not reported — every hit carries a stable rule
+identifier and the reference file that owns it, and a file that fails to parse
+is reported as unparsed rather than skipped in silence.
 
 Their output is a starting point for investigation, not a final report. Map each
 real issue to a category file, verify it, and write it up per the methodology.
