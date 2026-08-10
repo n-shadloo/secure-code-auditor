@@ -104,7 +104,7 @@ to consult.
 | Log line | any value interpolated into a log message | structured fields, or control characters escaped in a formatter | `a09-logging-and-alerting.md`, "Log injection and integrity" |
 | Filesystem path | `open()`, `os.path.join(base, value)`, `pathlib` joins, and storage names taken from the client | a server-chosen identifier resolved against a fixed base, by an API that rejects an escape rather than normalizing it | `a01-broken-access-control.md`, "Path traversal"; the name and key an upload brings are in `file-uploads.md`, "Filenames and storage keys" |
 | Outbound HTTP | `requests`, `urllib`, `httpx`, `aiohttp` on a user-influenced URL | an allowlisted destination checked after DNS resolution, not a validated string | `a01-broken-access-control.md`, "SSRF" |
-| Object deserializer | `pickle.loads`, `yaml.load`, `jsonpickle`, `marshal`, and the cache, session, and fixture paths Django runs without being asked | a format that cannot construct objects | `a08-integrity-and-deserialization.md`, "Insecure deserialization" |
+| Object deserializer | `pickle.loads`, `yaml.load`, `jsonpickle`, `marshal`, the cache, session, and fixture paths Django runs without being asked, and the task message a worker turns back into arguments | a format that cannot construct objects | `a08-integrity-and-deserialization.md`, "Insecure deserialization" and "Celery and task queues" |
 | XML parser | DTDs, external entities, and entity expansion in submitted documents | a maintained parser with those features off, behind input limits | "XML / deserialization pointers" |
 
 Two grep passes make this tractable on a real codebase. Search for the sink
