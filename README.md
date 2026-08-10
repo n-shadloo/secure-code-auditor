@@ -34,9 +34,13 @@ every topic that more than one file could plausibly own has a single named
 owner. Rate limiting, object-level authorization, secrets, SSRF, error
 behavior and the rest are each settled once, in an "Ownership and boundaries"
 section under the router, and every other file cross-references the owner
-rather than keeping its own copy of the rules. Each reference file restates its
-own half of that boundary in its opening paragraph, so an agent that opened the
-wrong file first is told where to go.
+rather than keeping its own copy of the rules. That section is a table of
+contested topic, owner, and the distinction that decides a case near the
+boundary; three splits — path traversal, configuration against runtime, and
+human against machine identity — keep a paragraph because a row would misstate
+the axis they turn on. Each reference file restates its own half of that
+boundary in its opening paragraph, so an agent that opened the wrong file first
+is told where to go.
 
 Knowing all of that still leaves the question of what to open first. A review
 is bounded by whatever the reviewer thought to look at, and a route nobody

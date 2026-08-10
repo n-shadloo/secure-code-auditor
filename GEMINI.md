@@ -4,7 +4,8 @@ This repo's security instructions live in `SKILL.md` and `references/`. Load
 `SKILL.md` first, then the relevant `references/*.md` file. Its router is
 grouped into the OWASP Top 10:2025 spine, cross-cutting surfaces, and package
 decisions; where two rows could both match, the "Ownership and boundaries"
-section below the router names the one file that owns the topic. At
+section below the router names the one file that owns the topic, as a table
+with three splits kept in prose. At
 review-time `references/01-audit-workflow.md` comes before any topic file: it
 owns the sweep, and the topic files answer the questions the sweep generates
 rather than the ones the codebase made obvious. See `AGENTS.md` for the full

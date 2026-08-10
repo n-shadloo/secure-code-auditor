@@ -22,8 +22,9 @@ covers and which are declared non-goals — and the topic
 files answer the questions that sweep raises. The router is grouped — OWASP
 spine, cross-cutting
 surfaces, package decisions — and the "Ownership and boundaries" section below
-it names the single owning file whenever two rows could both match, so read
-that before assuming a topic is duplicated.
+it names the single owning file whenever two rows could both match, as a table
+of topic, owner, and deciding distinction with three splits kept in prose, so
+read that before assuming a topic is duplicated.
 Review-time produces prioritized findings (severity,
 location, CWE + OWASP mapping, an optional ASVS 5.0 chapter or WSTG section
 where the project is held to that standard, the confirmed source-to-sink path

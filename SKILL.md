@@ -5,23 +5,23 @@ description: >-
   API Security Top 10 (2023), and ASVS 5.0 foundation. Use when backend
   code is written or reviewed and touches authentication, sessions, JWT,
   OAuth2/OIDC, API keys, passkeys, password hashing, permissions, access
-  control, SSRF, path traversal, impersonation, SQL/command/template
-  injection, LDAP, row-level security, encrypted columns, NoSQL,
-  Redis, file uploads, S3, serializers, API endpoints, pagination, rate
-  limiting, CSRF/CORS, OpenAPI schema, GraphQL, Django Ninja, AI agents,
-  MCP tools, secrets, payments, entitlements, webhooks, Celery, race
-  conditions, caching, deserialization, async/ASGI, WebSockets, audit
-  logging, erasure, retention, personal data, migrations, JWKS, mutual
-  TLS, SECRET_KEY, Dockerfile, SBOM, X-Forwarded-For, SPF/DKIM/DMARC,
-  or deployment config, even if "security" is never used.
-  Review-time returns prioritized findings with fixes; write-time
-  applies secure defaults. Django/DRF-first; general layer suits any
-  stack.
+  control, IDOR, SSRF, path traversal, impersonation,
+  SQL/command/template injection, LDAP, row-level security, encrypted
+  columns, NoSQL, Redis, file uploads, S3, serializers, pagination, rate
+  limiting, CSRF/CORS, OpenAPI schema, GraphQL, Django Ninja, gRPC, AI
+  agents, MCP tools, secrets, payments, entitlements, webhooks, Celery,
+  race conditions, ReDoS, caching, deserialization, async/ASGI,
+  WebSockets, audit logging, erasure, retention, personal data,
+  migrations, JWKS, mutual TLS, SECRET_KEY, Dockerfile, SBOM,
+  X-Forwarded-For, SPF/DKIM/DMARC, or deployment config, even if
+  "security" is never used. Review-time returns prioritized findings
+  with fixes; write-time applies secure defaults. Django/DRF-first;
+  general layer suits any stack.
 license: MIT
 allowed-tools: Read, Grep, Glob, Bash
 metadata:
   author: n-shadloo
-  version: 1.40.0
+  version: 1.41.0
 ---
 
 # secure-code-auditor

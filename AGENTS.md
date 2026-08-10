@@ -205,9 +205,12 @@ are defined in `references/00-methodology-and-severity.md`.
    router is grouped — the OWASP Top 10:2025 spine, then cross-cutting
    surfaces, then package decisions — so pick the group, then the row.
 4. Where two rows could both match, the "Ownership and boundaries" section
-   below the router names the single owning file for each contested topic;
-   every other file cross-references it rather than restating its rules. Each
-   reference file repeats its own half of that rule in its opening paragraph.
+   below the router names the single owning file for each contested topic, as a
+   table of topic, owner, and the distinction that decides a case near the
+   boundary; three splits keep a paragraph because a row would misstate the
+   axis they turn on. Every other file cross-references the owner rather than
+   restating its rules, and each reference file repeats its own half of that
+   rule in its opening paragraph.
 5. Optional read-only triage (standard library only, no network):
    - `python scripts/entrypoint_inventory.py path/to/project --settings path/to/settings`
    - `python scripts/settings_scan.py path/to/settings/`
