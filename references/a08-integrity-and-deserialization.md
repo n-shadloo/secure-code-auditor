@@ -180,6 +180,30 @@ that exists in the safe JSON format, with no deserialization bug required.
   path, committed to version control, or baked into a container image? Retention
   and copies of personal data are in `data-lifecycle-and-privacy.md`.
 
+### Commonly mistaken for a finding
+
+**`pickle` on bytes the application itself wrote to a location no other
+principal can write.** Severity in this section is Critical wherever an
+attacker controls the bytes, and `pickle.loads` is the most recognizable
+identifier in the file, so the call is often written up as remote code
+execution before the store behind it is looked at. The deciding question is
+who can write the bytes, not which module reads them — a memoization file
+under a directory only this process owns, a cached computation in a Redis
+instance nothing else can reach, a blob in a table no untrusted path writes.
+Keep the design objection, because that answer is a property of the deployment
+rather than of the code and the write controls are exactly what the review
+before this one cannot see; drop the RCE claim, which asserts an attacker who
+was never shown to exist. This is the same question the write-primitive rule
+above asks, read in the other direction: where any second principal can reach
+that store, the finding is live and it is Critical.
+
+**Write-time.** When generating code that persists application state for the
+application itself to read back later, write it in a data-only format even
+though nothing untrusted writes that store today, because the property making
+`pickle` safe there belongs to the deployment — a directory's permissions, a
+broker's network position — and it is changed by people who will never read
+this call.
+
 ## Celery and task queues
 
 Maps to CWE-502 where the serializer constructs objects, and CWE-306 (Missing

@@ -453,6 +453,24 @@ the check that later compares it against a stored copy uses
 `hmac.compare_digest` over fixed-length digests wherever the scope section
 below says the comparison is itself the gate.
 
+### Commonly mistaken for a finding
+
+**`random` for retry jitter, sampling, backoff, shuffling a display order, or
+a test fixture.** The anti-pattern list above names `random.*` outright, and
+`import random` is a one-line grep with no context in it, so every call site
+reads as CWE-338 on sight. Predictability is only a defect where
+unpredictability was the security property being relied on. The deciding
+question is what the value becomes: a credential, a token, a reset link, a
+session identifier, or anything else whose whole defense is that it cannot be
+guessed makes this a finding, and a delay, a sample, an ordering, or a
+fixture makes it the correct choice of generator.
+
+**Write-time.** When generating a value whose only requirement is statistical
+spread — jitter on a retry, a sampled subset, a shuffled order — call
+`random` and leave `secrets` for the values whose security property is that
+nobody can predict them, because reaching for the CSPRNG everywhere blurs the
+signal that makes the real misuse visible in review.
+
 ## Constant-time comparison
 
 Maps to CWE-208 (observable timing discrepancy).

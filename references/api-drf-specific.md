@@ -268,6 +268,23 @@ rather than deny-listing them, and test `PATCH` separately from `PUT`; see
 CWE-915 (Improperly Controlled Modification of Dynamically-Determined Object
 Attributes); OWASP API3:2023, A01:2025. Severity: high.
 
+### Commonly mistaken for a finding
+
+**`fields = "__all__"` on a serializer used only for output, over a model
+whose every field is already public.** The `"__all__"` literal is the wrong
+example at the head of this section, so it is reported at the section's
+severity wherever it appears. Two halves of this class need the write path to
+exist at all: mass assignment needs a client that can send fields, and
+over-exposure needs a field worth exposing. A read-only serializer over a
+model of already-public columns has neither today. The deciding question is
+whether the serializer is reachable on a write route — directly, or through a
+viewset whose `serializer_class` it is for every action — and whether the
+model carries anything the API has not already published. Keep the
+recommendation to enumerate `fields`, because the defect class is an
+unreviewed field set and the model gains its next field without anyone
+re-opening this line; drop the severity, which belongs to the write exposure
+that is not present.
+
 ## Pagination and filter leakage
 
 Filters and pagination are read paths with no object hook, so every control has
@@ -359,6 +376,25 @@ This setting covers DRF only, not plain Django views, the admin, or third-party
 URLs. To make deny-by-default enforceable across the whole project, pair it with
 a URLconf-enumerating audit test — see `authorization-architecture.md`.
 
+### Commonly mistaken for a finding
+
+**A viewset with no `permission_classes` where `DEFAULT_PERMISSION_CLASSES` is
+restrictive.** The missing attribute is the most visible authorization defect
+in a DRF codebase and the easiest to report from the view file alone. Where
+the project default is `IsAuthenticated` or narrower, the default *is* the
+policy and the view is authenticated; what remains is the durability point the
+write-time rule above makes, not an open endpoint. The deciding question is
+what `REST_FRAMEWORK["DEFAULT_PERMISSION_CLASSES"]` holds in the settings
+module the deployment runs.
+
+The converse is the reason that question comes first rather than second.
+Where the default is `AllowAny` — DRF's own, and therefore whatever an
+un-annotated project has — the missing attribute *is* the finding, at the
+severity of whatever the view returns, and it is a finding on every view that
+omitted the attribute rather than on one. The same line of code is a
+non-finding and a High depending on a file that is not open, which is why the
+settings module is read before any view is judged.
+
 ## CSRF and SessionAuthentication
 
 - DRF `APIView`s are CSRF-exempt **except** inside `SessionAuthentication`, which
@@ -374,6 +410,25 @@ a URLconf-enumerating audit test — see `authorization-architecture.md`.
 This section owns the DRF interaction only. The settings behind it —
 `CSRF_TRUSTED_ORIGINS`, the cookie matrix, and CORS — are declared in
 `a02-security-misconfiguration.md`.
+
+### Commonly mistaken for a finding
+
+**`@csrf_exempt` on a DRF view whose authentication classes do not include
+`SessionAuthentication`.** The decorator reads as protection being removed,
+and on a Django view it would be. DRF enforces CSRF inside
+`SessionAuthentication` rather than through the middleware, as the first bullet
+above says, so on a token- or JWT-authenticated view there is no middleware
+check for the decorator to remove — it is redundant rather than a downgrade.
+The deciding question is what `authentication_classes` resolves to for that
+view, including the project default it may be inheriting. Where
+`SessionAuthentication` is in that list and the endpoint changes state, the
+decorator is the finding the bullet above describes.
+
+The webhook receiver is the other case that reaches this heading legitimately:
+`@csrf_exempt` there is correct, because a MAC over the raw body replaces what
+CSRF was protecting. `a08-integrity-and-deserialization.md`, "Webhook and
+callback integrity" owns that receiver end to end, including what makes the
+exemption safe and what makes it an unauthenticated write endpoint instead.
 
 ## Throttling as quota, not security (API4)
 

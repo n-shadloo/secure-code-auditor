@@ -88,6 +88,42 @@ misread often enough to name:
   consequence. Score it on the data and the commitment made about it, not on
   exploitability alone, and say which dimension carried the rating.
 
+### Baseline severity by finding class
+
+The rubric and the table below do different jobs and the table does not
+replace the rubric: the rubric decides the borderline case, and the table
+makes the ordinary one reproducible across runs, which matters for a skill
+whose output is compared between reviews of the same code. Start at the
+baseline for the class, apply at most one step for a factor the row names, and
+say in the finding which factor moved it. A few rows name their landing point
+explicitly, and those are the factors that change which class the finding is
+in rather than its degree. Where the table and the rubric disagree, the rubric
+wins and the finding says so.
+
+| Finding class | Baseline | One step up | One step down |
+|---|---|---|---|
+| Object-level authorization failure returning another principal's data | High | The data is personal or financial, or the identifier is sequential so the whole set can be walked → Critical on mass exposure | Authentication is required, the identifier is a server-generated random value rather than a sequence, and the fields exposed are neither personal nor financial |
+| Function-level authorization failure on a privileged action | High | The action grants a role, an entitlement, or money, or the route is reachable pre-authentication → Critical | The caller must already hold a privileged role and the action only widens what that role could already do |
+| Authentication bypass | Critical | — | A precondition the attacker cannot create is required: a second factor, a valid credential for another account, or a state only an operator sets |
+| Injection reaching an interpreter | High | The interpreter executes code — a shell, `eval`, a deserializer, a template rendering attacker-authored source — or the path is reachable pre-authentication → Critical | The value reaching the sink comes from a constrained server-side set, so a second, unconfirmed defect would have to widen it first |
+| SSRF | High | A metadata endpoint or another credential-bearing internal service is reachable and returns a live credential → Critical | The destination set reaches nothing internal and the response is never reflected to the caller |
+| Insecure deserialization | Critical, where any other principal can write the bytes | — | Only a compromise of another service could write them → High. Only this application writes them and nothing else reaches the store → not a finding; keep the design objection, drop the RCE claim |
+| Race on money, entitlements, or a limit that had to hold | High | The window is reliably winnable by firing concurrent requests and the collision is unbounded → Critical | The interleaving needs a state the attacker cannot arrange, rather than one a machine caller opens on demand |
+| Race on a non-material counter | Low | The counter feeds billing, a quota, or an authorization decision — at which point it is the row above | — |
+| Personal data surviving a promised deletion | High | The data is special-category, or the surviving copy is reachable by a principal who should not read it | The copy is internal, access-controlled, and covered by a retention job that will reach it |
+| Secret committed to history | High | The credential is live and reaches production data, money, or the signing of sessions → Critical | The value is a test or CI fixture, or rotation is confirmed complete → Low |
+| Missing security header | Low | The header is the only control for a behavior this application actually has, and no equivalent is set at the edge → Medium | — |
+| Verbose error output | Medium | The traces reach an unauthenticated response body and disclose settings, queries, or credentials. A production path reaching `DEBUG = True` is the settings finding rather than this one, and `a02-security-misconfiguration.md` rates it Critical | The detail reaches a log or an authenticated internal surface rather than the response body → Low |
+
+Five factors do most of the moving, and a finding that does not settle them
+has not earned its rating: whether authentication is required to reach the
+path, whether the object identifier is guessable, whether the affected data is
+personal or financial, whether the path is reachable pre-authentication, and
+whether a chain was confirmed rather than hypothesised. The last is the one
+that inflates most: a chain rates at the severity of its outcome only where
+every hop was confirmed, and `01-audit-workflow.md`, "Attack-chain reasoning"
+owns saying which hop is still an assumption.
+
 ## Confidence
 
 Score how sure you are the issue is real and reachable:
@@ -109,9 +145,18 @@ Each finding uses this shape:
 - Category: <e.g. Broken Object Level Authorization>  |  CWE-XXX  |  OWASP A0X:2025 (and APIX:2023 if relevant)  |  ASVS Vx(.y) — optional, see below
 - Confidence: High | Medium
 - Problem: one or two sentences on exactly what is wrong.
+- Evidence: the shortest source-to-sink path this was confirmed on, and the
+  protection that failed. Two lines, not a narrative.
 - Impact: the concrete attack or exposure this enables.
 - Fix: the specific change, with a minimal code snippet.
 ```
+
+`Evidence` is what the verification gate produces, not a restatement of
+`Problem`: the path names the parameter, the call that carries it, and the
+sink, and the protection names the default that should have stopped this
+together with why it did not apply here. `01-audit-workflow.md`, "Phase 5 —
+verification" owns the gate that has to be discharged before there is anything
+to write on this line.
 
 ## Mapping to ASVS 5.0
 
@@ -203,6 +248,15 @@ Keep the signal high. Don't report:
   misconfigures them.
 - Client/browser-only concerns with no server component.
 - Style or performance issues with no security impact.
+- Anything whose only evidence is the identifier that names it. A pattern is
+  judged by the property that makes it dangerous — a statement built by
+  interpolation, bytes a second principal can write, markup assembled from a
+  request, a value that has to be unguessable — not by the presence of `raw`,
+  `pickle`, `mark_safe`, `shell=True`, or `random`. Where the property is
+  absent, the identifier is just an identifier, and the finding is not
+  reported. `01-audit-workflow.md`, "Phase 5 — verification" carries the
+  general rule and the cross-cutting cases; each high-noise reference carries
+  its own beside the control, under "Commonly mistaken for a finding".
 
 ## Worked examples
 
@@ -222,6 +276,11 @@ the code says what it appears to say.
   by pk from the URL, with permission_classes = [IsAuthenticated]. Authentication
   is checked but ownership is not, so any logged-in user can read /invoices/<id>/
   for any id.
+- Evidence: GET /invoices/<pk>/ -> InvoiceDetail -> Invoice.objects.all().get(
+  pk=pk), with pk taken straight from the URL kwarg.
+  The protection that failed is queryset scoping: no get_queryset() override,
+  and no object permission is declared, so no code compares the invoice's
+  account to the requester's.
 - Impact: Authenticated horizontal privilege escalation; full read access to
   other tenants' billing records by incrementing the id.
 - Fix: scope the queryset to the requester.
@@ -248,6 +307,11 @@ the line would end at the OWASP mapping.
   the two: no transaction wraps them, the read takes no lock, and the column
   carries no constraint. The route is reachable by any authenticated holder of
   the wallet and no throttle applies to it.
+- Evidence: POST /wallet/debit/ -> api.py debit view -> services.debit(), where
+  the amount arrives in the request body and the balance is read and written
+  back as two statements. The protection that failed is serialization of those
+  two: no transaction.atomic(), no select_for_update() on the read, and no
+  CheckConstraint on the column.
 - Impact: Two concurrent requests both read the same starting balance, both
   pass the check, and the second writes a total computed from a stale copy, so
   the wallet goes negative by up to the amount of the smaller debit. The window
@@ -431,6 +495,13 @@ are not copied back here.
       write-time.
 - [ ] Every finding names a source, a sink, and the path between them, rather
       than resting on a keyword match.
+- [ ] Every hypothesis discharged the six-item gate in `01-audit-workflow.md`,
+      "Phase 5 — verification" before it was written as a finding, and each
+      finding carries its `Evidence` line — the shortest confirmed
+      source-to-sink path and the protection that failed.
+- [ ] Severity started from the baseline for the finding class and moved at
+      most one step for a factor the table names, with the factor stated;
+      anything the rubric decided against the table says which way it leaned.
 - [ ] Severity and confidence were scored separately, and neither was inflated
       to cover for the other.
 - [ ] A concurrency finding was rated on how reliably its window can be won

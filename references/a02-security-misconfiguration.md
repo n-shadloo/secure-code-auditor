@@ -49,6 +49,37 @@ memory.
 - Load both from the environment; never hardcode a production `SECRET_KEY`
   (see A04) or commit one with the `django-insecure-` prefix.
 
+### Commonly mistaken for a finding
+
+All three below are the same mistake, and it is the one this file is most
+exposed to: a settings *file* is not a settings *module in force*. The split
+layout — `settings/base.py`, `settings/dev.py`, `settings/test.py`,
+`settings/production.py`, selected by `DJANGO_SETTINGS_MODULE` — is the common
+case in Django projects, so the deciding question for every one of them is
+which import chain the production entry point actually follows. Establish that
+chain once, from `wsgi.py`, `asgi.py`, and `manage.py`, and all three answer
+themselves.
+
+- **`DEBUG = True` in a module only the development or test path imports.**
+  The line is Critical where production reaches it and inert where it does
+  not, and the line itself looks identical in both cases.
+- **`ALLOWED_HOSTS = ["*"]` in a test settings module.** The test client
+  sends `testserver` as the host, so the wildcard is there to make the suite
+  run rather than to weaken anything a request reaches.
+- **A `SECRET_KEY` literal in a module used only by CI or the test suite.**
+  Committed test keys sign nothing a user holds. The finding is a production
+  key in history, which is a different claim and belongs to
+  `service-identity-and-secrets.md`, "Responding to a leaked secret".
+
+Where the production chain does reach one of these, none of it applies and the
+severity is what the section above says it is.
+
+**Write-time.** When generating a settings module that carries a development
+or test convenience, put it in a module the production entry point never
+imports rather than behind a branch inside a single file, because the import
+chain is the only thing a reviewer can follow to tell a convenience from a
+defect, and a one-file layout leaves them nothing to follow.
+
 ## The security settings matrix
 
 For a TLS-served production backend:
@@ -179,6 +210,18 @@ Reflecting the request Origin while allowing credentials is the same bug in
 disguise: it lets an attacker's page make authenticated cross-origin reads.
 CORS is not CSRF protection and vice versa — they solve different problems; don't
 substitute one for the other.
+
+### Commonly mistaken for a finding
+
+**`CORS_ALLOW_ALL_ORIGINS = True` with no `CORS_ALLOW_CREDENTIALS`.** This one
+is not dropped — it is still a finding — but it is routinely reported at the
+severity of the credentialed pair above it, and the two are different bugs. A
+wildcard with credentials lets any page read authenticated responses as the
+logged-in user. A wildcard without them lets any page read what an anonymous
+client could already have fetched from the server directly, which is a
+deliberately widened surface rather than a data leak. The deciding question is
+whether `CORS_ALLOW_CREDENTIALS` is set anywhere in the module in force, and
+conflating the two answers is how a Medium gets reported as a High.
 
 ## Content Security Policy
 

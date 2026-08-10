@@ -273,6 +273,21 @@ a query *operator* — no string concatenation and nothing for escaping to fix.
 Validate shape, not only characters (`data-layer-and-database.md`, "NoSQL and
 key-value injection").
 
+### Commonly mistaken for a finding
+
+**`cursor.execute("... WHERE id = %s", [value])`, and `Manager.raw(sql,
+params)` in the same shape.** It looks like the wrong example above because
+`%s` is the same two characters Python's `%` operator uses, and a reviewer
+scanning for interpolation lands on both. It is the opposite: `%s` is the
+placeholder the DB-API requires, and the driver binds the separate `params`
+sequence after the statement has already been parsed, which is exactly the
+control this section asks for. The deciding question is never whether the
+string contains `%s` — it is whether the SQL string is *built*, by an
+f-string, `%` interpolation, `.format()`, or concatenation with anything that
+is not a literal constant. A static statement with a params argument is the
+correct form of the call, and reporting it is the single highest-volume false
+positive available in a Django codebase.
+
 ## The dictionary-expansion column-alias class
 
 Django's recent CVE history is dominated by one pattern worth encoding as a
@@ -309,6 +324,23 @@ qs.order_by(sort)
 
 Keeping Django patched matters (the framework hardens these), but the durable fix
 is to never route client-controlled identifiers into these methods.
+
+### Commonly mistaken for a finding
+
+**`.filter(**data)` where `data` is a serializer's `validated_data`.** The
+double asterisk is the signature of the class above, so the call reads as the
+wrong example on sight. What makes this class dangerous is client-controlled
+*keys*, and a serializer with a declared field set supplies the keys itself:
+`validated_data` can only carry the names the serializer declared, whatever
+the request body contained. The deciding question is therefore where the keys
+come from, not where the values do — a serializer with `fields = "__all__"`,
+a bare `request.data`, or a dictionary assembled from query parameters all
+fail it, and a declared field set passes.
+
+**Write-time.** When generating a filter, an update, or an aggregate from
+`**`-expansion, declare the serializer's `fields` explicitly in the same edit
+that writes the expansion, because the expansion is safe exactly as far as the
+key set is closed and nothing at the call site shows whether it is.
 
 ## GeoDjango raster and spatial lookups
 
@@ -473,6 +505,24 @@ usually carries more database privilege than a view does, so bind and validate
 them as you would a request body rather than trusting the value because an
 operator supplied it.
 
+### Commonly mistaken for a finding
+
+**`subprocess` with `shell=True` where every argument is a literal.** The flag
+is the thing every scanner keys on and the thing this section spends its
+length warning about, so a hit reads as confirmed before the arguments are
+looked at. Nothing varies here, so there is no input for the shell to
+re-parse and no injection to report. The deciding question is whether any
+element of the command comes from outside the source file — a request, a
+model field, an environment value, a filename discovered on disk. Where none
+does, keep it as a hygiene note: the shell is still present for the next edit
+to hand something to. Drop the injection claim and the severity that came with
+it.
+
+**Write-time.** When generating a call into another program whose arguments
+are all literal today, still write the argument list with `shell=False` rather
+than the string form, because the argument that becomes dynamic arrives in a
+later edit that changes what is passed and not how it is passed.
+
 ## Template injection and server-side output
 
 - Django templates **autoescape HTML by default**. The bypasses are `|safe`,
@@ -491,6 +541,24 @@ allowlist sanitizer and still apply output-context encoding. `nh3==0.3.6` passes
 the maintained-package gate as of 9 Aug 2026; centralize its tag/attribute/URL-
 scheme policy, test bypass payloads, and sanitize again when policy changes.
 Plain-text or structured-markup designs remain safer than accepting HTML.
+
+### Commonly mistaken for a finding
+
+**`mark_safe` over a string assembled only from constants, and `mark_safe` or
+`|safe` applied to what `format_html` returned.** Both are escape-hatch
+identifiers on the list above, and both are frequently correct. A string built
+from literals the source file contains carries nothing a request authored, and
+`format_html` has already escaped each of its arguments, so marking its result
+safe asserts something that is by then true. The deciding question is whether
+any value in the marked string reached it from a request, a model field, a
+model's output, or any other source outside the source file — one interpolated
+value is the whole finding, and none of them is no finding at all.
+
+**Write-time.** When generating markup that mixes a fixed fragment with a
+value, write `format_html("...{}...", value)` rather than `mark_safe` over an
+assembled string, because `format_html` escapes each argument at the call and
+leaves the constant half visibly separate from the half that came from
+somewhere else.
 
 ## Directory and LDAP injection
 

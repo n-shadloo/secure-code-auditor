@@ -169,6 +169,25 @@ management command, a Celery task, an operator's psql session. It is a backstop
 behind scoped querysets rather than a replacement for them, and it carries its
 own failure modes around pooled connections. See `data-layer-and-database.md`.
 
+### Commonly mistaken for a finding
+
+**A `get_queryset` that reads unscoped in the file you have open.** An
+unscoped queryset under a `pk` route is the highest-yield pattern in this
+file, which is why it is also the one most often reported where the scoping is
+real but sits somewhere else. Two places carry it invisibly: a viewset
+registered on a nested router under a tenant-scoped parent, where the parent
+lookup constrains the child before this method runs, and a model whose default
+manager already filters, so `Model.objects` is not the whole table. The
+deciding question is what the router registration and the model's `Meta` and
+manager say — read both before concluding, and where they do scope, the
+finding that remains is the legibility of it rather than a broken control.
+
+**Write-time.** When generating a view that leans on scoping it does not
+perform — a nested router's parent lookup, a filtering default manager — name
+that dependency in one line at the site, because the next reader's only
+alternative is to re-derive it from two other files and a review that does not
+will file the view as a cross-tenant read.
+
 ## Caching and authorization
 
 Cache leaks map primarily to CWE-524 (Use of Cache Containing Sensitive
@@ -338,6 +357,20 @@ that has to be complete and it never is. Where the destination does not
 genuinely need to be dynamic, take it from configuration instead and the class
 of bug disappears rather than being defended against.
 
+### Commonly mistaken for a finding
+
+**An outbound request whose URL is built from a settings value or a stored
+service record.** The shape is identical to the finding — a URL assembled at
+run time, handed to an HTTP client, with no allowlist anywhere near it — and
+`requests.get(url)` looks the same whichever side of the boundary `url` came
+from. What makes SSRF a finding is that a caller influences the destination.
+The deciding question is who last wrote the value: a settings entry, an
+environment variable, or a service record only an operator can create is a
+deploy-time input rather than an attacker-controlled one. Where a principal
+short of an operator can write that stored record — a tenant admin registering
+a callback, a user setting a profile URL — the value is attacker-controlled
+again and the finding is live.
+
 ### Egress control
 
 The controls above stop one call from reaching somewhere it should not. Egress
@@ -504,6 +537,20 @@ than answered. Where a name has to be passed through, open it with a
 an uncaught one is a 500 on a path that was supposed to fail closed. Add the
 ownership check alongside the path resolution rather than after it: a confined
 path is still someone's file.
+
+### Commonly mistaken for a finding
+
+**`os.path.join` against a base where the joined component is a server-chosen
+identifier.** This section says `os.path.join` is not a containment function,
+so every hit reads as traversal, and the call looks the same whatever is on
+its right-hand side. A primary key, a UUID, a hash digest, or a slug drawn
+from a fixed set contains no separator and no `..` because the server produced
+every character of it. The deciding question is who authored the component,
+not what the function does with it — where the value is a request parameter
+that the code merely believes is an integer, the belief is the finding, and
+where it is the `str(obj.pk)` of a row already fetched through a scoped
+queryset, there is nothing to traverse with. The ownership question is
+separate and stays live either way: a confined path is still someone's file.
 
 ## Open redirect
 

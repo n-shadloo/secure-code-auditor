@@ -319,15 +319,113 @@ rather than quietly skipped.
 
 ## Phase 5 — verification
 
-A hypothesis becomes a finding only when four things have each been
-established rather than assumed: that an attacker controls the input, that the
-path is reachable in the deployed configuration, that the protections which
-should have stopped it are insufficient rather than merely unexamined, and
-that the impact is concrete enough to state as an outcome. Record the
-discharge of each one — what was read and what it showed — because the
-discharge is what a later reader needs to disagree with the finding, and a
-hypothesis that fails any of the four is a "worth checking" item with the
-specific unresolved question named, not a silent deletion.
+This phase is written as a gate rather than as advice, because pattern
+matching is the cheap operation and restraint is the expensive one. A report
+carrying four real findings and eleven confident wrong ones is worse than no
+report: the reader cannot tell which four, so they stop trusting all fifteen
+and the four that mattered are lost with the rest.
+
+### The discharge gate
+
+A hypothesis is promoted to a finding only after each of the six below has been
+**discharged and recorded** — what was read and what it showed — rather than
+assumed. The record is what a later reader needs in order to disagree with the
+finding, and a discharge nobody wrote down is indistinguishable from one that
+never happened.
+
+- **Attacker control.** Name the principal that supplies the value, the
+  parameter it arrives in, and the route it arrives on. All three, by name. A
+  value that only a deploy-time configuration sets is not attacker-controlled,
+  and a hypothesis that cannot name the three is not yet describing an attack.
+- **Reachability.** The route resolves through its `include()` chain, the
+  permission classes in force admit the principal, and no earlier guard —
+  a middleware, a `dispatch` override, a scoped `get_queryset` — returns
+  first. A view that no URLconf reaches is dead code, and dead code is a
+  hygiene note rather than a finding.
+- **Protections examined.** Identify the framework behavior that should have
+  stopped this, and show it absent, disabled, or insufficient. ORM
+  parameterization, template autoescaping, `ALLOWED_HOSTS`, the CSRF
+  middleware, `safe_join`, the storage API, DRF permission and throttle
+  classes, and a serializer's declared field set all exist by default, so a
+  finding that does not say why the default failed here is not finished.
+- **Sanitization insufficiency.** Where validation or scoping is present, show
+  the specific input it does not cover or the path that skips it. That the
+  validation looks thin is an impression, not a discharge.
+- **Concrete impact.** Which data, whose privilege, which money, which
+  account. A sentence that could be pasted into any finding is not an impact
+  statement.
+- **Benign patterns ruled out.** The catalogue below, and the one carried by
+  the topic reference that owns this control, were both consulted and the case
+  in hand is not one of them.
+
+Then dispose of the hypothesis, and the three outcomes are not
+interchangeable:
+
+- **Discharges all six — a finding.** Write it up against the schema in
+  `00-methodology-and-severity.md`, "Finding schema".
+- **Discharges everything but reachability — a "worth checking" item**, naming
+  the exact thing that would settle it: the settings value, the URLconf, the
+  permission default the deployment actually runs. Not a finding written with
+  a hedge in it.
+- **Fails attacker control, or matches a benign pattern — dropped**, and not
+  mentioned anywhere. A dropped hypothesis is not a caveat: a list of things
+  that turned out to be fine is padding, and it pushes the findings that
+  survived down the page.
+
+Every finding carries the shortest source-to-sink path it was actually
+confirmed on and the specific protection that failed. Two lines, not a
+narrative — the path is the parameter, the call that carries it, and the sink;
+the protection is the one named above together with the reason it did not
+apply here. `00-methodology-and-severity.md`, "Finding schema" owns where that
+goes in the write-up, and the baseline table beside it owns what the confirmed
+class is worth.
+
+### Commonly mistaken for a finding
+
+The general rule first, because it generates the cases rather than following
+from them: **a pattern is judged by the property that makes it dangerous, not
+by the identifier that names it.** `raw`, `pickle`, `mark_safe`, `shell=True`,
+and `random` each name a mechanism. The danger is a specific property of the
+use — a statement built by interpolation, bytes a second principal can write,
+markup assembled from a request, an argument that varies, a value that has to
+be unguessable. Where the property is absent, the identifier is just an
+identifier.
+
+Four cases are cross-cutting and belong to no single topic file:
+
+- **Dead code.** A view, task, or handler nothing reaches looks exactly like a
+  reachable one, and it is where an unreachable defect is easiest to write up
+  with confidence. What decides it is whether a URLconf, a router
+  registration, a beat schedule, or a caller reaches it; where nothing does,
+  it is a hygiene note saying so.
+- **A control enforced in a layer you did not open.** A view with no
+  `permission_classes` under a restrictive project default, a queryset that
+  reads unscoped over a manager that scopes, a header set at the proxy rather
+  than in Django. What decides it is reading the settings module, the manager,
+  and the middleware list before concluding the control is missing — the
+  per-file catalogues named at the end of this section carry the specific
+  pairs.
+- **Test, fixture, and factory code.** A hardcoded credential, `AllowAny`,
+  `DEBUG = True`, or a disabled certificate check inside `tests/`,
+  `conftest.py`, or a factory. What decides it is whether the production
+  import chain or a production route reaches that module, which is a question
+  about imports rather than about the line.
+- **A defense-in-depth gap written up as an exploit.** A missing header, a
+  short-lived token that does not rotate, a permissive default no route
+  actually inherits. What decides it is whether there is an attacker action
+  the gap enables today. Where there is not, it is a Low that says so, and
+  inventing the chain that would make it a High is the failure this phase
+  exists to stop.
+
+The rest sit beside the controls they qualify, under this same heading, in the
+references that own them: `a05-injection.md` for the SQL, shell, template, and
+dictionary-expansion cases, `a01-broken-access-control.md` for scoping, SSRF,
+and path joins, `a02-security-misconfiguration.md` for the settings modules a
+production entry point never imports, `a08-integrity-and-deserialization.md`
+for who can write the bytes a deserializer reads, `api-drf-specific.md` for
+permission defaults, CSRF, and serializer field sets, and
+`a04-cryptographic-failures.md` for the uses of `random` that need no
+unguessability at all.
 
 ## Phase 6 — the coverage ledger
 
@@ -450,8 +548,15 @@ defaults of whichever file the author happened to have open.
       as two unrelated hits.
 - [ ] Work was ordered by impact against effort to confirm, and any surface
       that jumped the queue is recorded together with what was deferred.
-- [ ] Each finding discharges attacker control, reachability, insufficiency of
-      the protections that should have stopped it, and concrete impact.
+- [ ] Each finding discharges all six gate items — attacker control,
+      reachability, the protections that should have stopped it, the
+      insufficiency of whatever sanitization is present, concrete impact, and
+      the benign-pattern catalogue — with each discharge recorded rather than
+      assumed.
+- [ ] Every finding carries the shortest source-to-sink path it was confirmed
+      on and the protection that failed, and every hypothesis that failed
+      attacker control or matched a benign pattern was dropped rather than
+      carried into the report as a caveat.
 - [ ] Confirmed issues were escalated one step — what does this enable next —
       before write-up, and a chain is one finding at the severity of its
       outcome with its links named.
