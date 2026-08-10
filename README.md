@@ -170,8 +170,26 @@ rule for generating that code.
   concurrency limits, server-enforced confirmation, tool-call audit, and the
   file's own standards mapping onto the OWASP LLM Top 10 2026 and Agentic
   Top 10.
-- Abuse-resistant notifications: reset/magic-link, invite/share throttling,
-  idempotency, anti-enumeration, and SSRF-safe previews.
+- Money, entitlement, and state-transition flows: how to find every path that
+  moves a balance, a price, a credit, a plan, an expiry, or a status before
+  reasoning about any of them — from the model fields those values live in,
+  then from every writer of one, including the management command, Celery
+  task, admin action, signal receiver, data migration, and bulk queryset write
+  that never pass through a view, and finally from the external events that
+  drive them; the single question that decides each transition, whether its
+  invariant is held by the database or only by a Python check that runs on one
+  path; amounts, currencies, and discounts resolved from server records keyed
+  by an identifier the client supplies; capture, refund, and reversal as design
+  questions about what is irreversible, what compensates rather than reverses,
+  and what a partial failure between the provider and the local record leaves
+  behind; and entitlement grants weighed against the revocation nobody
+  demonstrates — the entitlement that survives its subscription, the seat that
+  survives its team, the cached permission that outlives the role change, and
+  the trial that restarts.
+- Abuse-resistant side effects: the general rule that any action which spends a
+  budget, notifies a third party, or cannot be undone needs a bound, with
+  reset/magic-link, invite/share throttling, idempotency, anti-enumeration, and
+  SSRF-safe previews as the worked instance of it.
 - Data layer and database: separate migration and runtime roles, row-level
   security and tenant context that survives a connection pool, verified database
   TLS, field-level encryption and blind-index lookups, raw-SQL isolation bypass,

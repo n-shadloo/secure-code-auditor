@@ -88,7 +88,24 @@ picks, and reflection hands over the whole schema), the DRF API surface
 function-level authorization on viewset actions, serializer and filter
 exposure, throttling mechanics and the atomic `incr` a limit that must hold
 needs instead of DRF's read-modify-write, schema and browsable-API exposure,
-endpoint inventory, version deprecation, and bulk endpoints), algorithmic
+endpoint inventory, version deprecation, and bulk endpoints), the money,
+entitlement, and state-transition flows an audit has to locate before it can
+reason about any of them — found from the model fields that hold a balance, a
+price, a quantity, a currency, a credit, a plan, a tier, an expiry or a
+status, then from every writer of those fields including the management
+command, Celery task, admin action, signal receiver, data migration and bulk
+queryset write that never reach a view, and finally from the external events
+that drive them — each transition settled by asking whether its invariant is
+a `CheckConstraint` or a `UniqueConstraint` the database holds or a Python
+comparison, a `clean()`, a serializer `validate_` method, or a signal
+receiver that holds on one path only, with amount and currency resolved
+server-side from an identifier the client supplies, capture, refund and
+reversal treated as design questions about irreversibility, compensation and
+partial failure rather than as an integration, entitlement grant weighed
+against a revocation nobody demonstrates, and side-effecting actions that
+spend a budget, notify a third party, or cannot be undone stated as the
+general class that email and notification abuse is one worked instance of,
+algorithmic
 resource exhaustion as the design rule that every caller-controlled value
 multiplying work carries a server-enforced ceiling, with a table naming the
 surface that enforces each one, the handling of exceptional conditions

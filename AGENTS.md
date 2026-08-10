@@ -70,7 +70,20 @@ verifies them against the store, scan verdict caching and content disarm,
 callback and event trust, the metadata a store echoes back on serve, private
 downloads, and CDN caching of private objects),
 async/Channels including the subscription on its subscribe and publish paths,
-caching, migrations, signals, email/notification abuse, algorithmic resource
+caching, migrations, signals, the inventory of every path that moves money,
+credits, entitlements, or durable status -- enumerated from the model fields
+those values live in rather than from the views, so that the management
+command, Celery task, admin action, signal receiver, data migration, and bulk
+queryset write that never pass through a request are in it -- with the one
+question that decides each transition, whether its invariant is held by the
+database or only by Python, amount and currency binding on any flow a client
+would otherwise price for itself, capture, refund and reversal as design
+questions about which steps are irreversible, which compensate rather than
+reverse, and what a partial failure between the provider and the local record
+leaves behind, entitlement grant weighed against the revocation nobody
+demonstrates, side-effecting actions that spend a budget, notify a third
+party, or cannot be undone, with email/notification abuse as the worked
+instance of that class, algorithmic resource
 exhaustion and the server-enforced bound every caller-controlled input that
 multiplies work has to carry,
 agent- and LLM-facing interfaces (MCP tool surfaces, agent token audience

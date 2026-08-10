@@ -9,10 +9,10 @@ description: >-
   injection, LDAP, row-level security, encrypted columns, NoSQL,
   Redis, file uploads, S3, serializers, API endpoints, pagination, rate
   limiting, CSRF/CORS, OpenAPI schema, GraphQL, Django Ninja, AI agents,
-  MCP tools, secrets, payments, webhooks, Celery, race conditions,
-  caching, deserialization, async/ASGI, WebSockets, audit logging,
-  erasure, retention, personal data, migrations, JWKS, mutual TLS, key
-  rotation, SECRET_KEY, Dockerfile, SBOM, X-Forwarded-For, SPF/DKIM/DMARC,
+  MCP tools, secrets, payments, entitlements, webhooks, Celery, race
+  conditions, caching, deserialization, async/ASGI, WebSockets, audit
+  logging, erasure, retention, personal data, migrations, JWKS, mutual
+  TLS, SECRET_KEY, Dockerfile, SBOM, X-Forwarded-For, SPF/DKIM/DMARC,
   or deployment config, even if "security" is never used.
   Review-time returns prioritized findings with fixes; write-time
   applies secure defaults. Django/DRF-first; general layer suits any
@@ -21,7 +21,7 @@ license: MIT
 allowed-tools: Read, Grep, Glob, Bash
 metadata:
   author: n-shadloo
-  version: 1.39.0
+  version: 1.40.0
 ---
 
 # secure-code-auditor
@@ -79,7 +79,7 @@ decide which file is authoritative.
 | **A03** Dependencies, third-party vetting/maintained-package gate, a development-only package reaching the production requirements file, pinning/hashing, `pip-audit`, EOL frameworks, migrations/data integrity, the SBOM generated from the lockfile rather than the built image and what it does not prove, the CI scan gate read as configuration rather than as a step that exists, build provenance and the consumer-side verification that makes an attestation mean anything, SLSA Build levels at claim level, and the line between what a repository audit can verify and what is confirm-with-platform | `references/a03-software-supply-chain.md` |
 | **A04** Password-hashing family and parameters, upgrade-on-login and the wrapped-hasher migration that reaches the dormant accounts it cannot, randomness and token generation, constant-time comparison, signing and per-purpose salt discipline, TLS-in-transit, data at rest, key lifecycle and envelope encryption worked against a KMS, post-quantum posture | `references/a04-cryptographic-failures.md` |
 | **A05** The sink inventory every other reference defers to and the method for tracing a source to it, including the stored-then-used path worked end to end, SQL/ORM injection, dictionary-expansion column aliases, GeoDjango raster band indexes and spatial-lookup raster sources, command and argument injection, template injection and XSS from server-rendered output, LDAP/directory injection, header/email injection | `references/a05-injection.md` |
-| **A06** Which flows need a rate limit or anti-automation in the first place, algorithmic resource exhaustion and the bound every caller-controlled input needs, business-logic and email/notification abuse, missing limits, insecure defaults | `references/a06-insecure-design.md` |
+| **A06** Which flows need a rate limit or anti-automation in the first place, the inventory of every path that moves money, credits, entitlements, or durable status — including the command, task, admin action, signal, migration, and bulk writers that never reach a view — and whether each transition's invariant is held by the database or only by Python, amount and currency binding, capture/refund/reversal as a design question, entitlement grant against revocation, algorithmic resource exhaustion and the bound every caller-controlled input needs, abuse of side-effecting actions with email/notification abuse as its worked instance, missing limits, insecure defaults | `references/a06-insecure-design.md` |
 | **A07** Human authentication: password policy from the length floor to the breached-corpus screening no built-in validator provides, sessions, JWT/SimpleJWT, OAuth2/OIDC/social login, API keys, brute force, MFA, passkey and WebAuthn configuration, password reset, allauth/dj-rest-auth/OAuth Toolkit, enumeration | `references/a07-authentication-failures.md` |
 | **A08** Insecure deserialization (pickle/yaml), the cache/session/fixture paths Django deserializes without being asked, Celery task-message trust and serializers, signed data, inbound webhook signature/timestamp/replay and event de-duplication, outbound webhook delivery controls, artifact provenance | `references/a08-integrity-and-deserialization.md` |
 | **A09** Sensitive-data leakage in logs, audit logging, lifecycle hooks/signals, alerting, log injection | `references/a09-logging-and-alerting.md` |
@@ -209,7 +209,12 @@ catalogs the flows worth attacking, A08's event de-duplication is the same
 design as A10's idempotency key, and `references/api-drf-specific.md`,
 `references/a03-software-supply-chain.md`, and
 `references/data-lifecycle-and-privacy.md` carry one-line uses that name A10
-rather than restating it.
+rather than restating it. The inventory that finds those flows in an
+unfamiliar codebase — every path writing a balance, a price, an entitlement,
+or a status, including the command, task, admin action, signal, migration,
+and bulk writers that never reach a view — belongs to A06, while the
+constraint, lock, and idempotency mechanics that make any one of them hold
+belong to A10.
 
 **Human versus machine identity.** A07 owns the human principal and every
 credential issued to one, including the API-key discipline a static service key
