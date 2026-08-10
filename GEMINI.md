@@ -28,7 +28,7 @@ function-level authorization first because it is the highest-yield class in
 Django codebases and usually settled by reading two files; then verification as
 a six-item gate — attacker control, reachability, the protections that should
 have stopped it, the insufficiency of whatever sanitization is present,
-concrete impact, and a catalogue of the benign Django and DRF patterns that
+concrete impact, and a catalog of the benign Django and DRF patterns that
 look exactly like defects, each discharged against retrieved text rather than
 against remembered behavior — with anything failing attacker control or matching
 a benign pattern dropped rather than reported as a caveat, and everything that

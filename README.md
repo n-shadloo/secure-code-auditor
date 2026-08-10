@@ -87,7 +87,7 @@ rule for generating that code.
   pairing sources to sinks; ordering hypotheses by impact against the effort
   to confirm them; the six-item gate a hypothesis has to discharge before it
   is written up at all, with the benign Django and DRF patterns that look
-  exactly like defects catalogued beside the controls they qualify; a coverage
+  exactly like defects cataloged beside the controls they qualify; a coverage
   ledger that reports what was examined and found clean separately from what
   was never opened; and the attack chains worth looking for, each rated as one
   finding at the severity of its outcome rather than as three unrelated
@@ -158,7 +158,7 @@ rule for generating that code.
   server Django's request cycle never enters — every method public until an
   interceptor is installed, a send-size and a concurrency limit with no default
   at all, `Any` unpacking on the sender's terms, and reflection as the
-  introspection analogue.
+  introspection analog.
 - Async/ASGI and Channels: safe ORM boundaries, request-context isolation,
   origin checks, per-connection authentication, authorization, and limits, and
   the subscription as a long-lived query — authorized when it is registered and
@@ -416,11 +416,13 @@ not, so a quiet report is distinguishable from a clean one. Nothing reaches
 that list until it has discharged the verification gate, so a keyword that
 turned out to be the framework working correctly is dropped rather than
 reported with a hedge. For fast triage there are
-three read-only helper scripts (no network access, they don't run your project):
+three read-only helper scripts (no network access, they don't run your project);
+all three take `--json`, which is JSON Lines in each — one object per line,
+consumed a record at a time rather than parsed as one document:
 
 ```
-python scripts/entrypoint_inventory.py . --settings config/settings
-python scripts/settings_scan.py config/settings/
+python scripts/entrypoint_inventory.py . --settings config/settings --json
+python scripts/settings_scan.py config/settings/ --json
 python scripts/dangerous_patterns.py .
 python scripts/dangerous_patterns.py . --json --min-severity MEDIUM
 ```

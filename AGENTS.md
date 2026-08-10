@@ -27,7 +27,7 @@ them, authorization first because it is the highest-yield class and the
 cheapest to settle; then verification as a gate rather than as advice, where a
 hypothesis discharges attacker control, reachability, the protections that
 should have stopped it, the insufficiency of any sanitization present,
-concrete impact, and a catalogue of benign Django and DRF patterns before it
+concrete impact, and a catalog of benign Django and DRF patterns before it
 is written up, each discharge resting on retrieved text rather than on what a
 decorator or a base class is remembered to do, and one that fails attacker
 control or matches a benign pattern is dropped rather than reported with a
@@ -115,7 +115,7 @@ method rather than by the interceptor that established who is calling, a
 send-size limit and a concurrency ceiling that have no default at all beside
 a 4 MB receive cap that does, protobuf's `Any` instantiating whichever type
 the sender named, unknown fields surviving a binary round trip into whatever
-the servicer relays them to, and reflection as the introspection analogue
+the servicer relays them to, and reflection as the introspection analog
 alongside health checking and channelz), the DRF API surface itself (the routes
 where the object check never runs, function-level authorization on viewset
 actions, serializer and filter exposure, throttling mechanics and the owned
@@ -211,9 +211,10 @@ are defined in `references/00-methodology-and-severity.md`.
    axis they turn on. Every other file cross-references the owner rather than
    restating its rules, and each reference file repeats its own half of that
    rule in its opening paragraph.
-5. Optional read-only triage (standard library only, no network):
-   - `python scripts/entrypoint_inventory.py path/to/project --settings path/to/settings`
-   - `python scripts/settings_scan.py path/to/settings/`
+5. Optional read-only triage (standard library only, no network; `--json` on any
+   of the three is JSON Lines, one object per line, consumed a record at a time):
+   - `python scripts/entrypoint_inventory.py path/to/project --settings path/to/settings --json`
+   - `python scripts/settings_scan.py path/to/settings/ --json`
    - `python scripts/dangerous_patterns.py path/to/project`
    - `python scripts/dangerous_patterns.py path/to/project --json --min-severity MEDIUM`
    - `python scripts/dangerous_patterns.py --selftest`

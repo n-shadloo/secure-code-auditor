@@ -21,7 +21,7 @@ license: MIT
 allowed-tools: Read, Grep, Glob, Bash
 metadata:
   author: n-shadloo
-  version: 1.41.1
+  version: 1.41.2
 ---
 
 # secure-code-auditor
@@ -92,7 +92,7 @@ you rather than by OWASP number.
 
 | Concern | Reference file |
 |---|---|
-| Privilege model (RBAC/ABAC/ReBAC), `ModelBackend`/DRF/admin permission behavior, default-deny + URLconf audit test, field-level authz (BOPLA), search-index and denormalised-copy leakage, authz test design, permission decay | `references/authorization-architecture.md` |
+| Privilege model (RBAC/ABAC/ReBAC), `ModelBackend`/DRF/admin permission behavior, default-deny + URLconf audit test, field-level authz (BOPLA), search-index and denormalized-copy leakage, authz test design, permission decay | `references/authorization-architecture.md` |
 | Impersonation / "log in as user", django-hijack, break-glass & JIT elevation, operator audit identity | `references/privileged-access-and-impersonation.md` |
 | Where DRF runs the object check and the routes that skip it, `@action` and function-level authz (BFLA), serializer over-exposure/mass assignment, pagination/filter/ordering leakage, throttling mechanics and the owned atomic counter a limit that must hold needs instead, schema and browsable-API exposure, endpoint inventory and shadow routes, versioning and deprecation, bulk endpoints, unsafe DRF defaults, DRF+CSRF | `references/api-drf-specific.md` |
 | GraphQL endpoints and schemas, resolver-level authorization and nested traversal, all-fields types, query depth/alias/token/cost limits, introspection and error masking, mutation inputs and nested writes, batching, persisted queries, N+1 as resource exhaustion, Strawberry and graphene-django defaults, Django Ninja routes with no `auth=`, gRPC servicers serving every method until an interceptor is installed, protobuf message-size and recursion limits, `Any` and unknown-field handling, reflection and channelz as debug surfaces | `references/graphql-and-alternative-api-surfaces.md` |
@@ -143,7 +143,7 @@ on an axis a row would misstate, so they keep their sentence.
 | The receiving end of cross-system trust: the inbound webhook end to end, the task message a worker will execute for anyone who can reach the broker, every path that turns bytes back into live objects including the ones the framework runs without being asked | `references/a08-integrity-and-deserialization.md` | Only the integrity of what the project itself produces and consumes. A03 keeps dependency vetting, A01 the SSRF an outbound delivery worker has to satisfy, `references/deployment-and-runtime.md` broker and cache exposure, and `references/service-identity-and-secrets.md` where signing secrets live |
 | The file from the request to the reader: delegated upload URLs, the quarantine prefix and promotion, proxying a private download against signing a URL for it | `references/file-uploads.md` | A08 keeps the signature, timestamp, and replay rules a callback satisfies; A01 keeps import-from-URL SSRF and the cache-mediated leak a CDN key dropping its signing parameters is one case of; `references/data-lifecycle-and-privacy.md` keeps whether the bytes are gone, leaving here only that an already-issued signed URL outruns any erasure |
 | The database as a boundary: roles, row-level security, verified transport, encrypted columns, the isolation level, pooling | `references/data-layer-and-database.md` | The serialization-failure retry a raised level requires is here; the constraint-versus-lock choice that usually makes raising it unnecessary is A10's |
-| The record over time: deletion completeness, what a soft-delete flag fails to hide, retention, anonymization, every copy an erasure has to reach | `references/data-lifecycle-and-privacy.md` | Existence rather than access. `references/authorization-architecture.md` owns who may read a denormalised copy and A09 what must be logged; this file owns whether the copy still exists, and the log and history table as retained personal data |
+| The record over time: deletion completeness, what a soft-delete flag fails to hide, retention, anonymization, every copy an erasure has to reach | `references/data-lifecycle-and-privacy.md` | Existence rather than access. `references/authorization-architecture.md` owns who may read a denormalized copy and A09 what must be logged; this file owns whether the copy still exists, and the log and history table as retained personal data |
 | The surface where the client composes the request, and every API surface that is not a DRF route | `references/graphql-and-alternative-api-surfaces.md` | Resolver-edge authorization, document cost, and schema exposure, plus the defaults of a Django Ninja route or a gRPC servicer that a DRF engineer will assume are present |
 | The tool-call threat model and the MCP-specific controls | `references/agent-and-llm-interfaces.md` | What changes when the caller is a program driving the backend on someone's behalf; it restates none of the machinery it reuses |
 | The container image | `references/deployment-and-runtime.md` | Stops at the artifact the repository produces — base image, `USER`, `.dockerignore`, secrets baked into layers. Orchestrator enforcement is a cross-team recommendation rather than a repository finding, and where a secret comes from at run time is `references/service-identity-and-secrets.md`'s |
@@ -227,13 +227,15 @@ run a review afterward.
 
 ## Using the scripts
 
-All three scripts are read-only, stdlib-only, and make no network calls. Run them
-for triage; always confirm what they surface by reading the code.
+All three scripts are read-only, stdlib-only, and make no network calls, and all
+three take `--json`, which is JSON Lines in each — one object per line, consumed
+a record at a time rather than parsed as one document. Run them for triage;
+always confirm what they surface by reading the code.
 
 - Entry-point inventory, the instrument for the workflow's first phase:
-  `python scripts/entrypoint_inventory.py path/to/project --settings path/to/settings`
+  `python scripts/entrypoint_inventory.py path/to/project --settings path/to/settings --json`
 - Settings posture across a whole settings package (never imports the project):
-  `python scripts/settings_scan.py path/to/settings/`
+  `python scripts/settings_scan.py path/to/settings/ --json`
 - Risky-pattern indicators across a tree:
   `python scripts/dangerous_patterns.py path/to/project`
 - The same tree as JSON Lines, filtered, for a large codebase:
