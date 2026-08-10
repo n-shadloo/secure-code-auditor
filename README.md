@@ -363,20 +363,32 @@ not, so a quiet report is distinguishable from a clean one. Nothing reaches
 that list until it has discharged the verification gate, so a keyword that
 turned out to be the framework working correctly is dropped rather than
 reported with a hedge. For fast triage there are
-two read-only helper scripts (no network access, they don't run your project):
+three read-only helper scripts (no network access, they don't run your project):
 
 ```
-python scripts/settings_scan.py config/settings/production.py
+python scripts/entrypoint_inventory.py . --settings config/settings
+python scripts/settings_scan.py config/settings/
 python scripts/dangerous_patterns.py .
 python scripts/dangerous_patterns.py . --json --min-severity MEDIUM
 ```
 
-Both parse with the `ast` module rather than grepping lines, so a hit is a
+The first answers where execution begins: every declared route at the full
+prefix its `include()` chain resolves to, routers and viewset actions, Ninja,
+GraphQL, gRPC, Channels, Celery, management commands, signals, admin, and
+middleware in declared order — each HTTP-reachable row marked as declaring its
+authorization, inheriting it from somewhere the row cannot show you, or having
+none. The second reads a whole settings package rather than one file, follows
+the star-imports, and names the module each effective value came from, so a
+setting that is safe in `base.py` and overridden in `production.py` is visible
+as exactly that.
+
+All three parse with the `ast` module rather than grepping lines, so a hit is a
 structural match: parameterized SQL and anything inside a docstring are not
-reported, every hit carries a stable rule identifier and the reference file
-that owns it, and a file that fails to parse is reported as unparsed rather
-than skipped in silence. `python scripts/dangerous_patterns.py --selftest`
-checks the scanner against its own fixtures before you trust a quiet result.
+reported, every row names the reference file that owns it, a
+`dangerous_patterns.py` hit additionally carries a stable rule identifier, and
+a file that fails to parse is reported as unparsed rather than skipped in
+silence. `python scripts/dangerous_patterns.py --selftest` checks the scanner
+against its own fixtures before you trust a quiet result.
 
 Write new code — it applies secure defaults as it goes (parameterized queries,
 scoped querysets, explicit serializer fields, correct cookie flags, secrets from
@@ -453,6 +465,7 @@ secure-code-auditor/
 │   └── service-identity-and-secrets.md
 ├── scripts/
 │   ├── dangerous_patterns.py           # read-only AST project scanner
+│   ├── entrypoint_inventory.py         # read-only AST entry-point inventory
 │   ├── settings_scan.py                # read-only AST Django settings scanner
 │   └── README.md
 ├── README.md

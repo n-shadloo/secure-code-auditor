@@ -178,15 +178,22 @@ are defined in `references/00-methodology-and-severity.md`.
    every other file cross-references it rather than restating its rules. Each
    reference file repeats its own half of that rule in its opening paragraph.
 5. Optional read-only triage (standard library only, no network):
-   - `python scripts/settings_scan.py path/to/settings.py`
+   - `python scripts/entrypoint_inventory.py path/to/project --settings path/to/settings`
+   - `python scripts/settings_scan.py path/to/settings/`
    - `python scripts/dangerous_patterns.py path/to/project`
    - `python scripts/dangerous_patterns.py path/to/project --json --min-severity MEDIUM`
    - `python scripts/dangerous_patterns.py --selftest`
-Both parse with the `ast` module rather than grepping lines, so a hit is a
-structural match rather than a text one, every hit carries a stable rule
-identifier and the reference file that owns it, and a file that fails to parse
-is reported as unparsed rather than skipped in silence. Treat script output as
-leads to verify, not confirmed findings.
+All three parse with the `ast` module rather than grepping lines, so a hit is a
+structural match rather than a text one, every row names the reference file that
+owns it, a `dangerous_patterns.py` hit additionally carries a stable rule
+identifier, and a file that fails to parse is reported as unparsed rather than
+skipped in silence. The inventory enumerates the declared entry points the sweep
+starts from — routes at their include-resolved prefix, routers and actions,
+Ninja, GraphQL, gRPC, Channels, Celery, commands, signals, admin, middleware —
+marking each HTTP-reachable row as declaring its authorization, inheriting it,
+or having none, and the settings scan reads a whole settings package rather than
+one module, naming which module each effective value came from. Treat script
+output as leads to verify, not confirmed findings.
 
 ## Tool-specific entry points
 - Claude Code: `SKILL.md` (native Agent Skill).

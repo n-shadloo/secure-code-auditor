@@ -21,7 +21,7 @@ license: MIT
 allowed-tools: Read, Grep, Glob, Bash
 metadata:
   author: n-shadloo
-  version: 1.35.0
+  version: 1.36.0
 ---
 
 # secure-code-auditor
@@ -328,11 +328,13 @@ run a review afterward.
 
 ## Using the scripts
 
-Both scripts are read-only, stdlib-only, and make no network calls. Run them for
-triage; always confirm what they surface by reading the code.
+All three scripts are read-only, stdlib-only, and make no network calls. Run them
+for triage; always confirm what they surface by reading the code.
 
-- Settings posture (never imports the project):
-  `python scripts/settings_scan.py path/to/settings.py`
+- Entry-point inventory, the instrument for the workflow's first phase:
+  `python scripts/entrypoint_inventory.py path/to/project --settings path/to/settings`
+- Settings posture across a whole settings package (never imports the project):
+  `python scripts/settings_scan.py path/to/settings/`
 - Risky-pattern indicators across a tree:
   `python scripts/dangerous_patterns.py path/to/project`
 - The same tree as JSON Lines, filtered, for a large codebase:
@@ -340,11 +342,19 @@ triage; always confirm what they surface by reading the code.
 - Confirm the scanner itself before trusting a quiet result:
   `python scripts/dangerous_patterns.py --selftest`
 
-Both scanners parse with the `ast` module rather than grepping lines, so a hit
-is a structural match — parameterized SQL, `mark_safe` on a constant, and
-anything inside a docstring are not reported — every hit carries a stable rule
-identifier and the reference file that owns it, and a file that fails to parse
-is reported as unparsed rather than skipped in silence.
+The inventory enumerates the declared entry points — routes at the full prefix
+their `include()` chain resolves to, routers and actions, Ninja, GraphQL, gRPC,
+Channels, Celery, commands, signals, admin, and middleware — so the review is
+derived from the whole surface rather than from the files that looked
+interesting, and it marks each HTTP-reachable row as declaring its
+authorization, inheriting it from somewhere not visible there, or having none.
+
+All three parse with the `ast` module rather than grepping lines, so a hit is a
+structural match — parameterized SQL, `mark_safe` on a constant, and anything
+inside a docstring are not reported — every row names the reference file that
+owns it, a `dangerous_patterns.py` hit additionally carries a stable rule
+identifier, and a file that fails to parse is reported as unparsed rather than
+skipped in silence.
 
 Their output is a starting point for investigation, not a final report. Map each
 real issue to a category file, verify it, and write it up per the methodology.

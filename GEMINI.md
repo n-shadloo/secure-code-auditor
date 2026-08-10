@@ -16,7 +16,9 @@ prefix rather than the leaf pattern, DRF routers and `@action` methods
 including collection actions, Django Ninja, GraphQL, gRPC, Channels, Celery
 tasks and beat schedules, management commands, signals, admin registrations
 and actions, webhook receivers, MCP tools, and middleware as the one entry
-point that fires for every request; then the principals a Django backend
+point that fires for every request — which `scripts/entrypoint_inventory.py`
+enumerates read-only from the declarations, leaving anything registered at
+runtime to the reading pass; then the principals a Django backend
 actually distinguishes — down to the worker whose only credential is broker
 access and the operator who is two identities at once — and the boundaries
 between them; then sources paired to the sink inventory; then hypotheses
