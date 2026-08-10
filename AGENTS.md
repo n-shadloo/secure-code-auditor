@@ -14,7 +14,23 @@ in `SKILL.md` frontmatter (`metadata.version`).
 Reviews backend code for security issues and applies secure defaults while
 writing code. Organized on the OWASP Top 10:2025 spine, with stack-agnostic
 principle layers and deep Django/DRF implementation layers across category and
-cross-cutting references. Coverage includes the authorization architecture and
+cross-cutting references. A review-time sweep is a procedure rather than a
+reading order: the phases run scope and environment boundary first, then an
+entry-point inventory covering URLconf chains resolved to their full prefix,
+DRF routers and `@action` methods, Django Ninja, GraphQL, gRPC, Channels,
+Celery tasks and beat schedules, management commands, signals, admin
+registrations and actions, webhook receivers, MCP tools, and middleware as the
+entry point for every request at once; then the principals a Django backend
+distinguishes and the boundaries between them; then sources paired to the sink
+inventory; then hypotheses ordered by impact against the effort to confirm
+them, authorization first because it is the highest-yield class and the
+cheapest to settle; then verification; and throughout, a coverage ledger that
+records what was examined and found clean separately from what was never
+opened, which is what the report's limitations section is written from.
+Confirmed issues are escalated one step before write-up, so a chain is
+reported as one finding at the severity of its outcome with its links named
+rather than as several low-severity findings nobody connects. Coverage
+includes the authorization architecture and
 privilege model (object-, function-, and field-level authorization, default-deny,
 authorization test design), impersonation and break-glass privileged access,
 OAuth2/OIDC and social-login trust boundaries, API-key lifecycle and scoping,
@@ -125,7 +141,10 @@ attacker can forge).
 - Review-time: audit existing code, produce prioritized findings (severity,
   location, CWE + OWASP mapping, an optional ASVS 5.0 chapter or LLM/Agentic
   Top 10 entry token where the project is actually held to that standard,
-  concrete fix). Read-only by default.
+  concrete fix). Read-only by default. Load
+  `references/01-audit-workflow.md` before any topic file; it owns the sweep
+  the findings are produced by, and the topic files answer the questions that
+  sweep generates.
 - Write-time: apply the standing secure-default contract while generating code,
   apply the secure default where it conflicts with the request and say so, and
   close with a short security-decisions note rather than a findings report. The
@@ -140,14 +159,17 @@ together are defined in `references/00-methodology-and-severity.md`.
 
 ## How to use the content
 1. Read `SKILL.md` for the router, mode logic, and severity summary.
-2. Open the `references/*.md` file(s) for the concern in front of you. The
+2. At review-time, read `references/01-audit-workflow.md` next and run its
+   phases; the entry-point inventory decides which topic files are needed and
+   the coverage ledger records what each pass reached.
+3. Open the `references/*.md` file(s) for the concern in front of you. The
    router is grouped — the OWASP Top 10:2025 spine, then cross-cutting
    surfaces, then package decisions — so pick the group, then the row.
-3. Where two rows could both match, the "Ownership and boundaries" section
+4. Where two rows could both match, the "Ownership and boundaries" section
    below the router names the single owning file for each contested topic;
    every other file cross-references it rather than restating its rules. Each
    reference file repeats its own half of that rule in its opening paragraph.
-4. Optional read-only triage (standard library only, no network):
+5. Optional read-only triage (standard library only, no network):
    - `python scripts/settings_scan.py path/to/settings.py`
    - `python scripts/dangerous_patterns.py path/to/project`
 Treat script output as leads to verify, not confirmed findings.

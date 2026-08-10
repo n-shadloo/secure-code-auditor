@@ -38,6 +38,16 @@ rather than keeping its own copy of the rules. Each reference file restates its
 own half of that boundary in its opening paragraph, so an agent that opened the
 wrong file first is told where to go.
 
+Knowing all of that still leaves the question of what to open first. A review
+is bounded by whatever the reviewer thought to look at, and a route nobody
+enumerated is not reviewed by a skill that knows everything about routes. So
+the sweep is a procedure of its own, run inventory-first: establish every way
+a request, a message, or a schedule reaches application code, work out which
+principals arrive there, and derive the reading list from that rather than
+from the files that looked interesting. It ends in a coverage ledger that
+keeps *examined and clean* separate from *not examined*, because a report that
+blurs the two is read as though everything was covered.
+
 Every control is written twice, in two grammars: a review form that says what
 to flag in code that exists, and a write-time form that says what to write
 before it does. Agreeing that views should be authorized and emitting a viewset
@@ -48,6 +58,17 @@ rule for generating that code.
 
 ## What it covers
 
+- The audit workflow itself: the order the phases run in, an entry-point
+  inventory covering URLconf chains resolved to the full prefix, DRF routers
+  and `@action` methods, Django Ninja, GraphQL, gRPC, Channels, Celery tasks
+  and beat schedules, management commands, signals, admin registrations and
+  actions, webhook receivers, MCP tools, and middleware; the principals a
+  Django backend actually distinguishes and the boundaries between them;
+  pairing sources to sinks; ordering hypotheses by impact against the effort
+  to confirm them; a coverage ledger that reports what was examined and found
+  clean separately from what was never opened; and the attack chains worth
+  looking for, each rated as one finding at the severity of its outcome rather
+  than as three unrelated Mediums.
 - Access control: object- and function-level authorization, IDOR/BOLA,
   cache-mediated data leaks, SSRF and the egress control behind it —
   allowlist-by-destination, deny-by-default egress for the workers whose
@@ -332,7 +353,9 @@ Review this Django app for security issues before we ship.
 ```
 
 You'll get findings ordered by severity, each with a location, a CWE and OWASP
-mapping, the concrete problem, the impact, and a fix. For fast triage there are
+mapping, the concrete problem, the impact, and a fix — and at the end an
+explicit account of what was examined and what was not, so a quiet report is
+distinguishable from a clean one. For fast triage there are
 two read-only helper scripts (no network access, they don't run your project):
 
 ```
@@ -387,6 +410,7 @@ secure-code-auditor/
 │       └── secure-code-auditor.mdc     # Cursor reinforcement rule
 ├── references/
 │   ├── 00-methodology-and-severity.md  # methodology and findings format
+│   ├── 01-audit-workflow.md            # how a codebase is swept
 │   ├── a01-broken-access-control.md
 │   ├── a02-security-misconfiguration.md
 │   ├── a03-software-supply-chain.md

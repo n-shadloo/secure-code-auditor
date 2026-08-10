@@ -4,9 +4,32 @@ This repo's security instructions live in `SKILL.md` and `references/`. Load
 `SKILL.md` first, then the relevant `references/*.md` file. Its router is
 grouped into the OWASP Top 10:2025 spine, cross-cutting surfaces, and package
 decisions; where two rows could both match, the "Ownership and boundaries"
-section below the router names the one file that owns the topic. See
-`AGENTS.md` for the full description. Do not duplicate the content here — read
-the source files.
+section below the router names the one file that owns the topic. At
+review-time `references/01-audit-workflow.md` comes before any topic file: it
+owns the sweep, and the topic files answer the questions the sweep generates
+rather than the ones the codebase made obvious. See `AGENTS.md` for the full
+description. Do not duplicate the content here — read the source files.
+
+The workflow runs scope and the repository-versus-environment boundary first,
+then an entry-point inventory covering URLconf chains resolved to their full
+prefix rather than the leaf pattern, DRF routers and `@action` methods
+including collection actions, Django Ninja, GraphQL, gRPC, Channels, Celery
+tasks and beat schedules, management commands, signals, admin registrations
+and actions, webhook receivers, MCP tools, and middleware as the one entry
+point that fires for every request; then the principals a Django backend
+actually distinguishes — down to the worker whose only credential is broker
+access and the operator who is two identities at once — and the boundaries
+between them; then sources paired to the sink inventory; then hypotheses
+ordered by impact against the effort to confirm them, object- and
+function-level authorization first because it is the highest-yield class in
+Django codebases and usually settled by reading two files; then verification;
+and a coverage ledger throughout that keeps what was examined and found clean
+apart from what was never opened, since the report's limitations section is
+written from the second of those. Confirmed issues are escalated one step
+before write-up, so a chain — enumeration into takeover, SSRF into a workload
+credential into the object store, a job running with more privilege than the
+request that queued it — is one finding at the severity of its outcome with
+its links named, rather than three Mediums nobody connects.
 
 Coverage includes the authorization architecture and privilege model (object-,
 function-, and field-level authorization, default-deny, authorization test

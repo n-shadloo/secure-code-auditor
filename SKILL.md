@@ -21,7 +21,7 @@ license: MIT
 allowed-tools: Read, Grep, Glob, Bash
 metadata:
   author: n-shadloo
-  version: 1.32.1
+  version: 1.33.0
 ---
 
 # secure-code-auditor
@@ -53,7 +53,7 @@ is a defect.
 Every control is stated in both grammars — a review form saying what to flag,
 and a write-time form saying what to write — and the second is a paragraph
 opening `**Write-time.**` directly under the control it completes, never
-collected into a list of its own. All twenty-one references that own a control
+collected into a list of its own. All twenty-two references that own a control
 carry at least one. The two that do not are the methodology file, which indexes
 them by generation moment, and the library index, which owns package
 dispositions rather than controls.
@@ -67,6 +67,7 @@ decide which file is authoritative.
 
 | Concern | Reference file |
 |---|---|
+| How a codebase is swept before anything is judged: the phase order, the entry-point inventory across URLconf chains, routers and actions, Django Ninja, GraphQL, gRPC, Channels, Celery and beat, management commands, signals, admin, webhooks, MCP tools, and middleware, the principals and trust boundaries a Django backend actually distinguishes, source-to-sink pairing, hypothesis ordering by impact against effort to confirm, what verification has to discharge before a hypothesis is a finding, the coverage ledger that keeps examined-and-clean apart from not-examined, and the attack chains worth searching for with the file that owns each hop | `references/01-audit-workflow.md` |
 | Method & severity model including how a race and a privacy failure are rated, report format, the ASVS 5.0 chapter mapping with the chapters this skill treats as non-goals, mode selection, the write-time secure-default contract and the index of which file holds each generation moment's rule, what to do when a secure default conflicts with the request, the security-decisions note write-time returns instead of a findings report, and the two-mode convention every control follows | `references/00-methodology-and-severity.md` |
 
 ### The OWASP Top 10:2025 spine
@@ -115,6 +116,18 @@ Overlap between these files is designed. Each contested topic below has exactly
 one owner; every other file names the topic and points at the owner instead of
 restating its rules. Each reference file repeats its own half of the rule in
 its opening paragraph, so the decision holds whichever file you opened first.
+
+**Workflow versus methodology.** `references/01-audit-workflow.md` owns how a
+codebase is swept; `references/00-methodology-and-severity.md` owns how a
+finding is scored and written. The split is procedural against evaluative. The
+first decides what gets opened and in what order, and carries the entry-point
+inventory, the principal and trust-boundary model, hypothesis ordering, the
+coverage ledger, and the rule that a chain is one finding at the severity of
+its outcome. The second keeps the severity rubric, the confidence scale, the
+finding schema, the ASVS mapping, the report structure, and the standing
+write-time contract. The handoff runs one way at write-up: the ledger's
+not-examined lines become the report's limitations section, whose shape the
+methodology file owns.
 
 **Authorization.** A01 owns the per-request failure and how to recognize it.
 `references/authorization-architecture.md` owns the privilege model that
@@ -277,6 +290,11 @@ at run time belongs to `references/service-identity-and-secrets.md`.
 existing code; pastes code and asks whether it's safe; or has just finished a
 feature and wants it looked at. Behavior:
 
+- Load `references/01-audit-workflow.md` first, before any topic file. It owns
+  the sweep — the phase order, the entry-point inventory, the principals and
+  boundaries, the coverage ledger — and the topic files answer the questions
+  that sweep generates. Opening a topic file first means reviewing whatever
+  the codebase made obvious.
 - Treat the codebase as **read-only**. Do not edit, refactor, or "fix in place"
   unless the user explicitly asks you to apply fixes afterward.
 - Optionally run the bundled scripts for fast triage (see below), then read the
