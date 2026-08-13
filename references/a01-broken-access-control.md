@@ -340,11 +340,13 @@ alone.
 
 Keep Django at the current patch level in the supported line — 6.1, 6.0.8, or
 5.2.17 as of 9 Aug 2026. The 2026 cache security fixes are spread across the
-whole year's releases rather than concentrated in one: `Vary: *` handling in
+whole year's releases rather than concentrated in one: `Vary: *` handling and
+the `SESSION_SAVE_EVERY_REQUEST` session fixation above (CVE-2026-35192) in
 6.0.5 and 5.2.14, `Authorization` variation, `Vary` whitespace parsing, and the
-mixed-case directives above in 6.0.6 and 5.2.15, and the cached `Set-Cookie`
-response in 6.0.7 and 5.2.16. Patching is necessary, but it cannot repair an
-application key that omits tenant, user, or permission state.
+mixed-case directives above in 6.0.6 and 5.2.15, and a further, separate fix
+for cached responses that set cookies in 6.0.7 and 5.2.16. Patching is
+necessary, but it cannot repair an application key that omits tenant, user, or
+permission state.
 
 See `deployment-and-runtime.md` for proxy/CDN/cache exposure and infrastructure
 configuration.

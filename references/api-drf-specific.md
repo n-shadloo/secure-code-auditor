@@ -528,12 +528,13 @@ def register_attempt(identity):
 Three constraints travel with it, and none is optional.
 
 - **The backend decides whether it is atomic at all.** `incr()` is atomic only
-  on Memcached and Redis. On `LocMemCache` it is a per-process
-  read-modify-write that is not even thread-safe, so N Gunicorn workers give N
-  independent counters and roughly N times the limit — the same per-worker
-  failure described above for throttles, and worse here, because this counter
-  is the control that was supposed to actually hold. The database cache
-  backend's `incr` is a non-atomic get-then-set and races the same way.
+  on Memcached and Redis. On `LocMemCache` the increment holds the backend's
+  own lock, so it is consistent within one process — but the counter is
+  per-process, so N Gunicorn workers give N independent counters and roughly
+  N times the limit: the same per-worker failure described above for
+  throttles, and worse here, because this counter is the control that was
+  supposed to actually hold. The database cache backend's `incr` is a
+  non-atomic get-then-set and races even inside one process.
 - **Name the cache alias explicitly.** Reading `caches["throttle"]` rather
   than the default keeps the counter off a cache someone later repoints at
   LocMemCache for a test suite, and off one whose eviction policy discards

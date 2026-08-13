@@ -111,12 +111,16 @@ vetted choice. v3 is a security-focused rewrite — all v2 APIs changed. What it
 gives you and what it does not:
 
 - **Default permission is `hijack.permissions.superusers_only`** — only
-  superusers may hijack. Staff hijacking is opt-in via `HIJACK_AUTHORIZE_STAFF`,
+  superusers may hijack. Staff hijacking is opt-in by pointing
+  `HIJACK_PERMISSION_CHECK` at `hijack.permissions.superusers_and_staff` (the
+  v2-era `HIJACK_AUTHORIZE_STAFF` setting is gone with the rest of the v2 API),
   and there is deliberately **no built-in option for staff to hijack
   superusers**, since that would erase the distinction. Preserve both defaults.
-- **Views are POST-only with CSRF** by default. `HIJACK_ALLOW_GET_REQUESTS`
-  exists for the admin button and trades CSRF protection for convenience —
-  treat enabling it as a finding unless the exposure is separately mitigated.
+- **Views are POST-only with CSRF** by default, and the bundled admin
+  integration submits a POST form, so nothing needs GET. Re-enabling GET
+  acquisition — a v2 habit — trades CSRF protection for convenience; treat any
+  configuration or fork that does so as a finding unless the exposure is
+  separately mitigated.
 - **Session flush on acquire and release**, via Django's login utility, so
   session data does not leak between operator and target.
 - **`hijack_started` and `hijack_ended` signals** — the intended audit hook.
@@ -250,8 +254,8 @@ scoped, time-boxed, and *leaves deliberate evidence*. Signals worth alerting on:
 ### Django & DRF
 
 - [ ] `django-hijack` keeps `superusers_only` (or a reviewed replacement that
-      cannot target equal-or-greater privilege) and POST + CSRF;
-      `HIJACK_ALLOW_GET_REQUESTS` is off or separately justified.
+      cannot target equal-or-greater privilege) and POST + CSRF; GET
+      acquisition stays disabled or is separately justified.
 - [ ] `hijack_started` / `hijack_ended` write durable, actor-attributed audit
       rows; unterminated sessions are detectable and time-boxed in middleware.
 - [ ] Home-grown impersonation flushes the session on both edges, never takes

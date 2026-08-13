@@ -269,7 +269,12 @@ from myproject.hashers import Argon2WrappedMD5PasswordHasher
 def wrap_md5_hashes(apps, schema_editor):
     User = apps.get_model("auth", "User")
     hasher = Argon2WrappedMD5PasswordHasher()
-    legacy = User.objects.filter(password__startswith="md5$").order_by("pk")
+    alias = schema_editor.connection.alias
+    legacy = (
+        User.objects.using(alias)
+        .filter(password__startswith="md5$")
+        .order_by("pk")
+    )
     for user in legacy.iterator(chunk_size=500):
         _, salt, md5_hash = user.password.split("$", 2)
         user.password = hasher.encode_md5_hash(md5_hash, salt)
@@ -636,8 +641,10 @@ Review notes:
 
 ## Key lifecycle and envelope encryption
 
-Maps to CWE-320 (key management errors), CWE-321 (hard-coded cryptographic
-key), and CWE-311 (missing encryption of sensitive data).
+Maps to CWE-324 (use of a key past its expiration date), CWE-321 (hard-coded
+cryptographic key), and CWE-311 (missing encryption of sensitive data).
+CWE-320 (Key Management Errors) is the identifier often reached for here, but
+it is a category, which CWE's mapping guidance prohibits citing in a finding.
 
 ### Principle layer
 
@@ -857,9 +864,10 @@ earns for a backend.
 
 NIST finalized the first post-quantum standards in August 2024 — **FIPS 203**
 (ML-KEM, key encapsulation), **FIPS 204** (ML-DSA), and **FIPS 205** (SLH-DSA)
-— and selected HQC in 2025 as a backup KEM still being standardized. NIST has
-stated it will deprecate quantum-vulnerable algorithms by 2035, with high-risk
-systems expected to move sooner.
+— and selected HQC in 2025 as a backup KEM still being standardized. NIST's
+transition guidance (IR 8547) deprecates quantum-vulnerable public-key
+algorithms after 2030 and disallows them after 2035, with high-risk systems
+expected to move sooner.
 
 What that means for a Django backend right now:
 
@@ -939,8 +947,9 @@ needs.
       `encode` or every migrated login fails.
 - [ ] `AUTH_PASSWORD_VALIDATORS` configured.
 - [ ] Tokens use `secrets.token_urlsafe`, `get_random_secret_key()`, or
-      `PasswordResetTokenGenerator` — not `get_random_string` at its short
-      default length for a bearer credential.
+      `PasswordResetTokenGenerator` — not `get_random_string` at a short
+      hand-picked length such as the common 12 characters for a bearer
+      credential.
 - [ ] Every `Signer` / `TimestampSigner` passes a purpose-specific `salt`
       rather than accepting the default, and `unsign` passes a `max_age`.
 - [ ] Secret comparisons use `constant_time_compare` or

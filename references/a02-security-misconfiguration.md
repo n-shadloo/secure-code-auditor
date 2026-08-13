@@ -254,7 +254,11 @@ SECURE_CSP = {
 }
 ```
 
-On pre-6.0 projects the equivalent is the `django-csp` package. CSP is mainly an
+Both settings are inert until the dedicated middleware,
+`django.middleware.csp.ContentSecurityPolicyMiddleware`, is added to
+`MIDDLEWARE` — like `X_FRAME_OPTIONS` above, the setting alone emits no
+header, and `request.csp_nonce` is also supplied by that middleware. On
+pre-6.0 projects the equivalent is the `django-csp` package. CSP is mainly an
 XSS mitigation for server-rendered HTML; for pure JSON APIs it matters less, but
 it's cheap defense in depth.
 
@@ -447,9 +451,13 @@ Decommissioning order is what teams get backwards, and it is the whole control:
 resource.** Deleting the resource first opens the exact window this section is
 about.
 
-CWE-16 (Configuration) is the clean mapping; A02:2025. Severity: high where the
-subdomain shares cookies, an OAuth redirect allowlist, or a CSP or CORS entry
-with the application.
+No CWE maps cleanly: CWE-16 (Configuration) is the identifier scanners often
+attach, but it is a category, which CWE's own mapping guidance prohibits citing
+in a finding. CWE-672 (Operation on a Resource After Expiration or Release) is
+the closest mappable weakness — the record operates on a resource that was
+released — and A02:2025 carries the classification either way. Severity: high
+where the subdomain shares cookies, an OAuth redirect allowlist, or a CSP or
+CORS entry with the application.
 
 ## check --deploy
 

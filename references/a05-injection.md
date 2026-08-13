@@ -588,9 +588,13 @@ later edit that changes what is passed and not how it is passed.
   `mark_safe()`, `{% autoescape off %}`, and misuse of `format_html`. Never pass
   attacker-controlled content through them. Use `format_html("{}", value)` (it
   escapes args) rather than `mark_safe(f"...{value}...")`.
-- **Jinja2 does not autoescape unless configured.** If the project uses Jinja2,
-  confirm `autoescape=True`. Never build a template string from user input and
-  render it — that's server-side template injection (SSTI), which can reach RCE.
+- **Jinja2 the library does not autoescape unless configured — but Django's
+  own Jinja2 template backend turns it on**, defaulting `autoescape` to `True`
+  in its options. So on a project using `django.template.backends.jinja2`, the
+  finding is an explicit `"autoescape": False` in `OPTIONS` or a bare
+  `jinja2.Environment()` constructed outside the backend, not the absence of
+  the option. Never build a template string from user input and render it —
+  that's server-side template injection (SSTI), which can reach RCE.
 - Autoescaping does not cover unquoted HTML attributes, `javascript:` URLs, or
   data injected into `<script>`; emit JSON to templates with
   `json_script` rather than interpolating it.

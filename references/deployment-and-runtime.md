@@ -244,12 +244,15 @@ One half of it does resolve to a repository finding, and it is the half most
 reviews skip because the exposure above is not one: the pinned version of the
 application server and of its worker dependencies, which sit in the
 requirements file the tree does hold. Gunicorn validated `Transfer-Encoding`
-loosely enough to permit TE.CL smuggling below **22.0.0** — CVE-2024-1135 and
-CVE-2024-6827 — and the two bodies that scored the first agree rather than
-diverge, which is worth stating because divergence is the usual case: the
-GitHub Advisory Database rates CVE-2024-1135 7.5 HIGH on
+loosely enough to permit TE.CL smuggling twice over: CVE-2024-1135, fixed in
+**22.0.0**, and CVE-2024-6827, disclosed January 2025 against 22.0.0 itself and
+fixed in **23.0.0** — so 22.0.0 closes the first advisory while remaining
+vulnerable to the second, and a floor quoting both CVEs has to sit at 23.0.0.
+The two bodies that scored the first agree rather than diverge, which is worth
+stating because divergence is the usual case: the GitHub Advisory Database
+rates CVE-2024-1135 7.5 HIGH on
 `CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:H/A:N`, and IBM X-Force publishes the
-identical vector and score. Treat 22.0.0 as the floor and the 2026 line as the
+identical vector and score. Treat 23.0.0 as the floor and the 2026 line as the
 target: it refuses a request carrying both `Transfer-Encoding` and
 `Content-Length` rather than choosing between them, rejects empty transfer
 codings, and tightened chunk-extension parsing to reject a bare CR per
@@ -278,7 +281,7 @@ repository actually holds, keep the chain to one edge parser in front of the
 application server and do not introduce a third component that re-parses the
 request body, because the vulnerability is created by two parsers disagreeing
 rather than by either one being wrong on its own. In the same edit, pin the
-application server at or above its floor — `gunicorn>=22.0.0`, and the floor
+application server at or above its floor — `gunicorn>=23.0.0`, and the floor
 for whichever async worker the command line selects — because the worker is
 chosen for throughput in one file and never revisited in the requirements file
 where its version is actually decided.
@@ -453,7 +456,7 @@ Platform-owned, and worth naming once rather than auditing: `runAsNonRoot`,
 capabilities, seccomp profiles, resource limits, and egress policy. A non-root
 `USER` is necessary but not sufficient — the platform is what enforces it.
 
-CWE-250 (Execution with Unnecessary Privileges), CWE-16 (Configuration).
+CWE-250 (Execution with Unnecessary Privileges).
 Severity: medium on its own, high in combination with a runtime escape. runc's
 CVE-2024-21626 is the reference case, a working-directory and leaked-descriptor
 breakout fixed in runc 1.1.12, against which a non-root container with
@@ -693,7 +696,7 @@ decorated URL is one an attacker chooses.
       endpoints are authenticated or internal-only.
 - [ ] Gunicorn non-root on a local socket; systemd unit hardened;
       `forwarded_allow_ips` names the proxy rather than `*`.
-- [ ] The application server is pinned at or above `22.0.0` for Gunicorn, and
+- [ ] The application server is pinned at or above `23.0.0` for Gunicorn, and
       whichever async worker the command line selects is pinned at its own
       floor; the smuggling exposure itself is sent outward as a question about
       the proxy chain rather than written up as a repository finding.

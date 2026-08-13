@@ -204,7 +204,7 @@ Two properties decide most of the review:
 Enumerate the controls one at a time for every viewset exposed as a tool. None
 of them can be assumed.
 
-`django-mcp-server` (0.5.7, 10 Mar 2026) publishes DRF viewsets as MCP tools
+`django-mcp-server` (0.5.7, 10 Oct 2025) publishes DRF viewsets as MCP tools
 with `authentication_classes`, `permission_classes`, `filter_backends`, and
 `pagination_class` **disabled by default**, on the stated reasoning that
 MCP-level authentication replaces them. Each consequence is a separate finding:

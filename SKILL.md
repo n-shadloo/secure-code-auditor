@@ -21,7 +21,7 @@ license: MIT
 allowed-tools: Read, Grep, Glob, Bash
 metadata:
   author: n-shadloo
-  version: 1.41.2
+  version: 1.42.0
 ---
 
 # secure-code-auditor
