@@ -19,6 +19,7 @@ what a `DEBUG` error view discloses when a request fails.
 - [Principle](#principle)
 - [DEBUG and ALLOWED_HOSTS](#debug-and-allowed_hosts)
 - [The security settings matrix](#the-security-settings-matrix)
+- [Cookie prefixes and the subdomain boundary](#cookie-prefixes-and-the-subdomain-boundary)
 - [Signed cookies and the legacy salt fallback](#signed-cookies-and-the-legacy-salt-fallback)
 - [CSRF settings and trusted origins](#csrf-settings-and-trusted-origins)
 - [CORS](#cors)
@@ -126,6 +127,111 @@ cookie flags in that same edit rather than leaving them for a later hardening
 pass: those four are off by default, they are precisely what `check --deploy`
 warns about, and a settings module that has already been merged is one nobody
 re-opens without a reason to.
+
+## Cookie prefixes and the subdomain boundary
+
+### Principle layer
+
+A cookie's *name* can carry a constraint the browser enforces, which makes it
+the one cookie property an attacker positioned on a sibling subdomain cannot
+work around.
+
+- **`__Host-`** requires `Secure`, requires **no** `Domain` attribute, and
+  requires `Path=/`. The cookie is then locked to exactly the host that set
+  it: no subdomain can write it and no subdomain receives it.
+- **`__Secure-`** requires only `Secure`, and says nothing about which host
+  set the cookie. It is the weaker of the two by a wide margin.
+
+A browser silently ignores a `Set-Cookie` whose name carries a prefix the
+attributes do not satisfy. There is no error and no warning — the cookie is
+simply never stored — so a mis-set prefix presents as "login stopped working"
+rather than as anything security-shaped.
+
+The attack `__Host-` closes is **cookie tossing**. Cookies are scoped by
+domain rather than by origin, so any host under `example.com` may set a
+cookie with `Domain=example.com`, and the parent then receives its own cookie
+and the sibling's under one name, with the ordering rules deciding which the
+server reads first. A compromised marketing site, a taken-over dangling
+subdomain, or an untrusted customer subdomain is enough to shadow a session
+or CSRF cookie on the main application. A cookie carrying a `Domain`
+attribute cannot carry the `__Host-` name, which is what removes the attack
+rather than detecting it.
+
+Two corollaries. Setting a cookie's domain to the parent hands it to **every**
+subdomain, present and future, so each one joins the trust boundary of
+whatever that cookie authenticates — which is most of why a dangling CNAME is
+rated as it is in "Certificate issuance and dangling DNS" below. And `Path`
+is not a security boundary: same-origin script reads across paths freely, so
+`Path=/admin` scopes what the browser sends and isolates nothing.
+
+### Django & DRF implementation layer
+
+Django emits whatever name it is handed. `SessionMiddleware` and
+`CsrfViewMiddleware` pass the `SESSION_COOKIE_*` and `CSRF_COOKIE_*` values
+straight into `set_cookie()`, and `set_cookie()` performs no prefix
+validation, so the name and the settings can disagree with nothing but a
+dropped cookie to show for it. `HttpResponse.delete_cookie()` *does* know
+about prefixes — it forces `secure=True` when the name starts with one, so
+deletion still works — which is easy to mistake for validation at set time.
+Read off the Django 6.0.7 source on 14 Aug 2026.
+
+```python
+# Wrong: the name claims __Host-, the cookie carries a Domain, and Secure is
+# off. Every browser drops it, so nobody can log in and nothing says why.
+SESSION_COOKIE_NAME = "__Host-sessionid"
+SESSION_COOKIE_DOMAIN = ".example.com"
+SESSION_COOKIE_SECURE = False
+```
+
+```python
+# Correct: four settings per cookie saying what the name says. The domain
+# must be None -- not "" and not the site's own host.
+SESSION_COOKIE_NAME = "__Host-sessionid"
+SESSION_COOKIE_DOMAIN = None
+SESSION_COOKIE_PATH = "/"
+SESSION_COOKIE_SECURE = True
+
+CSRF_COOKIE_NAME = "__Host-csrftoken"
+CSRF_COOKIE_DOMAIN = None
+CSRF_COOKIE_PATH = "/"
+CSRF_COOKIE_SECURE = True
+```
+
+What that forbids, and what it costs:
+
+- **A session shared across subdomains becomes impossible**, which is the
+  point rather than a side effect. A project authenticating
+  `app.example.com` and `admin.example.com` from one cookie is choosing
+  `SESSION_COOKIE_DOMAIN` over the prefix, and with it every subdomain inside
+  the session's trust boundary. Prefer a separate cookie per host.
+- **Anything reading the CSRF cookie by name** — the usual
+  `getCookie("csrftoken")` in front-end code — reads the new name, so
+  changing `CSRF_COOKIE_NAME` without changing the reader breaks every unsafe
+  request. `CSRF_USE_SESSIONS = True` sidesteps the question by moving the
+  CSRF secret into the session and emitting no CSRF cookie at all.
+- **Cookies already set under the old names are orphaned rather than
+  migrated.** They sit in browsers until they expire and are ignored.
+
+`LANGUAGE_COOKIE_*` is the set left behind, and its defaults are weaker than
+the session's: `LANGUAGE_COOKIE_SECURE` and `LANGUAGE_COOKIE_HTTPONLY` are
+both `False` and `LANGUAGE_COOKIE_SAMESITE` is `None`, against `True`,
+`True`, and `"Lax"` for the session cookie. It carries no credential, so the
+finding is not the cookie — it is that a non-`Secure`, subdomain-writable
+value is read by the application on every request, and anything downstream
+that trusts it inherits that. Set the three flags, and give it a `__Host-`
+name wherever nothing needs it cross-subdomain.
+
+**Write-time.** When generating a settings module for a project served over
+HTTPS from a single host, write the session and CSRF cookie names with the
+`__Host-` prefix and set the matching domain, path, and secure values in the
+same edit, because the prefix is a rename once the cookie is in production
+and the four settings are only ever read together at the moment they are
+written. Where the request genuinely calls for a session shared across
+subdomains, write `SESSION_COOKIE_DOMAIN` without a prefix and say in one
+line that every subdomain now sits inside that session's trust boundary. Set
+`LANGUAGE_COOKIE_SECURE`, `LANGUAGE_COOKIE_HTTPONLY`, and
+`LANGUAGE_COOKIE_SAMESITE` alongside the session flags rather than leaving
+them at defaults nobody chose.
 
 ## Signed cookies and the legacy salt fallback
 
@@ -506,6 +612,13 @@ so a clean linter is never evidence of deployment posture.
       module.
 - [ ] HSTS, SSL redirect, nosniff, `X-Frame-Options`, secure session/CSRF cookies set.
 - [ ] `SECURE_PROXY_SSL_HEADER` matches the actual proxy and isn't client-spoofable.
+- [ ] Session and CSRF cookie names carry the `__Host-` prefix with domain
+      `None`, path `/`, and `Secure` set to agree with it — or a
+      parent-domain cookie was chosen deliberately, with every subdomain
+      accepted into the trust boundary that follows.
+- [ ] `LANGUAGE_COOKIE_SECURE`, `LANGUAGE_COOKIE_HTTPONLY`, and
+      `LANGUAGE_COOKIE_SAMESITE` are set rather than left at their weaker
+      defaults.
 - [ ] Django is at 5.2.15 or 6.0.6 and later, and
       `SIGNED_COOKIE_LEGACY_SALT_FALLBACK` is `False` wherever two
       `get_signed_cookie()` name-and-salt pairs could concatenate alike —

@@ -25,6 +25,7 @@ CWE-639, CWE-269, and CWE-284.
 - [Search indexes and denormalized copies](#search-indexes-and-denormalized-copies)
 - [Authorization test suites](#authorization-test-suites)
 - [Permission-model decay and access review](#permission-model-decay-and-access-review)
+- [Identity lifecycle and provisioning desynchronization](#identity-lifecycle-and-provisioning-desynchronization)
 - [Review checklist](#review-checklist)
 
 ## Principle
@@ -563,6 +564,99 @@ possible:
 Absence of all of these is a finding in its own right for a system with
 meaningful privilege tiers: it means no one can answer who holds what.
 
+## Identity lifecycle and provisioning desynchronization
+
+Stack-neutral by necessity — Django ships no mechanism for any of it. Maps to
+CWE-613 and CWE-672; A01:2025 and A07:2025.
+
+### Principle layer
+
+An identity has three events — **joiner, mover, leaver** — and a system that
+models only the first two has no offboarding at all. The joiner is
+provisioned and granted. The mover changes team, role, or tenant, and that
+has to be a *replacement* of the previous grants rather than an addition to
+them, because a mover whose grants only ever accumulate is how one person
+ends up holding two jobs' worth of access. The leaver is disabled at the
+identity provider, and the divergence starts there.
+
+**A disable is not a revocation.** It stops the provider issuing new
+assertions and does nothing to authority the application already handed out.
+Between the disable and the last expiry, an offboarded person keeps whatever
+of these the system issued and never re-checks:
+
+| Survivor | Ends when |
+|---|---|
+| An active session | its server-side record is deleted, or an absolute lifetime runs out |
+| A bearer or refresh token | it expires, unless the request path re-reads the account |
+| An API key or personal access token | somebody revokes it by hand |
+| A webhook or signing secret they hold a copy of | it is rotated |
+| A service account they created or share | it is found and reassigned |
+| A local group or role grant | it is removed locally |
+
+The last row outlives all the others, because it is not a credential.
+**Synchronization has a direction**, and it is usually one way: the provider
+pushes group membership in, so a grant made locally — in the admin, by a
+support tool, by a migration — was never known to the provider and a
+provider-side removal cannot take it away. A reconciliation that walks only
+the identities the provider knows about reports itself clean while the system
+holds grants the provider has no record of.
+
+Machine identities decay the same way with nobody watching. A service account
+made for a one-off integration, a token minted by someone who has since left,
+a bot user with no named owner: each is a live principal that no lifecycle
+event touches, because the lifecycle was attached to people.
+
+Two controls, and neither substitutes for the other:
+
+1. **A revocation fan-out on the disable event**, as a durable record with
+   per-target state, so a partial failure is visible and retryable rather
+   than swallowed by a handler that already returned. That is the same shape
+   as the erasure ledger in `data-lifecycle-and-privacy.md`, "Erasure as a
+   fan-out with a completion ledger" — reuse it rather than growing a second.
+2. **A periodic reconciliation job that produces a report**: every local
+   identity and grant compared against the provider, every machine identity
+   compared against a named owner, and the difference written down. The
+   fan-out handles the event; the job catches what the event missed and what
+   never had an event to miss. A reconciliation that logs nothing when it
+   finds nothing is indistinguishable from one that did not run.
+
+### Django & DRF implementation layer
+
+Django gives you `is_active`, and `is_active` reaches only the paths that
+read the user row — `a07-authentication-failures.md`, "The user model as an
+identity contract", has which those are and which credentials skip them.
+Everything above it is the project's to build, so the review is an inventory
+rather than a settings check:
+
+- **Sessions are not enumerable by user.** `django_session` holds an opaque
+  key and an encoded blob, so finding one user's sessions means decoding
+  rows. Where forced logout is a requirement, record the mapping when the
+  session is created rather than reconstructing it under pressure, or bump a
+  per-user credential version that the session-load path reads.
+- **Every token model needs an owner, an expiry, and a revocation flag** that
+  the authentication path actually reads. DRF's `authtoken` `Token` carries
+  the owner and neither of the other two — `key`, a `OneToOneField` to the
+  user, and `created` are the whole model — so it never expires, cannot be
+  marked revoked, and holds one token per user, which makes deletion the only
+  rotation there is. The discipline it fails is in
+  `a07-authentication-failures.md`, "API keys".
+- **Grants made off the sync path are the ones to enumerate**: rows in
+  `auth_user_groups` and `auth_user_user_permissions`, object-permission rows
+  from guardian, and any local role field. These are the orphaned grants of
+  the section above, arriving from the other direction.
+- **A user row the provider does not know about** is a finding wherever the
+  provider is the source of truth, and so is a social account, service
+  account, or API key whose own owner is disabled.
+
+**Write-time.** When generating a path that deactivates, suspends, or
+offboards an account, write the revocation of its other credentials into the
+same change as the flag — sessions, tokens, API keys — because setting
+`is_active = False` is the part that looks like the feature and the part that
+stops the least. When generating any new credential model, give it an owner,
+an expiry, and a revoked-at column in its first migration and read all three
+on the authentication path, since a credential the offboarding job cannot
+find is one it will never revoke.
+
 ## Review checklist
 
 ### Stack-neutral
@@ -573,6 +667,13 @@ meaningful privilege tiers: it means no one can answer who holds what.
 - [ ] Unknown role, null tenant, new endpoint, and unmapped state all deny.
 - [ ] Function-, object-, and field-level decisions each exist where relevant.
 - [ ] Deactivation and revocation take effect promptly on every path.
+- [ ] Joiner, mover, and leaver each have a path, and a mover's previous
+      grants are replaced rather than added to.
+- [ ] A disable at the identity provider fans out to sessions, tokens, keys,
+      and locally made grants, and a periodic reconciliation reports what the
+      fan-out missed.
+- [ ] Every machine identity — service account, bot user, integration token —
+      has a named owner whose own identity is still active.
 - [ ] Every denormalized copy — search index, report table, export, replica —
       re-applies a server-derived authorization filter at its own query path and
       is refreshed on permission change, not only on content change.

@@ -397,6 +397,8 @@ an index to them, not a copy:
 | A data migration | `a03-software-supply-chain.md`, "Migration and data-integrity safety" |
 | A token, a secret, or the check that compares one | `a04-cryptographic-failures.md` |
 | A login, signup, reset, invite, or MFA endpoint | `a07-authentication-failures.md` |
+| A custom user model, or the identifier field it authenticates on | `a07-authentication-failures.md`, "The user model as an identity contract" |
+| A path that deactivates, suspends, or offboards an account | `authorization-architecture.md`, "Identity lifecycle and provisioning desynchronization" |
 | A log line or an audit record | `a09-logging-and-alerting.md` |
 | A transaction, a state transition, or a retryable handler | `a10-exceptional-conditions.md` |
 | A new route of any kind reaching the URLconf | `authorization-architecture.md`, "Default-deny architecture" |

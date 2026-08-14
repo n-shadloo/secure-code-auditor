@@ -17,8 +17,10 @@ because authentication ends where authorization begins.
 ## Contents
 
 - [Principle](#principle)
+- [The user model as an identity contract](#the-user-model-as-an-identity-contract)
 - [Password policy](#password-policy)
 - [Sessions](#sessions)
+- [Session engines, rotation, and revocation](#session-engines-rotation-and-revocation)
 - [JWT](#jwt)
 - [Token storage](#token-storage)
 - [Brute force and enumeration](#brute-force-and-enumeration)
@@ -37,6 +39,190 @@ explicit issuer, audience, lifetime, storage, rotation, revocation, and logging
 rules. Fail closed, resist enumeration and automation, and re-authenticate before
 sensitive changes. Never infer authorization merely because authentication
 succeeded.
+
+## The user model as an identity contract
+
+### Principle layer
+
+Authentication compares a submitted identifier against a stored one. Which
+field is the identifier, what transformation runs before it is stored, and
+what the store treats as equal are all part of the identity model, and none
+of the three is visible at the login view. Two accounts are the same
+principal exactly when those three answers agree.
+
+They disagree in one of two directions and each has its own failure. Where
+the comparison is looser than the uniqueness constraint, two rows answer to
+one typed identifier and which one authenticates is a database detail. Where
+it is stricter, the owner cannot reach their own account and registers a
+second one.
+
+Unicode widens that gap rather than creating it. NFKC normalization maps
+distinct inputs onto one string — a fullwidth `ａ` onto `a`, the `ﬁ` ligature
+onto `fi` — so two registrations that looked different collide afterward and
+one of them is now an existing account. Case folding is the same shape with a
+different table: `str.lower()` and `str.casefold()` are not one function, and
+`casefold()` maps `ß` to `ss` where `lower()` leaves it. Homoglyphs need no
+normalization at all — a Cyrillic `а` in a username, a display name, or an
+email domain renders identically to the Latin letter and compares unequal,
+which is the direction that favors an attacker, because the impersonating
+value is the new row rather than the existing one.
+
+One rule covers all of it. **Normalize once, at the boundary, in one
+documented form; store the normalized value; enforce uniqueness on the stored
+value; compare the stored value.** A second normalization applied at another
+layer in another form is a second identity model, and the system now has two.
+
+Disabling an account is part of the same contract. It ends access only on the
+paths that re-read the account, so a credential carrying its own
+authorization and never revalidated outlives the disable by its own lifetime.
+That is why the offboarding control in `authorization-architecture.md`,
+"Identity lifecycle and provisioning desynchronization", enumerates
+credentials rather than trusting a flag.
+
+### Django & DRF implementation layer
+
+Three class attributes carry the contract, and only two do what their names
+suggest.
+
+- **`USERNAME_FIELD`** names the field `authenticate()` looks up and
+  `get_username()` returns. It has to be unique.
+- **`EMAIL_FIELD`** names the field mail flows address, read through
+  `get_email_field_name()`, which falls back to `"email"` when the attribute
+  is absent.
+- **`REQUIRED_FIELDS`** is prompted by `createsuperuser` and by nothing else.
+  It constrains no form, no serializer, and no API; `auth.checks` verifies
+  only that it is a list and that it excludes `USERNAME_FIELD`. Reading it as
+  a validation rule is the common error.
+
+`BaseUserManager.get_by_natural_key()` is one exact lookup —
+`self.get(**{USERNAME_FIELD: username})` — so the case behavior of every
+login belongs to the column's collation rather than to Django. PostgreSQL
+compares case-sensitively by default and MySQL's default collations do not,
+which makes the same code two identity models: on MySQL `Alice` logs in as
+`alice` and cannot register a second account beside her, and on PostgreSQL
+she does neither — the login fails and the registration succeeds. Read off
+the Django 6.0.7 and 5.2.15 source on 14 Aug 2026.
+
+`BaseUserManager.normalize_email()` lowercases **the domain part only**. That
+is correct — the local part is case-sensitive to the mail standards — and it
+is routinely mistaken for a full normalization: `Alice@Example.COM` is stored
+`Alice@example.com`. `AbstractBaseUser.normalize_username()` applies
+`unicodedata.normalize("NFKC", ...)`. Neither runs on a bare `.save()`:
+`normalize_username` is called from `AbstractBaseUser.clean()` and
+`normalize_email` from `AbstractUser.clean()`, so both reach a ModelForm and
+the admin through `full_clean()`, and `UserManager._create_user_object()`
+calls both directly. A DRF serializer, a hand-written signup view, or a
+social-auth adapter that assigns the field itself runs none of them, which is
+how one project ends up normalizing on half its write paths.
+
+Django compares identity two ways itself, which is the clearest available
+demonstration that the comparison is a choice rather than a property of the
+data. `PasswordResetForm.get_users()` filters `email__iexact`, re-filters
+through `_unicode_ci_compare()` — NFKC plus `casefold()` — and mails **every**
+surviving match. Login, against the same rows, does the exact lookup above.
+A project on a case-sensitive collation therefore has a reset flow that finds
+an account the login flow will not.
+
+`UnicodeUsernameValidator`, the default on `AbstractUser.username`, is
+`r"^[\w.@+-]+\Z"` with `flags = 0`, so `\w` matches any Unicode word
+character and a Cyrillic `аdmin` passes. `ASCIIUsernameValidator` is the same
+expression under `re.ASCII` and is the right choice wherever a username is
+displayed as identity. Neither addresses confusability inside a mixed-script
+value, and a display name has no validator at all.
+
+**Uniqueness has to sit on the value the comparison reads.** `unique=True`
+constrains the stored bytes, so where the application normalizes before
+comparing but stores what was typed, the constraint does not cover the
+comparison — and an application-level "does this exist yet" query followed by
+a save is a race rather than a control (`a10-exceptional-conditions.md`).
+
+```python
+# Wrong: nothing normalizes. On a case-sensitive collation
+# Alice@example.com and alice@example.com become two accounts that
+# unique=True cannot see are the same one, and the owner of either is locked
+# out the moment they type their address the other way.
+class User(AbstractBaseUser):
+    email = models.EmailField(unique=True)
+    USERNAME_FIELD = "email"
+```
+
+```python
+# Correct: one normalization function on every write path, and a constraint
+# over the same transformation. Lower() and casefold() are different
+# functions -- use the one the database can express on both sides.
+import unicodedata
+
+from django.contrib.auth.base_user import AbstractBaseUser, BaseUserManager
+from django.db import models
+from django.db.models.functions import Lower
+
+
+def normalize_identity(value):
+    value = unicodedata.normalize("NFKC", value)
+    return BaseUserManager.normalize_email(value).lower()
+
+
+class UserManager(BaseUserManager):
+    def create_user(self, email, password=None, **extra):
+        user = self.model(email=normalize_identity(email), **extra)
+        user.set_password(password)
+        user.save(using=self._db)
+        return user
+
+
+class User(AbstractBaseUser):
+    email = models.EmailField(unique=True)
+    is_active = models.BooleanField(default=True)
+    USERNAME_FIELD = "email"
+    objects = UserManager()
+
+    def clean(self):
+        super().clean()
+        self.email = normalize_identity(self.email)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(Lower("email"), name="uniq_email_ci"),
+        ]
+```
+
+**`is_active` reaches further than a login form and stops short of a token.**
+`AbstractBaseUser` sets a class attribute `is_active = True` and
+`ModelBackend.user_can_authenticate()` reads `getattr(user, "is_active",
+True)`, so a custom user model that never declares the field is permanently
+active and nothing reports it — the reason the example above declares it.
+Where the field exists, `ModelBackend` rejects the user at `authenticate()`
+**and** at `get_user()`, which is the session-load path, so a live session
+stops working on its next request, and `ModelBackend._get_permissions()`
+returns an empty set for an inactive user besides. What the flag cannot reach
+is a credential validated without reading the row:
+`JWTStatelessUserAuthentication` builds its principal from the token claims
+and issues no query, so `is_active` is never consulted and the token stands
+until it expires. Checked against SimpleJWT 5.5.1 source on 14 Aug 2026,
+where `JWTAuthentication` does check it under `CHECK_USER_IS_ACTIVE`,
+default `True`; DRF's `TokenAuthentication` re-reads `token.user.is_active`
+on every request.
+
+**Choose the user model in the first commit.** `AUTH_USER_MODEL` is resolved
+at migration time and every migration already pointing at `auth.User` goes on
+pointing at it, so a late move is a schema problem before it is a security
+one. The security consequence is the workaround teams reach for instead:
+identity is bolted onto a profile row, `USERNAME_FIELD` stays `username`, the
+address people actually log in with lives on a related model under its own
+uniqueness rule or none, and the normalization rule above now has two homes
+that will drift.
+
+**Write-time.** When generating a project's user model, declare a custom
+model in the first migration even where the default would serve, and settle
+`USERNAME_FIELD` and the normalization function in that same edit, because
+both are cheap now and neither is retrofittable once foreign keys exist.
+Route every write of the identifier through one normalization function — the
+manager, `clean()`, and any serializer or social adapter that creates a user
+— and add the database constraint over the same transformation in the same
+change, since the constraint is what makes the rule true for the write path
+somebody adds later. When the model does not inherit `AbstractUser`, declare
+`is_active` explicitly: inherited from `AbstractBaseUser` it is a constant
+`True`, and every deactivation feature built on it will appear to work.
 
 ## Password policy
 
@@ -220,6 +406,8 @@ truncate before hashing.
 
 - Rotate the session identifier on login and privilege change; invalidate it on
   logout and password reset/change where the product's threat model requires it.
+  Which Django call does which, and what the backend has to be for revocation
+  to mean anything at all, are in the next section.
 - Use `Secure`, `HttpOnly`, and an appropriate `SameSite` value; the full
   `SESSION_*`/`CSRF_*` matrix and the setting behind each flag are in
   `a02-security-misconfiguration.md`. Cookie-authenticated state changes still
@@ -230,6 +418,124 @@ truncate before hashing.
   default `ModelBackend` rejects inactive users; a custom backend can undo that.
 - Re-authenticate and require the current factor before changing password, email,
   MFA, recovery methods, payout details, or other security-sensitive state.
+
+## Session engines, rotation, and revocation
+
+### Principle layer
+
+Two questions decide what a session is worth. **Where the state lives**,
+because you can only revoke what you hold a record of; and **when the
+identifier changes**, because an identifier that survives a privilege change
+is a session-fixation vector. A design that answers the second and not the
+first can end a session on the way out and cannot end one on demand.
+
+Revocation is the half that gets assumed. A self-contained credential — a
+signed cookie, a bearer token — carries its own authority, so "log out" is a
+request to the holder rather than an instruction to the server. Where the
+product needs log-out-everywhere, forced re-authentication, or an operator
+kill switch, that is a design requirement selecting the storage, not a
+feature to be added on top of one.
+
+### Django & DRF implementation layer
+
+`SESSION_ENGINE` selects one of five backends, and what separates them is
+durability and whether a record exists to delete. Read off the Django 6.0.7
+source on 14 Aug 2026:
+
+| Backend | State lives in | Revocation | Loss mode |
+|---|---|---|---|
+| `db` (default) | a `django_session` row | delete the row | none; needs `clearsessions` scheduled |
+| `cached_db` | the cache, then the row | `delete()` clears both | a cache miss falls back to the row |
+| `cache` | the cache only | delete the key | an eviction or a flush ends every session |
+| `file` | one file per session | delete the file | per host unless the path is shared |
+| `signed_cookies` | the client | **none** | nothing to lose and nothing to revoke |
+
+`signed_cookies` is the one to flag. `SessionStore.exists()` returns `False`
+unconditionally and `delete()` only clears the client-side value, so the
+server holds no record: a cookie copied before logout stays valid until
+`SESSION_COOKIE_AGE` runs out, and there is no per-session lever to end it
+early. The two that exist are wholesale — a `SECRET_KEY` rotation with no
+fallback ends every user's session at once
+(`service-identity-and-secrets.md`, "Rotating Django's SECRET_KEY"), and a
+password change ends one user's through the auth hash below.
+Its payload is **signed and not encrypted** — `signing.dumps` with
+compression — so everything in `request.session` is readable by the browser
+and by anyone who captured the cookie. `cache` has the mirror-image problem:
+revocation works, and an ordinary eviction or a routine `FLUSHALL` logs
+everybody out, which is an availability failure a deploy can cause by
+accident. `cached_db` reads the cache and falls back to the row, so a flush
+costs a query rather than a session.
+
+Rotation is three calls, and the first does less than it is credited with.
+`login()` calls `cycle_key()` — a new key, the same data, the old record
+deleted — **only where the session carries no authenticated user**. That is
+the fixation case, so the control is present where it counts, but a session
+that already holds an authenticated user takes a different branch: a
+different user or a mismatched auth hash flushes, and the *same* user logging
+in again gets neither call, leaving the identifier unchanged. `login()` also
+calls `rotate_token()`, which cycles the CSRF secret. `logout()` calls
+`flush()`: the data is cleared, the record deleted, and the key set to
+`None`.
+
+`update_session_auth_hash(request, user)` is the third, and the one a
+password change needs. `get_session_auth_hash()` is a `salted_hmac` over the
+password field — and through the HMAC key over `SECRET_KEY` — which
+`django.contrib.auth.get_user()` recomputes and constant-time-compares on
+**every** request. Rewriting the password therefore invalidates every session
+the user has, including the one making the change; `update_session_auth_hash`
+cycles that session's key and re-stamps its hash so it survives. Django's own
+`PasswordChangeView` calls it. A hand-written DRF endpoint usually does not,
+and the symptom — the caller is logged out by their own password change — is
+read as a bug and fixed by removing the invalidation.
+
+```python
+# Wrong: correct in every respect except that the caller is logged out by
+# the change they just made, which is the failure that gets "fixed" by
+# weakening the invalidation instead of exempting this session from it.
+class ChangePasswordView(APIView):
+    def post(self, request):
+        serializer = ChangePasswordSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        request.user.set_password(serializer.validated_data["new_password"])
+        request.user.save(update_fields=["password"])
+        return Response(status=204)
+```
+
+```python
+# Correct: every other session dies -- which is the intent -- and this one is
+# re-keyed and re-stamped by the same call. On a token-authenticated API
+# there is no session to exempt, so the equivalent is to delete or rotate the
+# caller's tokens here rather than to leave them standing.
+class ChangePasswordView(APIView):
+    def post(self, request):
+        serializer = ChangePasswordSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        request.user.set_password(serializer.validated_data["new_password"])
+        request.user.save(update_fields=["password"])
+        update_session_auth_hash(request, request.user)
+        return Response(status=204)
+```
+
+Treat log-out-everywhere as a stated requirement rather than a side effect of
+this behavior. A password change already delivers it; a product that needs
+the same effect without one needs either a stored session record to delete or
+a per-user credential version the session-load path reads. `get_user()` also
+tries `SECRET_KEY_FALLBACKS` before giving up, and a fallback match cycles
+the key and re-stamps the hash in place, which is what makes a key rotation
+survivable at all.
+
+**Write-time.** When generating a settings module, leave `SESSION_ENGINE` at
+`db` unless the request asked for a different trade, and never generate
+`signed_cookies` for an authenticated application: it removes revocation
+entirely and publishes the session payload to the client, and both are
+properties of the first version that nothing later reopens. When generating
+any endpoint that sets a password — reset, change, or admin-side — call
+`update_session_auth_hash()` in the same edit for the session case, and
+delete or rotate the caller's tokens for the token case, because the
+invalidation is the control and the exemption for the current session is the
+part that has to be written deliberately. When generating a forced-logout or
+log-out-everywhere feature, choose a backend with a server-side record
+first: the feature cannot be added to a session the server never stored.
 
 ## JWT
 
@@ -355,6 +661,16 @@ is not proof of OIDC identity. For every login transaction:
    account by email, username, `preferred_username`, or other mutable claim; and
 8. link accounts only after an explicit authenticated ceremony or a provider-
    specific, proven verified-email policy that handles collisions safely.
+
+Requirements 2, 5, and 6 are together the defense against the **mix-up
+attack**, which is the name the advisories use for it. Where a client
+supports more than one provider, an attacker who can influence which provider
+a login started with induces the client to send an authorization code to the
+wrong token endpoint, or to accept an assertion from one issuer as though it
+came from the intended one. Binding the authorization response to the issuer
+that produced it — `state` bound to the provider, the code exchanged only at
+that provider's token endpoint, and an exact issuer check on the ID token —
+is what closes it, and each of the three is already required above.
 
 Keep provider client secrets, signing keys, authorization codes, and tokens out of
 source and logs. Request minimal scopes. Store refresh/access tokens only when the
@@ -513,8 +829,19 @@ are in scope.
       single factor, impose no composition rule and no periodic expiry, and
       screen the candidate against a breach corpus rather than against the
       20,000-entry common-password list alone;
+- [ ] the user model normalizes its identifier once, on every write path, and
+      the database enforces uniqueness over the value the login comparison
+      reads rather than over whatever was typed;
+- [ ] `is_active` is a declared field rather than the inherited constant, and
+      every credential path re-reads it or expires quickly enough to stand in
+      for that;
 - [ ] session cookies, CSRF, rotation, idle/absolute lifetime, logout, and sensitive
       re-authentication match the deployment architecture;
+- [ ] `SESSION_ENGINE` keeps a server-side record wherever revocation, forced
+      logout, or an operator kill switch is a requirement, and no
+      authenticated application runs on `signed_cookies`;
+- [ ] every path that sets a password calls `update_session_auth_hash()` for
+      the session it runs in and invalidates the caller's other credentials;
 - [ ] JWTs have fixed algorithms, issuer/audience/time validation, short lifetime,
       key rotation, and a revocation/staleness strategy; package compatibility is proven;
 - [ ] machine tokens from an external issuer are verified against a cached,

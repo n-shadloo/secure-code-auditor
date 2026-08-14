@@ -104,7 +104,9 @@ rule for generating that code.
 - Authorization architecture: the privilege model (RBAC/ABAC/ReBAC), what
   Django's permission layer actually does, the DRF and admin enforcement
   surfaces, default-deny with a URLconf audit test, field-level authorization,
-  and authorization test design that isn't false confidence.
+  authorization test design that isn't false confidence, and the joiner,
+  mover, and leaver path — what a disable at the identity provider does not
+  reach, and why a locally made grant survives a provider-side removal.
 - Privileged access: impersonation ("log in as user"), break-glass and
   just-in-time elevation, and the operator audit identity both require.
 - File uploads: type/content validation, safe names and storage keys that leak
@@ -136,10 +138,16 @@ rule for generating that code.
   rule, no expiry job, and a blocklist that reaches a breach corpus rather
   than the twenty thousand entries Django ships — with the screening validator
   written out because no maintained package currently clears the gate to
-  provide it; sessions, JWT, OAuth2/OIDC and social login, API keys,
-  brute-force resistance, MFA, passkey and WebAuthn configuration on a
-  framework that ships no native support for either, password reset, and
-  enumeration resistance.
+  provide it; the user model read as an identity contract, where the
+  identifier field, the normalization applied before storage, and the
+  collation the database compares under all have to agree before two rows
+  are one person, and where `is_active` is a constant `True` on a model that
+  never declared it; sessions, with the engine choice that decides whether
+  one can be revoked at all and the three calls that rotate one; JWT,
+  OAuth2/OIDC and social login including the mix-up attack under the name
+  the advisories use, API keys, brute-force resistance, MFA, passkey and
+  WebAuthn configuration on a framework that ships no native support for
+  either, password reset, and enumeration resistance.
 - API/DRF: where the framework runs an object check and every route that skips
   it (`@action(detail=True)`, plain `APIView`, overridden `get_object`, bulk),
   function-level authorization on viewset actions, serializer over-exposure and
@@ -214,11 +222,14 @@ rule for generating that code.
   by network position; downstream token exchange instead of forwarding; where
   secrets live and how they reach the process; `SECRET_KEY` rotation and what
   it does and does not invalidate; and the ordered response to a leak.
-- Configuration: the `SECURE_*`/`SESSION_*`/`CSRF_*` matrix, the signed-cookie
-  salt collision Django fixed in June 2026 and the transitional setting whose
-  default flipped in 6.1, so whether the old cookies are still accepted is a
-  question about the installed line rather than about the settings file, CORS,
-  headers, the
+- Configuration: the `SECURE_*`/`SESSION_*`/`CSRF_*` matrix, the `__Host-`
+  and `__Secure-` cookie prefixes as the one cookie property a sibling
+  subdomain cannot work around, with the four settings each prefix needs to
+  agree with and the silent drop that follows when they don't, the
+  signed-cookie salt collision Django fixed in June 2026 and the transitional
+  setting whose default flipped in 6.1, so whether the old cookies are still
+  accepted is a question about the installed line rather than about the
+  settings file, CORS, headers, the
   DNS records that decide whether your domain can be forged (SPF's ten-lookup
   ceiling, DKIM alignment through a third-party sender, and the DMARC rollout
   under the 2026 specification that removed `pct` and added `np`), CAA and
