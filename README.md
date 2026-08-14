@@ -145,9 +145,10 @@ rule for generating that code.
   value to bind), command and argument injection,
   template injection and server-side output handling, LDAP/directory
   injection, header/email injection, XML external entity injection and entity
-  expansion named at the XML sink, and the duplicated request parameter that
-  a check and a use read differently because one calls `getlist` and the other
-  subscripts the `QueryDict`.
+  expansion named at the XML sink, the exported CSV or workbook cell whose
+  interpreter is a spreadsheet program on the reader's machine, and the
+  duplicated request parameter that a check and a use read differently because
+  one calls `getlist` and the other subscripts the `QueryDict`.
 - Authentication: password policy stated as the standard actually states it —
   fifteen characters where the password is a single factor, no composition
   rule, no expiry job, and a blocklist that reaches a breach corpus rather
@@ -264,7 +265,10 @@ rule for generating that code.
   and where it is noise, per-purpose salt discipline so a token minted for one
   flow cannot be replayed against another, the key lifecycle from generation to
   destruction with envelope encryption worked against a KMS and resumable
-  re-encryption, and a sober post-quantum posture that is an inventory rather
+  re-encryption, cryptographic agility as a posture rather than a primitive —
+  the algorithm and key identifier stored with the value rather than inferred
+  from it, and the four-step migration whose measurement step is the one that
+  gets skipped — and a sober post-quantum posture that is an inventory rather
   than a migration.
 - Integrity and cross-system trust: the inbound webhook receiver end to end
   (raw-body capture before any parser, a timestamp inside the signed material,
@@ -273,10 +277,16 @@ rule for generating that code.
   proxy or a retry amplifier, insecure deserialization including the cache,
   session, and fixture paths Django deserializes without being asked, Celery
   task messages as input from anyone who can reach the broker and the
-  confidentiality a signed serializer does not provide, artifact provenance,
-  and safe schema/data migrations.
+  confidentiality a signed serializer does not provide, Django's own built-in
+  tasks framework and the in-request execution its default backend gives an
+  enqueue that reads as backgrounded, artifact provenance, and safe
+  schema/data migrations.
 - Logging and lifecycle: secret-safe audit logs, complete lifecycle coverage,
-  post-commit side effects, error handling, and alerting.
+  post-commit side effects, error handling, and alerting; then whether the
+  record survives as evidence — an append-only sink, and a hash chain sold
+  with its ceiling attached rather than as proof a record was ever written —
+  with decoy records and canary tokens as a detection control that never
+  stands in for an access control.
 - Exceptional conditions and concurrency: fail-closed error handling and the
   shapes that fail open instead, race conditions and TOCTOU, when the right
   defense is a database constraint and when it is a row lock, the four ways
@@ -354,6 +364,7 @@ Django are flagged. Each area carries the date it was last checked.
 | 10 Aug 2026 | Application-server floors | Request smuggling stays a cross-team recommendation and produces no code finding, unchanged. What was missing is the half that is a repository finding: a Gunicorn floor for CVE-2024-1135 and CVE-2024-6827 (7.5 HIGH by the GitHub Advisory Database and IBM X-Force on the first), plus the async-worker floors that arrive through a `-k` flag rather than as a chosen dependency — `eventlet>=0.40.3`, `gevent>=24.10.1`, and `tornado>=6.5.0`. uvicorn and Daphne are recorded as no advisory found, which is not a clean bill. The floor originally landed as `>=22.0.0`; corrected to `>=23.0.0` on 13 Aug 2026, since CVE-2024-6827 affects 22.0.0 and was fixed in 23.0.0. |
 | 10 Aug 2026 | Cryptographic floor | PyCA `cryptography` gains a minimum-safe floor at the 48.x line, which it had never carried: CVE-2026-39892, a buffer overflow on a non-contiguous buffer; CVE-2026-34073, name constraints skipped under a wildcard DNS SAN; and CVE-2026-26007, a private-key leak on the binary elliptic curves whose remediation deprecates the SECT curves and so implies a migration rather than only an upgrade. The recommended pin stays 50.0.0. |
 | 13 Aug 2026 | Full-tree audit corrections | A file-by-file audit of every reference and script, with each checkable Django claim re-verified against the 6.0.7 and 5.2.15 source rather than recalled. Version claims were left alone — no PyPI sweep ran, so the index date does not move. Five errors corrected: the Gunicorn floor above (22.0.0 left CVE-2024-6827 open; the floor is 23.0.0); `django-mcp-server`'s date in the agent file, which still read 10 Mar 2026 after the index corrected it to 10 Oct 2025; the hijack staff opt-in, named by its v2 setting when v3 moved it to `HIJACK_PERMISSION_CHECK`; the workflow's gRPC grep hint `_Servicer_to_server`, which cannot match the generated `add_XServicer_to_server` helpers; and the claim that `LocMemCache.incr` is not thread-safe — it holds the backend's lock, and the real failure stays per-process multiplication. Three prohibited-for-mapping CWE categories (16, 320) were replaced with mappable weaknesses, A01's cache-fix summary was disambiguated from CVE-2026-35192, the A04 wrapped-hasher migration now routes through `schema_editor.connection.alias` as A03 requires, and two false-positive guards were added: Django 6's CSP settings are inert without `django.middleware.csp.ContentSecurityPolicyMiddleware`, and Django's own Jinja2 backend autoescapes by default, so the finding there is an explicit opt-out, not a missing option. |
+| 14 Aug 2026 | v1.43.0 capability batch | Fifteen new sections across nine references, each behavioral claim read off Django 6.0.7 and 5.2.15 source on this date and the majority executed rather than inferred. Identity and session lifecycle: the user model as an identity contract, the session engine choice that decides whether a session can be revoked at all, cookie prefixes and the subdomain boundary, and the joiner/mover/leaver event a provider-side disable does not finish. Configuration: writing a project's own deploy-only guardrail check, and drift measured against what a deployed process resolved. Reference authorization: the generic relation whose target model the client picks, URL resolution as the surface every check assumes, and locale redirects with the cache key that loses the request's language. Detection and evidence: export formula injection as a sink whose interpreter runs on the reader's machine, forensic readiness with a hash chain sold with its ceiling attached, and decoy records. Cryptography and tasks: algorithm agility as a posture, and Django's built-in tasks framework, whose default `ImmediateBackend` runs the task inline in the caller's transaction. The library index date does not move: no PyPI sweep ran. Django 6.1 was not installed and was not checked, so the tasks material is scoped to the 6.0 line in prose. |
 
 ## Install
 

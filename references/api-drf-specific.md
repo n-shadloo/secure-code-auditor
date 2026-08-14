@@ -736,8 +736,7 @@ old versioned URL module kept alive after its successor shipped; and
 `format_suffix_patterns` doubling every route it touches.
 
 The same table answers a second question this file does not own — which of two
-patterns a path actually reaches when both match. Group the rows by resolved
-path and read every group with more than one member:
+patterns a path actually reaches when both match:
 `a01-broken-access-control.md`, "URL resolution as an access-control surface".
 
 Treat the inventory as a recurring artifact rather than a one-time exercise:

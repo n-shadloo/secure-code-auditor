@@ -129,8 +129,11 @@ integrity and cross-system trust (the inbound webhook receiver end to end from
 raw-body capture through signature, timestamp, and event de-duplication,
 outbound delivery that is neither an SSRF proxy nor a retry amplifier, insecure
 deserialization including the cache, session, and fixture paths Django
-deserializes without being asked, Celery task messages as input from anyone who
-can reach the broker, and artifact provenance), the cryptographic primitives
+deserializes without being asked, both task systems a project may be running --
+Celery task messages as input from anyone who can reach the broker, and
+Django's built-in tasks framework whose default backend runs the task inline in
+the request that enqueued it -- and artifact provenance), the cryptographic
+primitives
 underneath all of it (password-hashing family and parameters tuned to the
 hardware that runs them, upgrade-on-login and the wrapped-hasher migration that
 moves the dormant accounts it never reaches, randomness and token generation,

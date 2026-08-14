@@ -116,7 +116,9 @@ ordered against the commit, and regular-expression denial of service),
 integrity and cross-system trust (webhook signature verification on the raw
 body, timestamp tolerance and event de-duplication, outbound delivery controls,
 insecure deserialization including Django's cache, session, and fixture paths,
-and Celery task messages as untrusted input), the cryptographic primitives
+and both task systems a project may be running — Celery task messages as
+untrusted input, and Django's built-in tasks framework whose default backend
+runs the task in the request that enqueued it), the cryptographic primitives
 underneath them (password-hashing family and parameters, upgrade-on-login plus
 the wrapped-hasher data migration that moves the dormant accounts it never
 reaches — where an Argon2 target must override `verify` as well as `encode`,

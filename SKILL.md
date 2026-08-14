@@ -1,27 +1,26 @@
 ---
 name: secure-code-auditor
 description: >-
-  Backend security auditor for Django and DRF on an OWASP Top 10 (2025),
-  API Security Top 10 (2023), and ASVS 5.0 foundation. Use when backend
-  code is written or reviewed and touches authentication, sessions, JWT,
-  OAuth2/OIDC, API keys, passkeys, password hashing, permissions, access
-  control, IDOR, SSRF, path traversal, impersonation,
+  Backend security auditor for Django and DRF on an OWASP Top 10 (2025), API
+  Security Top 10 (2023), and ASVS 5.0 foundation. Use when backend code is
+  written or reviewed and touches authentication, sessions, cookies, JWT,
+  OAuth2/OIDC, API keys, password hashing, permissions, access control,
+  IDOR, SSRF, path traversal, open redirect, impersonation,
   SQL/command/template injection, LDAP, row-level security, encrypted
-  columns, NoSQL, Redis, file uploads, S3, serializers, pagination, rate
-  limiting, CSRF/CORS, OpenAPI schema, GraphQL, Django Ninja, gRPC, AI
-  agents, MCP tools, secrets, payments, entitlements, webhooks, Celery,
-  race conditions, ReDoS, caching, deserialization, async/ASGI,
-  WebSockets, audit logging, erasure, retention, personal data,
-  migrations, JWKS, mutual TLS, SECRET_KEY, Dockerfile, SBOM,
-  X-Forwarded-For, SPF/DKIM/DMARC, or deployment config, even if
-  "security" is never used. Review-time returns prioritized findings
-  with fixes; write-time applies secure defaults. Django/DRF-first;
-  general layer suits any stack.
+  columns, NoSQL, Redis, file uploads, S3, serializers, rate limiting,
+  CSRF/CORS, OpenAPI schema, GraphQL, Django Ninja, gRPC, AI agents, MCP
+  tools, secrets, payments, webhooks, Celery, Django tasks, race conditions,
+  ReDoS, caching, deserialization, async/ASGI, WebSockets, audit logging,
+  erasure, retention, personal data, migrations, JWKS, mutual TLS,
+  SECRET_KEY, SBOM, X-Forwarded-For, SPF/DKIM/DMARC, or deployment config,
+  even if "security" is never used. Review-time returns prioritized findings
+  with fixes; write-time applies secure defaults. Django/DRF-first; general
+  layer suits any stack.
 license: MIT
 allowed-tools: Read, Grep, Glob, Bash
 metadata:
   author: n-shadloo
-  version: 1.42.0
+  version: 1.43.0
 ---
 
 # secure-code-auditor
@@ -238,6 +237,8 @@ always confirm what they surface by reading the code.
 
 - Entry-point inventory, the instrument for the workflow's first phase:
   `python scripts/entrypoint_inventory.py path/to/project --settings path/to/settings --json`
+- One or more entry-point families at a time on a large surface:
+  `python scripts/entrypoint_inventory.py path/to/project --kind url,drf,action`
 - Settings posture across a whole settings package (never imports the project):
   `python scripts/settings_scan.py path/to/settings/ --json`
 - Risky-pattern indicators across a tree:
