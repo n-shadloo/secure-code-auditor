@@ -2,13 +2,15 @@
 
 The sink inventory for the whole skill: SQL/ORM including the GeoDjango lookup
 positions the ORM does not parameterize, OS command, template, directory,
-header/email injection, and server-side output handling (XSS from
-server-rendered content), plus the method for tracing a source to any of them.
+header/email injection, server-side output handling (XSS from server-rendered
+content), and the exported file whose interpreter runs on the reader's
+machine, plus the method for tracing a source to any of them.
 
 The inventory is meant to be exhaustive, so a file that defers to it can rely
-on the list being complete instead of keeping a partial copy. Three sinks are
-owned here outright and duplicated nowhere: SQL, the shell, and server-side
-output. The rest point outward to the file that owns the rules —
+on the list being complete instead of keeping a partial copy. Four sinks are
+owned here outright and duplicated nowhere: SQL, the shell, server-side
+output, and the spreadsheet reader an export writes for. The rest point
+outward to the file that owns the rules —
 `data-layer-and-database.md` for the raw-path enumeration and document-store
 shape validation, `file-uploads.md` for the storage key an upload lands under,
 `a01-broken-access-control.md` for SSRF and for the filesystem path a request
@@ -25,6 +27,7 @@ names, `a08-integrity-and-deserialization.md` for deserialization, and
 - [Template injection and server-side output](#template-injection-and-server-side-output)
 - [Directory and LDAP injection](#directory-and-ldap-injection)
 - [Header and email injection](#header-and-email-injection)
+- [Export channels and formula injection](#export-channels-and-formula-injection)
 - [XML / deserialization pointers](#xml--deserialization-pointers)
 - [Review checklist](#review-checklist)
 
@@ -101,6 +104,7 @@ to consult.
 | Template compiler | `Template(...)` or `Engine.from_string(...)` on a string the user supplied | a template file in the repository, with user data in the context | "Template injection and server-side output" |
 | Directory server | an LDAP filter string built by interpolation | `escape_filter_chars` on every assertion value | "Directory and LDAP injection" |
 | Response and mail headers | `response[name] = value`, `EmailMessage` header fields, `send_mail` arguments, and a value a bare `DomainNameValidator` call cleared below 6.0.7 or 5.2.16 | reject CR and LF before construction, and take the cleaning from a form or serializer field rather than from the validator | "Header and email injection" |
+| A spreadsheet reader, off the server | a cell an export writes whose value begins with `=`, `+`, `-`, `@`, a tab, or a carriage return | the value rejected where it is written, or a cell given an explicit text type — quoting is not it | "Export channels and formula injection" |
 | Log line | any value interpolated into a log message | structured fields, or control characters escaped in a formatter | `a09-logging-and-alerting.md`, "Log injection and integrity" |
 | Filesystem path | `open()`, `os.path.join(base, value)`, `pathlib` joins, and storage names taken from the client | a server-chosen identifier resolved against a fixed base, by an API that rejects an escape rather than normalizing it | `a01-broken-access-control.md`, "Path traversal"; the name and key an upload brings are in `file-uploads.md`, "Filenames and storage keys" |
 | Outbound HTTP | `requests`, `urllib`, `httpx`, `aiohttp` on a user-influenced URL | an allowlisted destination checked after DNS resolution, not a validated string | `a01-broken-access-control.md`, "SSRF" |
@@ -702,6 +706,168 @@ skips. Where a direct call genuinely is the right shape, reject CR and LF
 explicitly in the same function instead of inferring their absence from the
 validator having returned.
 
+## Export channels and formula injection
+
+Maps to CWE-1236. This is the one sink in the inventory that does not run on
+the server.
+
+### Principle layer
+
+Every other row above names an interpreter inside the request's own process.
+This one names a program on somebody else's machine. The application writes a
+cell; a spreadsheet reader parses that cell and evaluates it. Nothing in the
+server misbehaves, the file is well formed, and the code that produced it
+reads as serialization rather than as a sink — which is why the class
+survives reviews that catch everything else in this file.
+
+A cell whose first character is `=`, `+`, `-`, or `@` is read as a formula
+rather than as text by the common spreadsheet readers. A leading tab or
+carriage return reaches the same state in some readers, which strip it and
+treat the next character as the first one.
+
+The payload does not need a macro. A formula can address a remote location
+and can carry the contents of neighboring cells into the request it makes, so
+the row leaves as a query string. Score that as data exfiltration from the
+reader's machine: it runs with the reader's credentials, on the reader's
+network, which is routinely a network the application itself cannot reach.
+Where the reader is an administrator or an analyst, that network is the
+interesting one.
+
+Quoting is not the control. A CSV writer quotes a field to keep the file
+parseable, and the reader's CSV parser consumes those quotes before the value
+reaches the formula engine. `csv.QUOTE_ALL` produces a valid file and an
+unchanged exposure.
+
+Three controls, strongest first, each with a cost that belongs in the
+finding:
+
+- **Reject the value where it is written.** Strongest, because it keeps the
+  character out of the column rather than out of one export, and every later
+  export inherits it. It costs a legitimate value: a note that opens with a
+  minus sign is text somebody meant to store.
+- **Write the cell with an explicit text type.** Costs the data nothing, and
+  is unavailable in the format most exports use — CSV carries no types at
+  all, so there is nothing to declare. This control exists only where a
+  workbook writer is producing a typed cell.
+- **Prefix the value with a single quote.** The fallback, and the one that
+  changes the stored data: the prefix is a byte in the file, so a machine
+  consumer downstream reads a value that is not the one in the database, and
+  an export-then-import round trip shifts it again. Apply it per column, to
+  text a caller authored rather than to a column the server renders as a
+  number, or negative amounts arrive as strings.
+
+That the middle control is absent from CSV is the practical shape of this
+finding: a CSV export chooses between rejecting values and mutating them, and
+a review that recommends "escape it" has not made the choice. Rejecting at
+the write is also the discipline "Tracing input to a sink" already asks for,
+and for the same reason — the export is rarely written by whoever wrote the
+column.
+
+### Django & DRF implementation layer
+
+The export is usually not a view, which is why grepping for `HttpResponse`
+misses most of it. Walk each of these:
+
+- an admin export action, including one registered through
+  `ModelAdmin.actions`;
+- a management command that writes a report to disk or to a bucket;
+- a renderer producing CSV or TSV — DRF ships none in core, so this is the
+  project's own renderer class or a third-party package, and content
+  negotiation is what makes it selectable by a query parameter or an
+  `Accept` header;
+- a Celery task that builds a file for later download
+  (`a08-integrity-and-deserialization.md`, "Celery and task queues");
+- a subject-access export, which by construction carries free text from every
+  model attached to the subject
+  (`data-lifecycle-and-privacy.md`, "Export and subject-access endpoints");
+- any writer library used in text mode, where the value goes out as a string
+  and the cell type is left for the reader to infer.
+
+```python
+# Wrong: the writer quotes the field, which keeps the file valid and does
+# nothing about what opens it. `csv` has no cell type to declare, so a note
+# of "=WEBSERVICE(...)&A1" is written as a formula and runs on the machine
+# of whoever opens the file. The filename is the caller's as well.
+import csv
+
+from django.http import HttpResponse
+
+from .models import Contact
+
+
+def export_contacts(request):
+    response = HttpResponse(content_type="text/csv")
+    response["Content-Disposition"] = (
+        f'attachment; filename="{request.GET["label"]}.csv"'
+    )
+    writer = csv.writer(response, quoting=csv.QUOTE_ALL)
+    for contact in Contact.objects.values_list("name", "note"):
+        writer.writerow(contact)
+    return response
+```
+
+```python
+# Correct: each text cell is neutralized for the reader's formula engine
+# before it is written, the columns it applies to are chosen deliberately,
+# and the filename is the server's. The prefix is the fallback control -- it
+# changes the byte a downstream consumer reads, which is the trade named
+# above and the reason rejection at the write is better where it is possible.
+import csv
+
+from django.http import HttpResponse
+from django.utils.http import content_disposition_header
+
+from .models import Contact
+
+FORMULA_TRIGGERS = ("=", "+", "-", "@", "\t", "\r")
+
+
+def as_text_cell(value):
+    text = "" if value is None else str(value)
+    return "'" + text if text.startswith(FORMULA_TRIGGERS) else text
+
+
+def export_contacts(request):
+    response = HttpResponse(content_type="text/csv; charset=utf-8")
+    response["X-Content-Type-Options"] = "nosniff"
+    response["Content-Disposition"] = content_disposition_header(
+        as_attachment=True, filename="contacts.csv"
+    )
+    writer = csv.writer(response)
+    for name, note in Contact.objects.values_list("name", "note"):
+        writer.writerow([as_text_cell(name), as_text_cell(note)])
+    return response
+```
+
+The response headers are a control separate from the cell contents, and the
+export is where they are most often skipped. Set the content type. Set
+`X-Content-Type-Options: nosniff`, so a reader that would otherwise sniff the
+bytes into a renderable type does not. Build the `Content-Disposition`
+filename from a server-controlled value.
+
+The stack-neutral reason for that last rule is header injection, and Django
+closes it on both paths rather than leaving it to the caller — checked
+against 6.0.7 on 14 August 2026. `HttpResponse.__setitem__` raises
+`BadHeaderError` for a value containing CR or LF, and
+`django.utils.http.content_disposition_header()` escapes `"` and `\` inside
+the quoted form and percent-encodes anything outside it, so a filename
+carrying CRLF comes back as an RFC 6266 `filename*=utf-8''` parameter rather
+than as a second header. What remains on Django is therefore not a smuggled
+header: it is a 500 from the unhandled `BadHeaderError`
+(`a10-exceptional-conditions.md`, "Don't leak on error") and a caller
+choosing the name the file is saved under. The general rule for values bound
+into headers stays in "Header and email injection" above.
+
+**Write-time.** When generating anything that writes a cell — a CSV
+response, an admin export action, a report command, a workbook — neutralize
+the first character of every text cell in the same edit that writes the row,
+because the writer is the only place the class is visible and the reader is
+somebody else's program six weeks later. Decide it per column rather than per
+file, so numbers stay numbers. Write the content type, the `nosniff` header,
+and a server-side filename through `content_disposition_header()` at the same
+time, since each of those is a line that gets added after an incident rather
+than during a refactor.
+
 ## XML / deserialization pointers
 
 Disable XML when the application does not need it. When it is required, use a
@@ -750,6 +916,14 @@ there.
 - [ ] Values bound for a response or mail header are rejected for CR and LF
       before the header is constructed, not only by the framework afterwards,
       and no bare validator call is standing in for that rejection.
+- [ ] Every text cell an export writes is neutralized against a leading `=`,
+      `+`, `-`, `@`, tab, or carriage return — by rejection where the value
+      is written or by an explicit cell type, with quoting not counted as
+      the control — and admin actions, report commands, CSV renderers,
+      file-building tasks, and subject-access exports were all walked rather
+      than only the endpoint that returns one.
+- [ ] An export response sets its content type, `X-Content-Type-Options`,
+      and a `Content-Disposition` filename the server chose.
 - [ ] unneeded XML is disabled; required XML uses a maintained parser with DTD,
       external-entity, network, and expansion controls; deserialization is
       cross-checked against A08;

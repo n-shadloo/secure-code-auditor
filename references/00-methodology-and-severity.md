@@ -106,6 +106,7 @@ wins and the finding says so.
 | Function-level authorization failure on a privileged action | High | The action grants a role, an entitlement, or money, or the route is reachable pre-authentication → Critical | The caller must already hold a privileged role and the action only widens what that role could already do |
 | Authentication bypass | Critical | — | A precondition the attacker cannot create is required: a second factor, a valid credential for another account, or a state only an operator sets |
 | Injection reaching an interpreter | High | The interpreter executes code — a shell, `eval`, a deserializer, a template rendering attacker-authored source — or the path is reachable pre-authentication → Critical | The value reaching the sink comes from a constrained server-side set, so a second, unconfirmed defect would have to widen it first |
+| Formula injection through an exported file | Medium | The export is read by an operator or an analyst whose machine reaches internal systems the application cannot, or any caller can write the cells another organization opens | Every value in the file comes from a server-side set or a column the server renders as a number, so no cell carries text a caller authored |
 | SSRF | High | A metadata endpoint or another credential-bearing internal service is reachable and returns a live credential → Critical | The destination set reaches nothing internal and the response is never reflected to the caller |
 | Insecure deserialization | Critical, where any other principal can write the bytes | — | Only a compromise of another service could write them → High. Only this application writes them and nothing else reaches the store → not a finding; keep the design objection, drop the RCE claim |
 | Race on money, entitlements, or a limit that had to hold | High | The window is reliably winnable by firing concurrent requests and the collision is unbounded → Critical | The interleaving needs a state the attacker cannot arrange, rather than one a machine caller opens on demand |
@@ -400,6 +401,7 @@ an index to them, not a copy:
 | A custom user model, or the identifier field it authenticates on | `a07-authentication-failures.md`, "The user model as an identity contract" |
 | A path that deactivates, suspends, or offboards an account | `authorization-architecture.md`, "Identity lifecycle and provisioning desynchronization" |
 | A log line or an audit record | `a09-logging-and-alerting.md` |
+| An export that writes a CSV, TSV, or workbook cell | `a05-injection.md`, "Export channels and formula injection" |
 | A transaction, a state transition, or a retryable handler | `a10-exceptional-conditions.md` |
 | A new route of any kind reaching the URLconf | `authorization-architecture.md`, "Default-deny architecture", with the pattern's own shape — anchoring, converter, and where it sits among the routes that could also match — in `a01-broken-access-control.md`, "URL resolution as an access-control surface" |
 | A language switch view, or `LocaleMiddleware` added to a project that caches | `a01-broken-access-control.md`, "Locale redirects and language negotiation" |

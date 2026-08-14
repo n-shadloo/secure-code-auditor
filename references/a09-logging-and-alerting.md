@@ -5,8 +5,9 @@ that turn a log store into a second breach. Also covers lifecycle hooks whose
 ordering or bypass can silently omit security events and side effects.
 
 This file owns **what must be recorded and what must never be** — the event
-set, the fields that may not appear in it, and the ordering guarantees that
-decide whether a record exists at all. It does not own the failure being
+set, the fields that may not appear in it, the ordering guarantees that
+decide whether a record exists at all, and whether the record holds up
+afterwards as evidence. It does not own the failure being
 recorded: `a10-exceptional-conditions.md` owns fail-closed behavior and the
 concurrency mechanics, `data-lifecycle-and-privacy.md` owns the log and the
 history table as retained copies of personal data, `a05-injection.md` owns the
@@ -20,6 +21,8 @@ the operator identity an audit record has to carry.
 - [Log the right security events](#log-the-right-security-events)
 - [Lifecycle hooks and audit guarantees](#lifecycle-hooks-and-audit-guarantees)
 - [Log injection and integrity](#log-injection-and-integrity)
+- [Forensic readiness and evidence integrity](#forensic-readiness-and-evidence-integrity)
+- [Decoy records and canary tokens](#decoy-records-and-canary-tokens)
 - [Review checklist](#review-checklist)
 
 ## Principle
@@ -322,6 +325,228 @@ written yet.
 Every other interpreter a request can reach, and the method for tracing a
 source to one, is in `a05-injection.md`, "Tracing input to a sink".
 
+## Forensic readiness and evidence integrity
+
+Maps to CWE-778 and CWE-223 where the record is missing, and to CWE-345
+where what survives cannot be trusted to be what was written.
+
+### Principle layer
+
+Two questions decide whether a log store is evidence: after an incident, can
+you prove what happened, and can you prove the record was not changed
+afterwards. Most projects can answer neither, and find that out in the week
+they can least afford to.
+
+**Append-only sinks.** A store the application can delete from is not
+evidence, because the credential that writes the record is the credential an
+intruder holds once the application is compromised. Separate the write
+identity from the delete identity: the writing principal appends and holds no
+delete or update grant, and removal happens under a different principal on a
+different schedule. This is the requirement stated above for shipped logs,
+applied to the audit table a project keeps in its own database — where it is
+usually missing, because the ORM writes it with the same role that serves
+requests.
+
+**Sequence integrity.** A hash chain over audit records — each row carrying a
+digest of its own fields and of the previous row's digest — or a signed,
+monotonically increasing sequence number makes alteration detectable. State
+what that buys precisely, because it is routinely oversold. It proves that a
+record present in the chain was not modified after it was written, and that
+nothing was removed from the middle without breaking every link after it. It
+does not prove that any particular record was ever written: an event that
+never reached the sink leaves a chain that verifies perfectly. A chain is
+evidence of integrity and never evidence of completeness.
+
+It also proves nothing against a principal who can recompute it. Whoever can
+rewrite a row can rewrite the digests after it, so the chain only binds an
+attacker weaker than the writer. What closes that gap is putting something
+outside their reach: publish the head digest periodically to a store the
+application cannot rewrite, or compute the digest as a MAC under a key the
+writing process does not hold. Without one of those, report the chain as a
+control against accidental and after-the-fact edits rather than against a
+compromised application.
+
+**Clock discipline.** Correlating the web tier, the worker tier, and the
+database needs one time source and one recorded zone. A tier that drifts
+produces a reconstruction in which effects precede causes, and nothing in the
+record distinguishes drift from a real ordering. The same disagreement
+decides whether a credential is accepted — the skew tolerance an `exp`/`nbf`
+check allows is in `service-identity-and-secrets.md`, "Validating an inbound
+machine token".
+
+**Correlation identity.** One request identifier, minted at the edge and
+propagated through the view, the task, and the outbound call, is what turns
+three logs into one narrative. The service above already takes `request_id`
+as an explicit argument; the point here is that it must be the same value
+across tiers rather than one generated per tier.
+
+**Record the decision, not only the event.** "user opened record 41" is
+weaker than a line naming which principal acted, which permission was
+consulted, which object it resolved to, and what the outcome was. The first
+says a request happened. The second says whether the authorization system did
+its job, which is the question an incident actually asks.
+
+**Record the state at the time.** An audit row that points at a mutable row
+proves nothing about what the actor saw, because the target changed
+afterwards — possibly during the incident being investigated. Capture the
+values the decision was made on, or a digest of them, in the record itself.
+
+**Who may delete a log.** Name the principal and review that grant on the
+cadence any other privileged permission gets
+(`privileged-access-and-impersonation.md`). A retention job deleting audit
+rows on schedule is legitimate and is exactly the path an attacker would
+rather use than a manual delete, so the job's own runs belong in the record
+it prunes.
+
+A retention obligation and an erasure obligation land on the same record, and
+that conflict is real rather than a drafting error. The resolution is to
+separate the identity from the event instead of choosing between them, which
+`data-lifecycle-and-privacy.md`, "Audit history against erasure" sets out as
+an ordered set of patterns. Take it from there; this file neither restates it
+nor offers a legal reading of which obligation wins.
+
+### Django & DRF implementation layer
+
+The audit table a project writes through the ORM is deletable by the
+application's own database role by default, which is the whole problem in one
+sentence. Grant that role `INSERT` and `SELECT` on the audit table and
+nothing further, and put deletion under the separate role the retention job
+uses; role separation and the grants themselves are
+`data-layer-and-database.md`'s.
+
+A chain is a small model plus one serialized append:
+
+```python
+# Correct: each row commits carrying the digest of its own fields and of the
+# row before it, so an edit to any row breaks every link after it. The lock
+# serializes appends -- without it two writers read the same predecessor and
+# the chain forks, which verifies later as tampering that never happened.
+import hashlib
+import json
+
+from django.db import models, transaction
+
+
+class AuditRecord(models.Model):
+    sequence = models.PositiveBigIntegerField(unique=True)
+    payload = models.JSONField()
+    previous_digest = models.CharField(max_length=64)
+    digest = models.CharField(max_length=64)
+
+
+@transaction.atomic
+def append_audit_record(payload):
+    previous = (
+        AuditRecord.objects.select_for_update().order_by("-sequence").first()
+    )
+    sequence = previous.sequence + 1 if previous else 1
+    previous_digest = previous.digest if previous else "0" * 64
+    body = json.dumps(
+        {
+            "sequence": sequence,
+            "payload": payload,
+            "previous_digest": previous_digest,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return AuditRecord.objects.create(
+        sequence=sequence,
+        payload=payload,
+        previous_digest=previous_digest,
+        digest=hashlib.sha256(body.encode()).hexdigest(),
+    )
+```
+
+The lock is not incidental, and the `unique=True` on `sequence` is what
+covers the case the lock cannot: an empty table has no row to lock, so the
+constraint is the backstop for the first two concurrent appends. Serializing
+appends is a throughput cost paid deliberately, and it is the reason a chain
+belongs on security events rather than on request logs. The concurrency
+mechanics are `a10-exceptional-conditions.md`, "Races, TOCTOU, and
+adversarial sequencing".
+
+Keep `USE_TZ = True` so stored instants are UTC and the zone is a
+presentation concern rather than a property of the row. Propagate the request
+id into the worker as an explicit task argument rather than regenerating one
+there, on the same reasoning the lifecycle section gives for passing actor
+and tenant explicitly: ambient context does not survive the hop.
+
+**Write-time.** When generating an audit record, write the principal, the
+permission consulted, the object, the outcome, and the values the decision
+read — not just the action name — because the fields an investigator needs
+are the ones nobody thinks to add while the code still makes sense to its
+author. Pass the request id in as an argument in the same edit, and where the
+project keeps its audit rows in the application database, say in the review
+that the writing role also holds `DELETE` on that table unless you have seen
+the grant that says otherwise.
+
+## Decoy records and canary tokens
+
+### Principle layer
+
+A decoy is a record, a credential, a file, or a route with no legitimate
+reader. Nothing in the product reaches it, so any read is a signal. Keep the
+claim that size: it is a detection control, it detects a reader who is
+already inside, and it is never a substitute for the access control that
+should have stopped them. A review that finds decoys standing in for
+authorization has found the authorization finding instead.
+
+The value is signal quality. Most detection rules fire on behavior that also
+has innocent explanations, so they arrive with a triage cost and eventually
+with a threshold someone raised to stop the noise. A decoy has no innocent
+reader by construction, so its alert carries almost no false positive rate,
+and an alert nobody argues with is one somebody acts on at three in the
+morning. That is the whole argument for the control, and it is enough.
+
+Placements that work: a decoy user row, a decoy API key in a configuration
+store, a decoy object in a storage bucket, a decoy row inside a real tenant —
+which is the one that catches cross-tenant reads specifically — and a decoy
+route shaped like an operational endpoint.
+
+Three failure modes, each of which has been the reason a deployment was
+abandoned:
+
+- A decoy that a legitimate query path touches produces noise, and a noisy
+  alert gets muted. The decoy then stays in place looking like a control
+  while detecting nothing, which is worse than never having placed it.
+- A decoy that an export, a backup, an analytics job, or an erasure fan-out
+  touches either breaks that job or carries the decoy somewhere it becomes
+  visible. The fan-out is the sharpest case, because
+  `data-lifecycle-and-privacy.md`, "Where a record survives" is precisely the
+  list of jobs a decoy row will meet.
+- An undocumented decoy sends a responder chasing it during a real incident,
+  spending the hours the control was bought to save.
+
+One rule prevents all three: register every decoy in one place, with an
+owner, an expected reader count of zero, and an alert route. A decoy nobody
+can look up is a liability rather than a control.
+
+### Django & DRF implementation layer
+
+Mark a decoy row with an explicit field rather than hiding it behind a
+filtered default manager. Hiding it removes it from the query paths you
+wanted it visible to — the ones an intruder uses — while the paths that must
+skip it are the batch jobs, and a filtered manager does not govern every
+relation traversal anyway (`data-lifecycle-and-privacy.md`, "Soft delete and
+what it does not hide" holds that traversal table). Filter on the flag
+explicitly in each job, and let ordinary read paths see the row.
+
+A decoy credential only signals if the code that rejects it can tell it apart
+from the invalid values it rejects all day. Recognize the canary in the
+authentication path and alert on the attempt; a verifier that returns the
+same failure it returns for a typo has placed a decoy nothing is watching. A
+decoy route belongs in the endpoint inventory for the same reason — otherwise
+the next review reports it as an undocumented endpoint
+(`api-drf-specific.md`, "Endpoint inventory (API9)").
+
+**Write-time.** When generating a decoy, write its register entry — owner,
+placement, expected reader count of zero, alert route — in the same change,
+because an unregistered decoy is indistinguishable from a real record to the
+responder who finds it and to the job that breaks on it. Add the exclusion to
+the batch paths in that change too, rather than waiting for the first
+false alert to identify them for you.
+
 ## Review checklist
 
 - [ ] No passwords/tokens/`Authorization`/PANs/excess PII in logs or log
@@ -339,3 +564,13 @@ source to one, is in `a05-injection.md`, "Tracing input to a sink".
       as a retained copy with a stated lifetime, and the audit store retains the
       event without retaining the identity
       (`data-lifecycle-and-privacy.md`).
+- [ ] The audit sink is append-only for the writing principal, deletion sits
+      under a separate identity whose grant is reviewed, and any integrity
+      chain is reported for what it proves — not completeness, and not
+      resistance to a principal who can recompute it.
+- [ ] Records name the principal, the permission, the object, the outcome,
+      and the state read, and one request id crosses the web, worker, and
+      database tiers against a single time source.
+- [ ] Any decoy is registered with an owner, an expected reader count of
+      zero, and an alert route, is excluded from export, backup, analytics,
+      and erasure paths, and is not standing in for an access control.
