@@ -22,6 +22,7 @@ the answer is always a vetted library.
 - [Signing and salt discipline](#signing-and-salt-discipline)
 - [Data in transit and at rest](#data-in-transit-and-at-rest)
 - [Key lifecycle and envelope encryption](#key-lifecycle-and-envelope-encryption)
+- [Cryptographic agility and algorithm lifecycle](#cryptographic-agility-and-algorithm-lifecycle)
 - [Post-quantum posture](#post-quantum-posture)
 - [Review checklist](#review-checklist)
 
@@ -857,6 +858,123 @@ rather than to a pk it is about to be assigned, add the `wrapped_dek` column in
 the same migration as the ciphertext column so no row can exist without its
 key, and keep the plaintext DEK in a local rather than on the model instance.
 
+## Cryptographic agility and algorithm lifecycle
+
+Maps to CWE-757 (selection of less-secure algorithm during negotiation) and
+CWE-327 (use of a broken or risky cryptographic algorithm).
+
+### Principle layer
+
+**You will need to change an algorithm before you need to change a key.** Key
+rotation runs on a schedule you set; an algorithm change arrives on someone
+else's — a published break, a deprecation notice, a compliance date — and
+lands on code written as though one algorithm would hold forever. Design for
+the harder change and the easier one comes free.
+
+One property makes that possible: **every stored cryptographic value records
+what produced it.** Keep the algorithm identifier and the key identifier with
+the ciphertext, the signature, or the hash, as data beside the value rather
+than as knowledge inside whichever function currently reads it.
+
+Two inferences are worth rejecting by name. **Do not infer the algorithm from
+the payload**, and **do not infer it from the length.** A 32-byte digest is
+SHA-256 right up until something else is also 32 bytes; at that moment every
+stored value becomes ambiguous at once, and no later code recovers a
+distinction the format never recorded.
+
+**Verification reads the stored identifier, then checks it against a
+server-side allow list.** Reading an identifier is not trusting it: it selects
+among algorithms the server has already decided it accepts, and one naming
+anything else is rejected input, not an instruction. A verifier that honors
+the algorithm the data names is the algorithm-confusion defect, which
+`service-identity-and-secrets.md`, "Validating an inbound machine token" owns
+for tokens — `alg: none` and the RS256-to-HS256 swap included.
+
+**The migration has four steps, and the third is the one that gets skipped.**
+
+1. **Dual read.** Accept the old algorithm and the new one.
+2. **Single write.** Emit only the new one, so the old population can only
+   shrink.
+3. **Measure.** Count what still carries the old identifier, and keep counting
+   until it reaches zero and stays there.
+4. **Retire the read path.** Remove the old branch — and only then the key.
+
+A migration that skips step 3 never finishes. Steps 1 and 2 are a morning's
+work and feel like completion, so the dual-read branch survives indefinitely
+and the broken algorithm stays a live, reachable code path. Step 3 is the only
+one of the four that produces evidence — it turns "we migrated" into a claim
+with a number behind it.
+
+**Keep one inventory of every algorithm in use** — location, owner, review
+date — covering the password hasher list, signing, tokens, field encryption,
+webhook signatures, and transport ciphers. Its worth is not the list but that
+the next published break becomes a lookup rather than a codebase search under
+time pressure. The harvest-now-decrypt-later inventory in "Post-quantum
+posture" is this one answering a single question, not a second to maintain.
+
+**The failure mode to name is a value no code path can read**, because the key
+or the algorithm went away before the data did. Retiring the old read path
+while rows still carry the old identifier, or destroying a key version
+something still references, does not fail at deploy — it fails at the first
+read of an old row, by which point the plaintext is gone. This is a data-loss
+defect arriving through a security change, which is why it clears review: the
+change looks like remediation, and the reviewer checks that the weak algorithm
+is gone rather than that everything written under it moved first.
+
+### Django & DRF implementation layer
+
+Django already models the pattern in three places, which makes them the shape
+to copy rather than material to restate:
+
+- **A password hash is self-describing.** The encoded string carries its
+  algorithm in the first `$`-separated field, `identify_hasher` dispatches on
+  it, and `PASSWORD_HASHERS` is the allow list — stored identifier, allow
+  list, and dual read in one mechanism. "Migrating a hasher family" above is
+  steps 3 and 4 applied to the population upgrade-on-login cannot reach.
+- **`MultiFernet` and `SECRET_KEY_FALLBACKS` are dual read for keys**: a list
+  whose first entry writes and whose every entry reads.
+- **A `kid` in a JWS header is the stored key identifier**, resolved against a
+  published set — `service-identity-and-secrets.md`, "JWKS as a
+  rotation-aware trust anchor".
+
+The gap is almost always the project's own crypto rather than Django's. A
+field encrypted with `Fernet`, an HMAC over a webhook body, a signed download
+token: each is typically persisted as bare output with the algorithm implied
+by whichever line reads it. Give them the self-describing shape.
+
+```python
+# Wrong: the column holds raw ciphertext. Changing the primitive means a data
+# migration with no way to tell a converted row from an unconverted one.
+record.payload = fernet.encrypt(plaintext)
+
+# Correct: the value names the key version and algorithm it was written
+# under, so the reader dispatches on data and step 3 has something to count.
+record.payload = b"v2:aesgcm:" + nonce + ciphertext
+```
+
+One Django case is worth stating because it looks marked and is not.
+**`django.core.signing.Signer` records no algorithm in its output.** The value
+is `payload:signature`, `algorithm` defaults to `sha256`, and changing it
+raises `BadSignature` on every value signed under the old one — verified on
+Django 6.0.7, 14 August 2026. Only the signature length distinguishes the two
+encodings, which is the inference this section rejects. So a signer algorithm
+change has no dual read available: bound it with the maximum age "Signing and
+salt discipline" already requires, and let every value still in flight expire
+before the old algorithm goes. An algorithm change under a field encryption is
+a data migration in `data-layer-and-database.md`, "Field-level encryption and
+searchable lookups", which owns the blind index that has to be rebuilt when
+the primitive beneath it changes.
+
+**Write-time.** When generating code that writes a ciphertext, a signature, or
+a non-password digest, put the algorithm identifier and the key identifier
+into the stored format in the same change, because the format is fixed the
+moment the first row is written and every later migration is priced by that
+decision. When generating a verifier, read the identifier out of the value and
+check it against a constant allow list in the project, never against the
+value's own claim. When generating the change that removes an algorithm,
+generate step 3's count query alongside it and leave the old read path until
+that query returns zero.
+
 ## Post-quantum posture
 
 The sober version, because this area attracts more urgency than it currently
@@ -928,6 +1046,19 @@ needs.
       cache, or in a log line.
 - [ ] Re-encryption after a key rotation exists as a chunked, resumable,
       idempotent job rather than as an intention.
+- [ ] Every stored ciphertext, signature, and non-password digest carries its
+      algorithm identifier and key identifier as data, and no reader infers
+      either one from the payload or from the value's length.
+- [ ] Verification selects the algorithm by checking the stored identifier
+      against a server-side allow list, never by accepting the algorithm the
+      value names for itself.
+- [ ] Each algorithm migration in progress has all four steps — dual read,
+      single write, a count of what remains on the old identifier, and removal
+      of the old read path only once that count is zero — and no old key or
+      read path was retired before the count proved nothing still needs it.
+- [ ] One inventory names every algorithm in use with its location, owner, and
+      review date, covering the hasher list, signing, tokens, field
+      encryption, webhook signatures, and transport ciphers.
 - [ ] Data whose confidentiality must outlive the post-quantum migration
       window is inventoried for harvest-now-decrypt-later exposure.
 

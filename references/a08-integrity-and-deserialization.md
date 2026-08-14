@@ -11,6 +11,7 @@ lives here and in the DRF file.
 - [Principle](#principle)
 - [Insecure deserialization](#insecure-deserialization)
 - [Celery and task queues](#celery-and-task-queues)
+- [Django's built-in tasks framework](#djangos-built-in-tasks-framework)
 - [Signed cookies and data](#signed-cookies-and-data)
 - [Webhook and callback integrity](#webhook-and-callback-integrity)
 - [Pipeline and artifact integrity](#pipeline-and-artifact-integrity)
@@ -294,6 +295,156 @@ authenticates the message without concealing it.
 - Dispatch belongs after the commit, not inside the transaction — see
   `a10-exceptional-conditions.md`, which owns the side-effect ordering and the
   redelivery semantics that make a task's own handling need to be idempotent.
+
+## Django's built-in tasks framework
+
+Maps to CWE-306 (Missing Authentication for Critical Function) for the task
+body, and CWE-863 (Incorrect Authorization) where a task re-derives a
+permission it has no principal to derive.
+
+Django gained a built-in tasks framework in the 6.0 line: `django.tasks`, a
+`@task` decorator, `Task.enqueue()` and `aenqueue()`, a `TaskResult`, and a
+`TASKS` setting shaped like `DATABASES` and `CACHES`. Every behavior below was
+read from the Django 6.0.7 source and exercised against it on 14 August 2026.
+Django 6.1 was not available to check, so treat each claim as scoped to the
+6.0 line and re-verify before relying on it against a later release.
+
+### Principle layer
+
+**A task function runs with no request and no authenticated user.** There is
+no `request.user`, no session, and no DRF permission class between the caller
+and the body. So the authorization decision has to be resolved *before* the
+enqueue, by the code that still holds a principal, and carried into the task
+as data — a decision already made, not an identifier to be judged later.
+
+That reframes a common shape. A task that receives an object id and re-derives
+permission from it inside itself re-derives it **with no principal**: there is
+nobody for the id to be checked against, so the check either compares the
+object to nothing or silently becomes a check that everyone passes. Pass the
+identifiers the task needs to do its work, and pass the authorization outcome
+separately as a fact the caller established.
+
+**A project with two task systems has two authorization boundaries and
+usually reviews one.** Where the built-in framework lands in a codebase that
+already runs Celery, expect them to coexist rather than replace: new code
+takes the built-in, existing tasks stay. Both are execution entry points, they
+carry different defaults, and an inventory that stops at `@shared_task` misses
+half the surface. Enumerate both — `01-audit-workflow.md`, "Phase 1 —
+entry-point inventory" carries the row.
+
+### Django & DRF implementation layer
+
+**The default backend runs tasks inline, in the request cycle.** Django's
+`global_settings` names the immediate backend as the shipped default:
+
+```python
+# django/conf/global_settings.py, Django 6.0.7
+TASKS = {
+    "default": {"BACKEND": "django.tasks.backends.immediate.ImmediateBackend"}
+}
+```
+
+A project that adds `@task` and never configures `TASKS` therefore gets
+synchronous execution rather than a background job. Core ships two backends on
+the 6.0 line — `ImmediateBackend` and `DummyBackend`, the latter for tests —
+and no durable one; a real worker comes from a third-party backend. Three
+review consequences follow, and none looks like a task-queue finding:
+
+- The work inherits the request timeout and the worker process, so a job sized
+  for a background queue becomes a denial of service against the web tier.
+  Whatever bound `a06-insecure-design.md` assigns the operation has to hold at
+  request latency, because that is where it now runs.
+- `ImmediateBackend._execute_task` catches `BaseException` —
+  `KeyboardInterrupt` excepted — records it on the result, and returns
+  normally. **The caller sees no exception.** A task that fails in production
+  fails silently unless something inspects the result, and neither shipped
+  backend supports retrieving one: `supports_get_result` is `False` on both,
+  and `ImmediateBackend.get_result` raises `NotImplementedError`.
+- Neither shipped backend supports `run_after` (`supports_defer` is `False`),
+  so a scheduled task is a third-party backend's feature, not the framework's.
+
+**Enqueue belongs after the commit, and the backend decides which way it goes
+wrong.** Nothing in `django.tasks` integrates with `transaction.on_commit`.
+With a durable backend the familiar failure holds — the worker claims the
+message before the producer commits and reads a row that does not exist yet.
+With `ImmediateBackend` the failure inverts: the task body runs *inside*
+`enqueue()`, on the caller's thread, within the open atomic block, so it reads
+uncommitted state and its own writes and side effects roll back with the
+transaction that enclosed them. Verified on 6.0.7: a task enqueued inside
+`transaction.atomic()` observed the uncommitted row, and the rollback took
+both back. `transaction.on_commit` is the answer under either backend;
+`a10-exceptional-conditions.md`, "Side effects and the commit boundary" owns
+the ordering rule, and its "Idempotency" section owns the duplicate delivery
+any retrying backend will produce, which the framework does not make idempotent
+for you.
+
+**Argument serialization is JSON-only and refuses at enqueue time.**
+`TaskResult.__post_init__` runs `django.utils.json.normalize_json` over `args`
+and `kwargs`, which admits `Mapping`, `Sequence`, `str`, `int`, `float`,
+`bool`, and `None`, and raises `TypeError` on anything else. Confirmed
+rejected on 6.0.7: a model instance, `datetime`, `Decimal`, `set`, and `UUID`.
+This is the good news, and it is worth stating plainly: **there is no
+serializer setting to widen, so the Celery pickle finding above has no
+equivalent here** — see "Celery and task queues" for that case rather than
+looking for it in `TASKS`. Two normalizations are silent rather than refusing,
+and both belong in a review:
+
+- A `tuple` becomes a `list`, so a task annotated for a tuple receives a list.
+- `bytes` are decoded as UTF-8 and arrive as `str`; bytes that are not valid
+  UTF-8 raise `ValueError`. A task that believes it received binary receives
+  text.
+
+Everything else the Celery section says about arguments still applies, because
+it is a property of the queue and not of the serializer: **arguments are a
+trust boundary wherever the task store is reachable by anything but your
+producers**, and a secret or an already-authorized capability token does not
+belong in one.
+
+**A task path is an import path.** `Task.module_path` is
+`f"{func.__module__}.{func.__qualname__}"`, and a durable backend resolves that
+string to a callable at execution time. Never build it from request data:
+selecting a task by a user-supplied name is arbitrary-import, in the same class
+as every other dynamic-import sink in `a05-injection.md`. Keep the mapping from
+input to task in a literal dict in the code. The same rule reaches one place
+that is easy to miss — `TaskError.exception_class` calls `import_string` on the
+`exception_class_path` recorded on a stored result, and it validates that the
+target is a `BaseException` subclass only *after* the import has run. Reading
+`.exception_class` on results from a store a lower-trust party can write is
+therefore an import of their choosing.
+
+**The result holds the arguments, and the traceback holds the message.**
+`TaskResult` retains `args` and `kwargs` as stored, and each `TaskError` keeps
+a formatted traceback string. Confirmed on 6.0.7: a task enqueued with
+`{"password": "hunter2"}` keeps that value on its result, and an exception
+message appears in full in the stored traceback. The framework also logs to the
+`django.tasks` logger — id, `module_path`, and backend on enqueue and start,
+and the finish record with `exc_info` attached. So a result row is a store of
+personal data and, when a task is called carelessly, of secrets: it takes the
+retention and scrubbing rules in `data-lifecycle-and-privacy.md`, "Retention
+you can prove ran", and the never-log list in `a09-logging-and-alerting.md`.
+Result ids are random 32-character strings and `Task.get_result` raises
+`TaskResultMismatch` when the id belongs to a different task function — that is
+a type guard, not an authorization check, so exposing a result id to a client
+exposes the result.
+
+Two constraints the framework does enforce, worth knowing so they are not
+mistaken for protections. `validate_task` requires a module-level function,
+rejecting a nested function, a bound method, and a builtin; and it raises
+`InvalidTask` for a coroutine, a non-default priority, or a `run_after` on a
+backend whose capability flags do not declare support, and for a `queue_name`
+missing from the backend's configured `QUEUES`. Neither is an authorization
+control.
+
+**Write-time.** When generating a `@task` function, resolve the authorization
+decision in the caller before the enqueue and pass the outcome as an argument,
+because the body has no principal to re-derive it from. Enqueue inside
+`transaction.on_commit` even when the configured backend is immediate, since
+that is the one placement correct under both. When generating the first task in
+a project, write the `TASKS` setting explicitly rather than inheriting the
+default, because the default is inline execution in the request cycle and the
+difference is invisible at the call site. Never assemble a task's import path
+from request data, and keep secrets and personal data out of task arguments,
+because both are retained on the result and reproduced in logs.
 
 ## Signed cookies and data
 
@@ -637,6 +788,17 @@ platform recommendations, not as repository findings.
       worker will execute — with the task and result serializers set explicitly;
       the broker is authenticated and unreachable from the internet, and the
       result backend holds no secrets.
+- [ ] Where `django.tasks` is used, `TASKS` is set explicitly rather than
+      inherited, since the default backend executes tasks inline in the request
+      cycle, swallows the exception, and gives the operation the request
+      timeout it was moved off the request path to escape.
+- [ ] Every `@task` body receives its authorization outcome as an argument
+      resolved by the caller, rather than re-deriving permission from an
+      identifier with no principal to check it against; secrets and personal
+      data stay out of arguments, which are retained on the result and logged.
+- [ ] Enqueues are wrapped in `transaction.on_commit`, no task import path is
+      built from request data, and where both `django.tasks` and Celery are
+      present the inventory covers both.
 - [ ] `loaddata` and `serializers.deserialize` never run on attacker-influenced
       fixtures; fixtures are `json` or `xml`, and the privilege fields a fixture
       can set while bypassing `save()` and `full_clean()` are accounted for.
