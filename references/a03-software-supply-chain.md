@@ -73,6 +73,12 @@ pip install --require-hashes -r requirements.txt
   advisory source, maintenance, and operating model.
 - Enable automated update PRs (Dependabot / Renovate) and treat security updates
   as expedited.
+- An advisory recorded as accepted — `pip-audit --ignore-vuln ID` is the
+  mechanism here — is an exception, and carries the same three fields as any
+  other: owner, reason, and an expiry something executable enforces.
+  `a02-security-misconfiguration.md`, "Configuration drift and the expiring
+  exception" owns that discipline across all four kinds of suppression a
+  Python project accumulates.
 - Generate an SBOM (CycloneDX or SPDX) if you need to answer "are we affected?"
   quickly when a CVE drops. Which file it is generated from, in which format,
   and what it does not prove are in "SBOM, scan gate, and provenance" below.

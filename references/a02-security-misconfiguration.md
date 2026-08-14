@@ -27,6 +27,8 @@ what a `DEBUG` error view discloses when a request fails.
 - [Mail authentication: SPF, DKIM, and DMARC](#mail-authentication-spf-dkim-and-dmarc)
 - [Certificate issuance and dangling DNS](#certificate-issuance-and-dangling-dns)
 - [check --deploy](#check---deploy)
+- [Writing a deployment guardrail check](#writing-a-deployment-guardrail-check)
+- [Configuration drift and the expiring exception](#configuration-drift-and-the-expiring-exception)
 - [Review checklist](#review-checklist)
 
 ## Principle
@@ -604,6 +606,270 @@ Treat the check as the floor in CI, then audit what it cannot introspect
 separately. The portable form: a configuration linter cannot see infrastructure,
 so a clean linter is never evidence of deployment posture.
 
+## Writing a deployment guardrail check
+
+The section above lists what Django's check cannot see. Part of that list is
+closable inside the project, because the framework's silence is about
+generality rather than difficulty: it cannot know which variable this
+deployment requires, which of its own defaults this project treats as
+fail-closed, or which bucket is the production one. A custom system check
+states one of those, and the deploy gate then enforces it on every pipeline
+run. An absent guardrail is rarely a finding by itself — it is rated as the
+defense-in-depth gap behind whatever it would have caught.
+
+### Principle layer
+
+A configuration assertion earns its place where three things hold at once:
+the property decides whether the deployment is safe, it is knowable from
+configuration alone, and no generic linter can know it. Four recur in almost
+every project, and none of them is expressible as a framework check.
+
+- **A required variable is absent, or still carries a development default.**
+  A deployment that falls back silently is the one nobody notices, because a
+  fallback produces a running process rather than an error.
+- **A secret matches a known placeholder.** The value from the example
+  environment file, the key out of a getting-started guide, `changeme` — a
+  real value that is also a public one, which is the case a length or
+  entropy test passes straight over.
+- **A permission, authentication, or visibility default is not the
+  fail-closed one.** The framework has no opinion about which of its
+  defaults your project considers safe; only the project knows that the
+  permissive one is a defect here.
+- **A storage bucket, queue, broker, or callback target names a
+  non-production resource while the debug flag is off.** The combination is
+  the assertion — either half alone is ordinary.
+
+Two boundaries hold for every assertion of this kind. **It reads
+configuration and nothing else**: a check that opens a connection makes the
+gate depend on network reachability and on a credential, which turns a
+deterministic assertion into an intermittent one and hands the pipeline a
+reason to switch it off. And **it reports the property, never the value**:
+check output lands in a build log that is retained, searchable, and readable
+by more people than the secret store is, so a message quoting the secret it
+objects to has published it.
+
+### Django & DRF implementation layer
+
+Verified against the Django 6.0.7 and 5.2.15 source on 14 August 2026; the
+check framework is the same in both.
+
+`django.core.checks` exports `register`, the tag constants `Tags`, and the
+message classes `Debug`, `Info`, `Warning`, `Error`, and `Critical`. A
+message takes its text plus optional `hint`, `obj`, and `id`. A check is a
+callable that must accept `**kwargs` — the registry raises `TypeError` at
+registration time otherwise — and must return a list.
+
+```python
+# myproject/guardrails/checks.py
+from django.conf import settings
+from django.core.checks import Error, Tags, register
+
+DEV_BUCKETS = {"acme-uploads-dev", "acme-uploads-local"}
+
+# Wrong: no deploy=True, so the deploy gate never runs it; a network call
+# inside a configuration assertion; a Django identifier reused as its own;
+# and the secret written into the build log.
+@register(Tags.security)
+def check_upload_bucket(app_configs, **kwargs):
+    if not vault.get(settings.UPLOAD_TOKEN):
+        return [Error(f"bad token {settings.UPLOAD_TOKEN}",
+                      id="security.E001")]
+    return []
+
+# Correct: deploy-only, project-prefixed identifier, settings alone, and the
+# setting named rather than its value printed.
+@register(Tags.security, deploy=True)
+def check_upload_bucket_is_production(app_configs, **kwargs):
+    if settings.UPLOAD_BUCKET in DEV_BUCKETS:
+        return [
+            Error(
+                "UPLOAD_BUCKET names a development bucket.",
+                hint="Set UPLOAD_BUCKET from this environment's config.",
+                id="acme.E001",
+            )
+        ]
+    return []
+```
+
+A check registers only when its module is imported, so the conventional
+wiring is `myapp/checks.py` imported from that app's `AppConfig.ready()`. A
+guardrail nobody imports never runs, and it fails in exactly the shape a
+passing gate has.
+
+**`deploy=True` decides whether it runs at all.** `register` files the
+function in a separate deployment set that `run_checks` includes only when
+`include_deployment_checks` is true, which the `check` command sets from
+`--deploy`. A pipeline running `manage.py check` without the flag executes
+every other check, none of these, and reports success.
+
+**`--fail-level` decides whether a message stops the build**, and its
+default is `ERROR`. A check returning `Warning` therefore prints and exits
+zero under that default. The flag sets one floor for the whole run rather
+than per check, so the level a project can afford is the level of its
+noisiest message: a guardrail meant to block a deploy returns `Error` and
+fails even at the default, while an advisory message has to sit at `Info` or
+below to avoid dictating the floor. Django's own deploy family reports every
+*absent* hardening setting as a `security.W*` warning — the three `Error`
+messages in that set report an invalid value or an unsafe environment
+override instead — which is why the gate this file recommends is
+`--fail-level WARNING`.
+
+**Prefix every identifier with the project.** `SILENCED_SYSTEM_CHECKS` is
+matched against the message `id`, so an identifier colliding with Django's
+is silenced by any entry aimed at Django's, and a silenced message is
+dropped from the output *and* from the fail decision: the guardrail
+disappears, the build passes, and nothing reports the collision. `acme.E001`
+cannot collide; `security.E001` can. Give every message an `id` — one left
+at `None` can never be silenced, but can never be cited or looked up either.
+
+`--tag` narrows a run to the checks carrying a tag, and `Tags.security` is a
+constant rather than a constraint: any string works, so a project can carry
+its own. A tag no registered check declares raises `CommandError`, so a typo
+in the pipeline fails loudly rather than passing an empty run.
+
+**Write-time.** When generating a setting whose wrong value is a security
+failure rather than an outage — a bucket name, a permission default, the
+source of a signing key, a callback host — write the deploy check that
+asserts it in the same edit, because the setting gets a reviewer looking at
+it exactly once and the check is what looks at it on every deploy after
+that.
+
+## Configuration drift and the expiring exception
+
+Two failures with one root: a posture that was true the last time somebody
+looked. Drift is the deployment moving away from the reviewed baseline; an
+expiring exception is an exemption written into that baseline outliving the
+reason it was granted. Both are invisible to a review that reads files,
+which is why they belong beside the check that runs on every deploy.
+
+### Principle layer
+
+**Detect drift on effective values, not on files.** A settings module is
+code: the value in force is whatever the imports, the environment reads, and
+the platform's own injection produce at startup, and a diff of two modules
+sees none of the three. The comparison that means something runs inside the
+target environment, resolves the settings that process actually loaded, and
+holds them against the baseline the review was written against. Anything
+weaker compares two descriptions of a deployment rather than the deployment.
+
+**Every suppression is a decision with a half-life.** A normal Python
+project has four kinds and they behave identically: a silenced system check,
+a scanner's ignore list, a dependency advisory recorded as accepted, and an
+inline suppression comment on a line of code. Each was defensible the day it
+was written. None of them expires, none names who decided, and the reason is
+usually reconstructed years later out of a commit message.
+
+The control has one shape in all four places: an exception carries an
+**owner**, a **reason**, and an **expiry date**, and something executable
+fails once that date passes. The executable half is what makes it a control.
+A register holding the same three fields with nothing enforcing them is a
+description of a policy rather than the policy, and a policy that cannot
+fail a build is advice.
+
+That is the whole of policy as code, and the vendor-neutral form is the one
+worth holding: the required posture is written as an assertion the pipeline
+runs, kept in the project's own repository, so changing scanner or platform
+re-implements the gate rather than deleting it.
+
+### Django & DRF implementation layer
+
+**Establish which module the process loads before comparing anything.** The
+entry points call `os.environ.setdefault("DJANGO_SETTINGS_MODULE", ...)`,
+and `setdefault` does not overwrite, so a value the platform supplies wins
+and the module named in `manage.py` is the fallback rather than the value in
+force. Read the deployment's environment alongside the file. The review-side
+form of the same trap — a settings file is not a settings module in force —
+is the "Commonly mistaken for a finding" note under "DEBUG and ALLOWED_HOSTS"
+above.
+
+`diffsettings` is the instrument for the comparison, and its two useful
+properties are easy to miss. It reads the configured settings object rather
+than a file, so it reports what the process resolved, environment reads
+included; and `--default` takes another settings module to compare against
+instead of Django's defaults.
+
+```
+python manage.py diffsettings --default config.settings.reviewed \
+    --output unified
+```
+
+Because it reads the running process, it says nothing about an environment
+it is not run in: to learn what production loaded, it has to run there.
+
+**Its output is secret material.** Every upper-case setting is rendered
+through `repr()` with no redaction of any kind, so `SECRET_KEY`, database
+passwords, and every API key the module holds appear in full — verified
+against the Django 6.0.7 and 5.2.15 source on 14 August 2026. Never write it
+to a CI artifact, a ticket, or a shared log. Compare it in place and emit
+the **names** of the settings that differ.
+
+`settings_scan.py` answers the other half and only the other half: it parses
+the settings modules without importing them, so it reads what the files
+declare across a whole package and by construction cannot see a value the
+environment supplies. Static scan for the declaration, `diffsettings` in the
+environment for the effective value.
+
+The expiry record is a project file, and the assertion over it is one more
+deploy check:
+
+```python
+# myproject/guardrails/exceptions.py
+from datetime import date
+
+# check id -> (owner, reason, expires)
+EXCEPTIONS = {
+    "security.W004": (
+        "platform-team",
+        "HSTS is issued at the edge, not by Django.",
+        date(2026, 11, 1),
+    ),
+}
+```
+
+```python
+# myproject/guardrails/checks.py
+@register(Tags.security, deploy=True)
+def check_silenced_checks_are_current(app_configs, **kwargs):
+    errors = []
+    for check_id in settings.SILENCED_SYSTEM_CHECKS:
+        entry = EXCEPTIONS.get(check_id)
+        if entry is None:
+            errors.append(Error(
+                f"{check_id} is silenced with no recorded exception.",
+                id="acme.E010",
+            ))
+            continue
+        owner, reason, expires = entry
+        if expires < date.today():
+            errors.append(Error(
+                f"The exception for {check_id} expired on {expires}.",
+                hint=f"Owner: {owner}. Reason: {reason}.",
+                id="acme.E011",
+            ))
+    return errors
+```
+
+One limit is worth naming rather than discovering: adding `acme.E010` to
+`SILENCED_SYSTEM_CHECKS` silences the message that would have reported it,
+so the register cannot police its own entry. That line is caught by reading
+the diff on `SILENCED_SYSTEM_CHECKS` as a security-relevant settings change,
+which is the treatment the rest of this file's settings already get.
+
+In review, read `SILENCED_SYSTEM_CHECKS` as a list of decisions rather than
+as configuration. Each entry is a security check somebody turned off, and
+the finding is the entry with no owner, no reason, and no date: treat a
+silenced security check as a finding until a record explains it. The
+dependency side of the same discipline belongs to
+`a03-software-supply-chain.md`, "SBOM, scan gate, and provenance", which
+owns what a pipeline does with a scanner result.
+
+**Write-time.** When generating a suppression of any kind — a silenced
+check, a scanner ignore entry, an inline comment that turns a rule off —
+write the owner, the reason, and the expiry date in the same edit, and put
+the entry somewhere an assertion can read it rather than in a comment beside
+the line, because the comment is what the next reader finds and the
+assertion is the only part of it that can still object.
+
 ## Review checklist
 
 - [ ] `DEBUG = False` and `ALLOWED_HOSTS` set (not `*`) in production settings.
@@ -636,3 +902,14 @@ so a clean linter is never evidence of deployment posture.
       removes the DNS record before the resource.
 - [ ] `check --deploy` runs clean (and is enforced in CI), with
       `SILENCED_SYSTEM_CHECKS` reviewed rather than assumed empty.
+- [ ] The properties no framework check can know — a required variable, a
+      placeholder secret, a fail-closed default, a non-production target —
+      are asserted by project checks registered `deploy=True`, identified
+      under a project prefix, and returning `Error` where they are meant to
+      stop a deploy.
+- [ ] Drift is established by comparing the settings the deployed process
+      resolved against the reviewed baseline, rather than by diffing two
+      settings modules, and the comparison output is treated as secret.
+- [ ] Every suppression — a silenced check, a scanner ignore entry, an
+      accepted advisory, an inline comment — carries an owner, a reason, and
+      an expiry date that something executable enforces.

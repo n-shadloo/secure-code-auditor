@@ -91,7 +91,11 @@ rule for generating that code.
   ledger that reports what was examined and found clean separately from what
   was never opened; and the attack chains worth looking for, each rated as one
   finding at the severity of its outcome rather than as three unrelated
-  Mediums.
+  Mediums. Then what holds the fix afterwards: one regression test per closed
+  finding that states the attack rather than the patch, proven by
+  reintroducing the defect and watching the suite fail, and a pipeline gate
+  that reads the bundled scanners' records because their exit code is always
+  0 by design.
 - Access control: object- and function-level authorization, IDOR/BOLA,
   cache-mediated data leaks, SSRF and the egress control behind it —
   allowlist-by-destination, deny-by-default egress for the workers whose
@@ -233,8 +237,13 @@ rule for generating that code.
   DNS records that decide whether your domain can be forged (SPF's ten-lookup
   ceiling, DKIM alignment through a third-party sender, and the DMARC rollout
   under the 2026 specification that removed `pct` and added `np`), CAA and
-  dangling-DNS subdomain takeover, and the list of things `check --deploy`
-  structurally cannot see.
+  dangling-DNS subdomain takeover, the list of things `check --deploy`
+  structurally cannot see, the deploy-only guardrail check a project writes
+  for the part of that list it can close — with the identifier prefix that
+  keeps an unrelated silencing entry from switching it off — drift measured
+  against the settings a deployed process actually resolved rather than
+  against two files, and the owner, reason, and expiry that turn a
+  suppression into an exception with an end date.
 - Cryptography: choosing a password-hashing family and pinning its cost to the
   hardware that runs it, why a stock Django install is on PBKDF2 no matter what
   is in its requirements file, parameter increases that propagate as users log

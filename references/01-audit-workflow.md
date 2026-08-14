@@ -4,9 +4,11 @@ This file owns **how a codebase is swept**: the phase order, what each phase
 hands the next and the coverage property that closes it, the entry-point
 inventory, the principal and trust-boundary model, hypothesis generation and
 the order the work runs in, the budget rule for a tree too large to read
-closely, the coverage ledger, and the attack-chain reasoning that turns several
-confirmed links into one finding. It owns no vulnerability and no control —
-every phase names the reference that owns the rules for whatever it turns up.
+closely, the coverage ledger, the attack-chain reasoning that turns several
+confirmed links into one finding, and the regression harness that holds a
+finding closed once the report is written. It owns no vulnerability and no
+control belonging to one — every phase names the reference that owns the rules
+for whatever it turns up.
 
 `00-methodology-and-severity.md` owns the other half: how a finding is scored
 and written, which is the severity rubric, the confidence scale, the finding
@@ -29,6 +31,7 @@ sends you to the topic files both of them point at.
 - [Phase 6 — the coverage ledger](#phase-6--the-coverage-ledger)
 - [Attack-chain reasoning](#attack-chain-reasoning)
 - [Mapping to the OWASP Testing Guide](#mapping-to-the-owasp-testing-guide)
+- [Holding the fix: the security regression harness](#holding-the-fix-the-security-regression-harness)
 - [Write-time: the inventory run forward](#write-time-the-inventory-run-forward)
 - [Review checklist](#review-checklist)
 
@@ -732,6 +735,132 @@ CWE and the OWASP mapping are not optional. Where one is carried, name the
 section rather than a test, and where a test identifier is unavoidable, write
 it version-tagged for the reason given above.
 
+## Holding the fix: the security regression harness
+
+The phases above end at a report, and the report is not what decides whether
+the same defect is back in eighteen months. That is decided by whether each
+closed finding acquired a test, and whether the test runs on every commit. A
+fix with no test has a shelf life measured in refactors.
+
+### Principle layer
+
+**One test per closed finding, and the test states the attack.** Write the
+request an attacker would send, and assert the outcome that must not happen.
+A test asserting that the patch is still there — the filter call is in the
+queryset, the permission class is in the list, the value is escaped — is
+coupled to the shape of the fix rather than to the property the fix
+established. It fails on the next refactor that preserves the property, and
+it passes on the next change that removes it. Both directions are wrong; the
+second is the one that matters.
+
+**Assert the deny path, and the state behind it.** A status code says the
+request was refused; the row says nothing was written. A test reading only
+the code passes against a handler that returns 403 after committing the side
+effect. The matrix these tests belong in — principals against actions
+against expected allow or deny, with the false-confidence patterns that make
+a suite worth nothing — is `authorization-architecture.md`, "Authorization
+test suites". What the harness adds to it is when it runs: on every commit
+rather than on the day of the audit.
+
+**A test is proven by failing, not by passing.** Reintroduce the defect
+deliberately — revert the fix on a scratch branch — and run the suite. A
+suite that stays green does not hold that fix, whatever it asserts. Do it
+while the reverting patch is still one command away, which is the day the
+fix lands rather than the next audit.
+
+**Fixture and factory data carries no real secret and no real personal
+data.** Fixtures are committed, cloned to every machine that checks the
+repository out, and retained in build artifacts long after the branch is
+gone, which makes a fixture built from a production row a copy of production
+in a place with none of production's controls.
+`data-lifecycle-and-privacy.md` owns the copies an erasure has to reach, and
+this is one of them.
+
+**A tool that reports without failing gates nothing**, which is the property
+to check about every step in the pipeline rather than whether the step
+exists. What the step does with the result is the control, and the two
+shapes it takes — a tool whose exit code is the verdict, and a tool that has
+no verdict to give — are the difference between reading `$?` and reading the
+output.
+
+**Record which closed findings have a test** in the same grammar the sweep
+uses for coverage. A finding with a regression test and a finding nobody got
+to are different states, and a list that does not separate them reads as the
+first; "Phase 6 — the coverage ledger" above owns that distinction and this
+is one more dimension of it.
+
+### Django & DRF implementation layer
+
+```python
+# Wrong: asserts the shape of the fix. It breaks when the queryset moves
+# into a manager, and it passes if the filter is later applied to the wrong
+# field.
+def test_invoice_queryset_is_scoped(self):
+    view = InvoiceViewSet()
+    self.assertIn("owner", str(view.get_queryset().query))
+
+# Correct: states the attack, and checks that nothing moved.
+def test_other_tenants_invoice_is_not_readable(self):
+    self.client.force_login(self.tenant_b_user)
+    url = f"/api/invoices/{self.tenant_a_invoice.pk}/"
+    self.assertEqual(self.client.get(url).status_code, 404)
+    self.tenant_a_invoice.refresh_from_db()
+    self.assertEqual(self.tenant_a_invoice.status, "open")
+```
+
+The pipeline carries the rest, and both of its traps are about what a step's
+exit code means.
+
+`manage.py check --deploy --fail-level WARNING` is the configuration gate.
+The level is load-bearing and the default is not it:
+`a02-security-misconfiguration.md`, "check --deploy" owns why, and "Writing
+a deployment guardrail check" in the same file owns the project assertions
+that make the gate worth more than Django's baseline.
+
+**The bundled scanners always exit 0, by design.** `dangerous_patterns.py`
+and `settings_scan.py` — and `entrypoint_inventory.py` beside them — return
+zero whatever they find. `scripts/README.md`, "Invariants" states it as a
+property rather than an accident: output is the product, and these are aids
+rather than gates. A step that runs one and trusts `$?` passes on every
+finding it just printed, and those findings scroll past in a log nobody
+opens.
+
+```
+# Wrong: the scanner prints six HIGH hits and the step succeeds.
+python scripts/dangerous_patterns.py . --min-severity HIGH
+
+# Correct: the project turns the records into the exit code.
+python scripts/dangerous_patterns.py . --json --min-severity HIGH \
+    | python ci/fail_on_findings.py --baseline ci/known_findings.json
+```
+
+`--min-severity` filters what is printed, never what is returned to the
+shell. Both scanners put a `severity` on every finding record in their JSON
+Lines output, and a `dangerous_patterns.py` hit carries a stable `rule`
+identifier as well, which is what a baseline file can be keyed on so the
+gate fails on a *new* hit rather than on the backlog. Run `--selftest` in
+the same job and read its output the same way — it too exits 0 whether or
+not the fixtures pass — because a scanner whose rules have quietly stopped
+matching produces a clean run indistinguishable from a clean tree.
+
+The dependency scanner is the opposite case and worth keeping straight.
+`pip-audit` exits 1 when it finds an unfixed vulnerability, verified against
+2.10.1 on 14 August 2026, so there the exit code *is* the control, and the
+ways a workflow throws it away belong to `a03-software-supply-chain.md`,
+"SBOM, scan gate, and provenance".
+
+`override_settings` proves a code path, not a deployed value. A test pinning
+`SECURE_SSL_REDIRECT` shows what the code does when the setting is true and
+says nothing about whether production sets it, which is the deploy check's
+job. Keep the two apart rather than letting a green test stand in for a
+gate.
+
+**Write-time.** When generating the fix for a defect somebody found — in a
+review, in an incident, in a report — write the test that reproduces the
+attack in the same change and confirm it fails against the code without the
+fix, because a fix and a test written a week apart are a fix whose test was
+written from the patch rather than from the attack.
+
 ## Write-time: the inventory run forward
 
 The workflow has a forward grammar, and it is the same four questions asked
@@ -795,6 +924,12 @@ defaults of whichever file the author happened to have open.
 - [ ] Each phase closed on the coverage property that ends it rather than on
       an amount of reading, handed the next phase a written artifact, and the
       ledger was read back at each boundary rather than recalled.
+- [ ] Every closed finding carries one regression test that states the attack
+      rather than the patch, asserts the deny path together with the state
+      behind it, and was confirmed to fail against the code without the fix.
+- [ ] Fixture and factory data carries no real secret and no real personal
+      data, and which closed findings have a test is recorded rather than
+      assumed.
 
 ### Django & DRF
 
@@ -815,3 +950,6 @@ defaults of whichever file the author happened to have open.
       "authenticated user".
 - [ ] Object, function, field, and tenant authorization were each exercised
       separately and recorded separately in the ledger.
+- [ ] The pipeline runs `check --deploy` at a fail level that can actually
+      fail it, and gates the bundled scanners on their records rather than on
+      an exit code that is always 0.

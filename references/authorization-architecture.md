@@ -528,6 +528,10 @@ A suite worth trusting asserts, for each protected resource, a **matrix** of
 {role or tenant} × {action} × {expected allow or deny}, including:
 
 - cross-tenant object ids (expect 404 or 403, and assert which);
+- object state as an axis of its own — draft against published, active
+  against archived, soft-deleted against live — because a rule that reads the
+  row's state is a different rule from one that reads only the principal, and
+  a matrix over roles alone never exercises it;
 - unauthenticated access to every protected route;
 - field-level read *and* write per role, with `PATCH` separate from `PUT`;
 - state after a denied write, not just the status code;
@@ -545,7 +549,9 @@ A suite that gives false confidence:
 - never enumerates the URLconf, so new endpoints are silently untested.
 
 Enumerating `urlpatterns` and asserting coverage is what lets a reviewer believe
-the suite is exhaustive rather than representative.
+the suite is exhaustive rather than representative. When the suite runs, and
+what else runs beside it once a finding is closed, is
+`01-audit-workflow.md`, "Holding the fix: the security regression harness".
 
 ## Permission-model decay and access review
 
