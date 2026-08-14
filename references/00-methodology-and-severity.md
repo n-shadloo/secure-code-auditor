@@ -401,7 +401,8 @@ an index to them, not a copy:
 | A path that deactivates, suspends, or offboards an account | `authorization-architecture.md`, "Identity lifecycle and provisioning desynchronization" |
 | A log line or an audit record | `a09-logging-and-alerting.md` |
 | A transaction, a state transition, or a retryable handler | `a10-exceptional-conditions.md` |
-| A new route of any kind reaching the URLconf | `authorization-architecture.md`, "Default-deny architecture" |
+| A new route of any kind reaching the URLconf | `authorization-architecture.md`, "Default-deny architecture", with the pattern's own shape — anchoring, converter, and where it sits among the routes that could also match — in `a01-broken-access-control.md`, "URL resolution as an access-control surface" |
+| A language switch view, or `LocaleMiddleware` added to a project that caches | `a01-broken-access-control.md`, "Locale redirects and language negotiation" |
 | An impersonation or break-glass path | `privileged-access-and-impersonation.md` |
 | A GraphQL type or resolver | `graphql-and-alternative-api-surfaces.md` |
 | A Django Ninja route | `graphql-and-alternative-api-surfaces.md`, "Django Ninja: nothing is authenticated by default" |
@@ -410,6 +411,7 @@ an index to them, not a copy:
 | An MCP tool over a Django application | `agent-and-llm-interfaces.md` |
 | A field holding a value the database must not read | `data-layer-and-database.md` |
 | A model field holding personal data | `data-lifecycle-and-privacy.md` |
+| A model field that names its own target — a content type beside an object id | `a01-broken-access-control.md`, "Generic relations and the client-chosen content type" |
 | A verifier for an inbound machine token | `service-identity-and-secrets.md` |
 | A Dockerfile | `deployment-and-runtime.md` |
 

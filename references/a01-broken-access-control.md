@@ -1,9 +1,11 @@
 # A01:2025 — Broken Access Control
 
-Covers object-level and function-level authorization, IDOR/BOLA, SSRF (folded
-into A01 in 2025), open redirect, multi-tenancy isolation, admin exposure, and
-cache-mediated authorization leaks. Maps to OWASP API1:2023 (BOLA) and
-API5:2023 (BFLA).
+Covers object-level and function-level authorization, IDOR/BOLA, the
+polymorphic reference a client resolves by naming its own content type, URL
+resolution as the surface every one of those checks assumes, SSRF (folded into
+A01 in 2025), open redirect and the locale redirects that are one,
+multi-tenancy isolation, admin exposure, and cache-mediated authorization
+leaks. Maps to OWASP API1:2023 (BOLA) and API5:2023 (BFLA).
 
 This file owns the **per-request failure** — the request that reached data it
 should not have, and how to recognize it in code. It does not own the model
@@ -19,18 +21,23 @@ names on a read, with no upload anywhere in the flow. `file-uploads.md` keeps
 the other half of that split, the filename an upload brings and the storage key
 it lands under, along with the private download of a file the application
 stored. `deployment-and-runtime.md` owns the infrastructure side of caching;
-the rule about who may read a cached response is here.
+the rule about who may read a cached response is here. Routing splits the same
+way: `api-drf-specific.md` owns how the route inventory is produced, and which
+of two matching patterns a path actually reaches is owned here.
 
 ## Contents
 - [Principle](#principle)
 - [Django & DRF: object-level authorization](#django--drf-object-level-authorization)
 - [IDOR / BOLA](#idor--bola)
+- [Generic relations and the client-chosen content type](#generic-relations-and-the-client-chosen-content-type)
 - [Function-level authorization](#function-level-authorization)
+- [URL resolution as an access-control surface](#url-resolution-as-an-access-control-surface)
 - [Multi-tenancy and data isolation](#multi-tenancy-and-data-isolation)
 - [Caching and authorization](#caching-and-authorization)
 - [SSRF](#ssrf)
 - [Path traversal](#path-traversal)
 - [Open redirect](#open-redirect)
+- [Locale redirects and language negotiation](#locale-redirects-and-language-negotiation)
 - [Admin exposure](#admin-exposure)
 - [Review checklist](#review-checklist)
 
@@ -117,6 +124,163 @@ Indicators to investigate (each is a lead, confirm reachability):
   externally referenced objects, but treat UUIDs as *defense in depth*, never as
   the authorization control.
 
+## Generic relations and the client-chosen content type
+
+### Principle layer
+
+A polymorphic reference stores its target as data rather than as a relation: a
+type identifier, an object identifier, and application code that joins the two.
+No foreign key constrains the pair, so nothing beneath the application decides
+which table it resolves to.
+
+That makes the type an input. Where a request supplies both halves, one
+endpoint reaches every model the project has installed, and the object
+permission its author wrote for the model they had in mind does not run for the
+model the caller named. The check and the target came apart the moment the
+class became a parameter.
+
+Two rules, and their order is the whole control:
+
+- **Resolve first, then authorize the object resolution produced.** A check
+  that runs before the pair is resolved has a type name to judge and no record.
+  Load the target on the server, then run the object-level check against it.
+  `authorization-architecture.md`, "DRF: where the object check actually runs"
+  says which paths invoke that hook for you and which leave it to you.
+- **Restrict the permitted types with a server-side allow list.** The set of
+  models a feature may point at is a design decision with a short, enumerable
+  answer. Accepting an arbitrary type from a request body publishes the whole
+  model layer through one route.
+
+Two further properties come with the shape rather than with any framework. The
+identifier column has one type while the targets need not, so a target keyed
+differently from that column breaks the join. And the pointer outlives its
+target, because no database-level cascade reaches a row the database does not
+know is related.
+
+The pattern arrives under many names — comments, attachments, tags, reactions,
+audit records, notifications — and the review question is the same for each:
+who chose the type?
+
+### Django & DRF implementation layer
+
+The `contenttypes` framework is the usual implementation: a `ForeignKey` to
+`ContentType`, an `object_id` field, and a `GenericForeignKey` joining them.
+Read off the Django 6.0.7 source on 14 Aug 2026 and confirmed by running each
+case.
+
+- **Resolution runs through `_base_manager`.** `GenericForeignKey.__get__`
+  calls `ContentType.objects.get_for_id()` and then
+  `get_object_for_this_type()`, which is `model_class()._base_manager.get()`. A
+  default manager that scopes by tenant or hides soft-deleted rows is not
+  consulted, so the traversal returns rows the model's own queryset would not.
+  `data-lifecycle-and-privacy.md`, "Soft delete and what it does not hide" owns
+  the tombstone half of that.
+- **A failed resolution is silent.** `__get__` catches `ObjectDoesNotExist` and
+  returns `None`, so a missing or mistyped target reads as an absent relation
+  rather than as an error. Code shaped as
+  `if comment.target.owner != request.user` raises `AttributeError` on that
+  `None` and returns a 500; code shaped as `if target and not allowed(target)`
+  skips the check entirely. Which of the two an application does is an accident
+  of style rather than a decision.
+- **Two neighboring failures are not silent.** A `content_type` id with no row
+  raises `ContentType.DoesNotExist`, and a stale row whose model has since been
+  removed returns `model_class() is None`, so resolution raises
+  `AttributeError`. Both reach the client as a 500 unless the view catches
+  them, which makes a client-supplied content type an availability lever as
+  well as an authorization one.
+- **`object_id` is typed and its targets are not.** With the common
+  `PositiveIntegerField`, pointing at a model with a `UUID` primary key fails
+  at the database layer rather than in validation: the field coerces with
+  `int()`, and `int(UUID)` is a 128-bit integer no integer column can hold. A
+  `CharField` takes every primary key there is, which removes the error and
+  none of the ambiguity.
+- **The key is the pair, and half a key is not a key.** Nothing stops two
+  models from owning the same `object_id` value, so a query filtering on
+  `object_id` alone — delete every comment on this object, count the reactions
+  for this id — reaches rows that point at a different model entirely. Every
+  hand-written query over a pointer table filters both columns or it is a
+  cross-model read.
+- **The cascade is a `GenericRelation` on the target, not a constraint.**
+  Deleting a target that declares none leaves the pointer row behind, and its
+  `target` reads `None` from then on. Declaring one makes Django's collector
+  delete the pointers with the target — and where `object_id` cannot hold the
+  target's primary key, that same collector query raises, so the target cannot
+  be deleted at all. The erasure sweep those orphans defeat is
+  `data-lifecycle-and-privacy.md`, "Erasure as a fan-out with a completion
+  ledger".
+
+```python
+# Wrong: the permission class authorized the view, the pair is resolved
+# afterwards, and nothing checks the row resolution produced. The type
+# arrives in the body, so this one route reaches every installed model --
+# auth.User and admin.LogEntry among them.
+class CommentCreateView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        ct = ContentType.objects.get(model=request.data["target_type"])
+        comment = Comment.objects.create(
+            content_type=ct,
+            object_id=request.data["target_id"],
+            body=request.data["body"],
+            author=request.user,
+        )
+        return Response(CommentSerializer(comment).data, status=201)
+```
+
+```python
+# Correct: the type comes from a server-side allow list, the target is loaded
+# through that model's own scoped queryset, and the object check runs against
+# the row rather than against the name it arrived under. An unknown type is a
+# 404 so the response does not enumerate which types exist.
+COMMENTABLE = {"article": Article, "ticket": Ticket}
+
+
+class CommentCreateView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        model = COMMENTABLE.get(request.data.get("target_type"))
+        if model is None:
+            raise Http404
+        target = get_object_or_404(
+            model.objects.visible_to(request.user),
+            pk=request.data.get("target_id"),
+        )
+        self.check_object_permissions(request, target)
+        comment = Comment.objects.create(
+            content_type=ContentType.objects.get_for_model(model),
+            object_id=target.pk,
+            body=request.data["body"],
+            author=request.user,
+        )
+        return Response(CommentSerializer(comment).data, status=201)
+```
+
+**Write-time.** When generating a model with a `GenericForeignKey`, write the
+allow list of permitted targets in the same edit as the field, because the set
+is obvious while the feature is being designed and unrecoverable afterwards —
+the next reader cannot tell which models were intended from a column that
+accepts them all. Give `object_id` a type that fits every primary key on that
+list, and add a `GenericRelation` on each target model in the same edit, since
+both are schema decisions that a later migration has to backfill around. Where
+a serializer exposes the pair, make the type field a `ChoiceField` over the
+allow list rather than a free string.
+
+### Commonly mistaken for a finding
+
+**A generic relation whose content type the server sets.** The field
+declaration is identical whether the type is chosen by the caller or by the
+code, so every `GenericForeignKey` reads like a client-chosen target. An
+attachment model whose type is always `ContentType.objects.get_for_model(...)`
+on a model the view already resolved, an audit record stamped from the instance
+being saved, a notification written by a signal receiver — none of these take a
+type from a request, and the object permission that matters is the one on the
+route that produced the target. The deciding question is whether any request
+value reaches the content-type field or the type is fixed at each write site.
+Where it is fixed, what remains is the lifecycle half: the pointer still
+outlives its target unless a `GenericRelation` says otherwise.
+
 ## Function-level authorization
 
 - Set a restrictive project default and open up per view:
@@ -129,6 +293,133 @@ Indicators to investigate (each is a lead, confirm reachability):
 - `DjangoModelPermissions` ties DRF to the model permission table; it requires an
   authenticated user and maps HTTP verbs to add/change/delete, but grants **no**
   object-level control.
+
+## URL resolution as an access-control surface
+
+### Principle layer
+
+Every access-control decision assumes the request reached the code that makes
+it. Resolution is what that assumption rests on, and it is a matching problem
+rather than a lookup: patterns are tried in order and the first one that
+matches wins. Where two patterns can match one path, nothing reports the
+overlap — the router picks, silently, and picks the same way on every
+request.
+
+Three failures follow from that, and none of them looks like an authorization
+bug in the file it lives in:
+
+- **A pattern matches more than its author meant it to**, so paths nobody
+  designed reach a view, and a rule written elsewhere against the exact path —
+  at a proxy, in a deny list, in a cache key — no longer describes the same
+  set of requests.
+- **The second of two matching patterns is unreachable.** When the first
+  carries no permission check and the second does, the protected route exists,
+  passes its tests when called directly, and never runs.
+- **The name is not the route.** Link and redirect generation is a second
+  resolver over the same table, and it does not have to agree with the first
+  about which of two candidates is the real one.
+
+The review action is what separates this from ordinary route review:
+**enumerate the resolved routes, not the route files.** Two patterns that
+resolve one path are the finding, and neither file shows it — the conflict
+exists only in the merged table.
+
+### Django & DRF implementation layer
+
+Read off the Django 6.0.7 source on 14 Aug 2026 and confirmed by resolving the
+patterns.
+
+- **`path()` anchors both ends; `re_path()` anchors the end only if you write
+  it.** `_route_to_regex` appends `\Z` for an endpoint route, and a
+  converter-free endpoint compares the route string exactly. `RegexPattern`
+  uses `fullmatch` only when the pattern is an endpoint *and* its text ends
+  with `$`; otherwise it uses `re.search`. So an endpoint `re_path` missing its
+  `$` matches any longer path, and `URLPattern.resolve` discards the unmatched
+  remainder rather than rejecting it.
+- **No system check reports the missing anchor.** `urls.W001` fires for the
+  opposite mistake — a `$` on a route passed to `include()`. A route that
+  matches too much is reported by nothing.
+- **The converters decide what a captured value may contain.** `str` is
+  `[^/]+`, `slug` is `[-a-zA-Z0-9_]+`, `int` is `[0-9]+`, and `path` is `.+`.
+  Only `path` admits the separator, so it is the one that can carry a traversal
+  sequence into a view; `str` still admits `..` on its own. What the view must
+  then do with such a value is "Path traversal" below.
+- **`reverse()` and `resolve()` disagree about a duplicated name.** Resolution
+  walks the patterns in declaration order, while the reverse table is built
+  from `reversed(url_patterns)`, so one name on two patterns resolves to the
+  first and reverses to the last. Every link and redirect built from that name
+  goes somewhere other than the route a reviewer reading top-down would expect.
+- **A duplicated namespace is reported, as a warning.** `urls.W005` says the
+  namespace is not unique; `reverse()` then resolves it against the
+  first-declared mount, so a second mount behind different middleware or a
+  different permission decorator is never the one a generated redirect points
+  at. Being a `Warning`, it prints under `manage.py check` and does not fail
+  the default gate — see `a02-security-misconfiguration.md`, "check --deploy"
+  for the fail level that catches it.
+- **An `include()` shadows a later route only when something inside it
+  matches.** A prefix alone falls through: if no pattern in the included module
+  matches the remainder, resolution continues with the next top-level pattern.
+  A catch-all inside the include is what turns the prefix into a swallow, and
+  legacy or fallback modules are where catch-alls live.
+- **`APPEND_SLASH` answers a POST with a redirect.** `CommonMiddleware`
+  rewrites only on a 404, and only when the slashed path resolves. The
+  `RuntimeError` naming the lost data is raised when `DEBUG` is `True`; with
+  `DEBUG` off the response is a 301, the body does not survive it, and a
+  permanent redirect is a cacheable answer to a state-changing request. A route
+  that only works because of this rewrite is one deployment setting away from
+  silently dropping writes.
+- **`reverse()` on a name taken from the request** turns the project's whole
+  name table into a client-selectable index, and raises `NoReverseMatch` — an
+  unhandled 500 — for everything else. Map an input to a name through a
+  server-side dictionary rather than passing it through.
+
+```python
+# Wrong: the first pattern is an endpoint with no terminating anchor, so
+# Django matches it with re.search. /reports/7, /reports/7extra, and
+# /reports/7/audit all resolve here with pk="7" and the rest discarded --
+# which means the audit route below it can never run.
+urlpatterns = [
+    re_path(r"^reports/(?P<pk>\d+)", ReportView.as_view()),
+    re_path(r"^reports/(?P<pk>\d+)/audit$", ReportAuditView.as_view()),
+]
+```
+
+```python
+# Correct: path() anchors both ends, so each route matches one shape and the
+# more specific one is reachable.
+urlpatterns = [
+    path("reports/<int:pk>/", ReportView.as_view()),
+    path("reports/<int:pk>/audit/", ReportAuditView.as_view()),
+]
+```
+
+Run the resolved-route table as an artifact rather than reading it once:
+`api-drf-specific.md`, "Endpoint inventory (API9)" owns how to produce it, and
+`scripts/entrypoint_inventory.py` resolves the same chain from source without
+starting the project. What this section adds to that inventory is the
+duplicate-detection pass — group the rows by resolved path and read every group
+with more than one member.
+
+**Write-time.** When generating a route, reach for `path()` and a converter
+rather than `re_path()`, because the anchor and the character class are then
+properties of the form instead of things the author has to remember. Where a
+regular expression genuinely is required, write the `$` in the same keystroke
+as the `^`. When adding a route to a module that already has one for a
+neighboring shape, place the more specific pattern above the more general one
+and check the resolved path rather than the file — the pattern you are
+shadowing is usually in another module.
+
+### Commonly mistaken for a finding
+
+**A second route that resolves the same path.** A duplicate is the pattern
+this section is about, so every duplicate reads as an unreachable permission
+check. It is only that where the two differ in what guards them. One viewset
+registered twice on the same router prefix, a module included at one path from
+two places, and a legacy alias kept beside its replacement all end at the same
+code behind the same permission class, and the unreachable one changes nothing
+about who gets in. The deciding question is what each candidate's permission
+class, decorator, and enclosing middleware are — where all three agree, the
+finding is duplicated routing to clean up rather than a broken control.
 
 ## Multi-tenancy and data isolation
 
@@ -620,6 +911,105 @@ return redirect("home")
 Never `redirect(request.GET["next"])` unchecked — it enables phishing and can
 bootstrap OAuth token theft.
 
+## Locale redirects and language negotiation
+
+### Principle layer
+
+Language selection is an input that changes the response, and it arrives from
+places the client controls: a path prefix, a cookie, a request header. Three
+consequences, and each is a familiar failure wearing an unfamiliar name.
+
+- **A language switch is a redirect endpoint.** It takes a target from the
+  request and sends the browser there, which is the shape in "Open redirect"
+  above with a language parameter attached.
+- **A framework that redirects to add a language prefix multiplies the URLs
+  for one resource** and inserts a hop into flows that were reasoned about as
+  single requests — an unauthenticated entry, a login return, a POST.
+- **A header that changes the response is a cache dimension.** A cache that
+  does not separate on it serves one visitor's rendering to the next.
+
+### Django & DRF implementation layer
+
+Read off the Django 6.0.7 source on 14 Aug 2026 and confirmed by running each
+case.
+
+- **The built-in switch validates; a replacement usually does not.**
+  `django.views.i18n.set_language` reads `next` from the POST body or the query
+  string and passes it through `url_has_allowed_host_and_scheme` against
+  `request.get_host()`, with `require_https` taken from `request.is_secure()`.
+  On failure it falls back to the `Referer` header, validated the same way, and
+  then to `/`. It writes the language cookie only on a POST and only for a code
+  `check_for_language` accepts. Treat a hand-written language switcher as an
+  open-redirect candidate on sight: the validation is three lines that read
+  like plumbing, and the view around them is the one nobody reviews.
+- **Four sources, in order.** `get_language_from_request` takes the path prefix
+  first when `i18n_patterns` is in use, then the `LANGUAGE_COOKIE_NAME` cookie,
+  then `Accept-Language`, then `LANGUAGE_CODE`. Everything but the last comes
+  from the request, and the cookie among them has defaults weaker than the
+  session's — `a02-security-misconfiguration.md`, "Cookie prefixes and the
+  subdomain boundary" states them and what to change.
+- **The prefix redirect fires on a narrow condition, and the setting moves
+  it.** `LocaleMiddleware` redirects only when the response is a 404, the path
+  carries no language, `i18n_patterns` is in use, `prefix_default_language` is
+  `True`, and the prefixed path resolves; it patches
+  `Vary: Accept-Language, Cookie` onto that redirect. Turning
+  `prefix_default_language` off removes the prefix from the default language
+  entirely, so which paths redirect changes with the setting and a chain walked
+  under one value has to be walked again under the other. Walk it with a
+  non-default `Accept-Language` and follow every hop: a loop and an
+  unauthenticated detour are both cheaper to observe than to reason about.
+- **The language can drop out of the cache key while `Vary` still names it.**
+  With `USE_I18N` on, `learn_cache_key` strips `Accept-Language` from the
+  header list it stores, because `_i18n_cache_key_suffix` appends the active
+  language to the key instead — `request.LANGUAGE_CODE` where a middleware set
+  it, otherwise whatever language is active. That suffix is computed by
+  `FetchFromCacheMiddleware` in the request phase, so it is right only if
+  `LocaleMiddleware` has already run. Reproduced in the other order: a request
+  carrying `Accept-Language: fr` populated the cache and the next request
+  carrying `Accept-Language: en` was served the French body, with
+  `Vary: Accept-Language` on it, accurate and irrelevant. A project that
+  resolves the language itself — a custom middleware, a stored profile
+  preference, content negotiation in DRF — gets the suffix only if it activates
+  the language before the cache is read, and gets no `Vary` from anyone.
+
+```python
+# Wrong: the cache key is computed before the request's language is known, so
+# every entry is stored under whatever language was already active.
+MIDDLEWARE = [
+    "django.middleware.cache.UpdateCacheMiddleware",
+    "django.middleware.common.CommonMiddleware",
+    "django.middleware.cache.FetchFromCacheMiddleware",
+    "django.middleware.locale.LocaleMiddleware",
+]
+```
+
+```python
+# Correct: the locale middleware resolves the language before the cache is
+# read, and adds its Vary header before the response is stored.
+MIDDLEWARE = [
+    "django.middleware.cache.UpdateCacheMiddleware",
+    "django.middleware.locale.LocaleMiddleware",
+    "django.middleware.common.CommonMiddleware",
+    "django.middleware.cache.FetchFromCacheMiddleware",
+]
+```
+
+Rate the cache case on what the language actually changes. Where the two
+renderings differ only in wording, it is a defect and not a disclosure; where
+the language stands in for a market — a price, a jurisdiction-specific notice,
+a catalog that varies by region — it discloses. Where the same key defect sits
+in front of authenticated output it is not a locale question at all, but the
+failure in "Caching and authorization" above, whose rule this case
+demonstrates: `Vary` is key metadata, not an authorization decision.
+
+**Write-time.** When generating a language switch, mount `set_language` rather
+than writing a view that redirects to a `next` value, because the built-in
+already carries the host and scheme check and a replacement starts without it.
+When adding `LocaleMiddleware` to a project that caches, place it in the same
+edit relative to the cache middleware — above `FetchFromCacheMiddleware` and
+below `UpdateCacheMiddleware` — since the two are usually added months apart
+and the resulting order is silent in both directions.
+
 ## Admin exposure
 
 - Move the admin off the default path (`urls.py`), serve it only over HTTPS, and
@@ -640,6 +1030,12 @@ break-glass elevation are in `privileged-access-and-impersonation.md`.
 - [ ] List endpoints filter by identity; no cross-tenant leakage in lists/exports.
 - [ ] Default permission class is restrictive; every public view is deliberate.
 - [ ] Ownership/tenant comes from `request.user`, never the request body.
+- [ ] A generic relation whose content type a request can influence accepts
+      only an allow-listed model, and the object check runs against the row
+      resolution produced rather than ahead of it.
+- [ ] No two patterns resolve one path; the resolved-route table is what was
+      read, and every endpoint `re_path` without a terminating anchor is
+      treated as matching more than its shape.
 - [ ] Tenant resolution and object lookup are one scoped query, not two
       independent steps; no ambient thread-local/`contextvars` tenant.
 - [ ] Any database-enforced isolation is a backstop behind scoped querysets and
@@ -647,6 +1043,9 @@ break-glass elevation are in `privileged-access-and-impersonation.md`.
 - [ ] Admin/staff actions use a role check, not bare `IsAuthenticated`.
 - [ ] Authenticated/personalized responses are not shared-cached; any private
       cache key and invalidation cover every authorization dimension.
+- [ ] A language switch validates its redirect target, and `LocaleMiddleware`
+      sits above the cache fetch so the key carries the request's language
+      rather than the one that happened to be active.
 - [ ] Every server-side URL fetch is allowlisted and blocks internal ranges;
       the cloud metadata endpoint is both denied in the application and
       hardened at the instance.

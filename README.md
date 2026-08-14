@@ -96,7 +96,15 @@ rule for generating that code.
   reintroducing the defect and watching the suite fail, and a pipeline gate
   that reads the bundled scanners' records because their exit code is always
   0 by design.
-- Access control: object- and function-level authorization, IDOR/BOLA,
+- Access control: object- and function-level authorization, IDOR/BOLA, the
+  generic relation whose target model a client picks by naming a content
+  type — where the object permission written for one model does not run for
+  another, and a check placed before the pair is resolved checks a type name
+  instead of a record — URL resolution as the surface every one of those
+  checks assumes, where an endpoint pattern missing its terminating anchor
+  matches more than its shape, the first of two matching patterns wins while
+  the second is the one carrying the permission, and the review action is to
+  group the resolved routes rather than read the route files,
   cache-mediated data leaks, SSRF and the egress control behind it —
   allowlist-by-destination, deny-by-default egress for the workers whose
   destinations are known in advance, and the split between what the platform
@@ -104,7 +112,9 @@ rule for generating that code.
   failure against the filesystem, where `os.path.join` reads like a
   containment function and is not one, `FileResponse` validates nothing, and
   the fix is to let the client name an identifier rather than a path — open
-  redirect, multi-tenancy, admin exposure.
+  redirect including the language switch that is one, the locale prefix
+  redirect and the cache key that loses the request's language while `Vary`
+  still names it, multi-tenancy, admin exposure.
 - Authorization architecture: the privilege model (RBAC/ABAC/ReBAC), what
   Django's permission layer actually does, the DRF and admin enforcement
   surfaces, default-deny with a URLconf audit test, field-level authorization,
@@ -134,7 +144,8 @@ rule for generating that code.
   and a spatial-lookup value read as a raster source to open rather than as a
   value to bind), command and argument injection,
   template injection and server-side output handling, LDAP/directory
-  injection, header/email injection, and the duplicated request parameter that
+  injection, header/email injection, XML external entity injection and entity
+  expansion named at the XML sink, and the duplicated request parameter that
   a check and a use read differently because one calls `getlist` and the other
   subscripts the `QueryDict`.
 - Authentication: password policy stated as the standard actually states it —

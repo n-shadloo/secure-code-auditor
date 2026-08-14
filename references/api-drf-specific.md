@@ -735,6 +735,11 @@ accidentally on; an app in `INSTALLED_APPS` mounting URLs nobody chose
 old versioned URL module kept alive after its successor shipped; and
 `format_suffix_patterns` doubling every route it touches.
 
+The same table answers a second question this file does not own — which of two
+patterns a path actually reaches when both match. Group the rows by resolved
+path and read every group with more than one member:
+`a01-broken-access-control.md`, "URL resolution as an access-control surface".
+
 Treat the inventory as a recurring artifact rather than a one-time exercise:
 generate it in CI, diff it against the previous run, and require that a new
 public route is an intentional reviewed change. OWASP API9:2023. Severity:

@@ -707,11 +707,17 @@ validator having returned.
 Disable XML when the application does not need it. When it is required, use a
 maintained format-specific parser configured to reject DTDs, external entities,
 network access, and unbounded entity expansion; enforce input and expansion
-limits before parsing. Do not newly recommend `defusedxml` solely from historical
-guidance: its latest release and maintenance signals do not pass the dated
-dependency gate. Existing installations need an explicit maintenance and runtime
-compatibility review. Untrusted `pickle`/`yaml.load` is remote code execution —
-that is covered in A08 (Integrity and Deserialization); cross-check there.
+limits before parsing. Those settings have names worth using in a report. The
+first two close **XML external entity** injection, XXE, in which a declared
+entity makes the parser read a local file or issue a request on the server's
+behalf; the expansion limit closes **entity expansion**, in which a few hundred
+bytes of self-referential entities expand into gigabytes during parsing. Maps
+to CWE-611 and CWE-776. Do not newly recommend `defusedxml` solely from
+historical guidance: its latest release and maintenance signals do not pass the
+dated dependency gate. Existing installations need an explicit maintenance and
+runtime compatibility review. Untrusted `pickle`/`yaml.load` is remote code
+execution — that is covered in A08 (Integrity and Deserialization); cross-check
+there.
 
 ## Review checklist
 
