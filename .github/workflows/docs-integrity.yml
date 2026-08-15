@@ -1,0 +1,93 @@
+name: docs-integrity
+
+on: [push, pull_request]
+
+jobs:
+  documents:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Check document integrity
+        run: |
+          python - <<'PY'
+          import os, re, sys
+
+          SKILL = "SKILL.md"
+          REF_DIR = "references"
+          SKILL_MAX_BYTES = 40960
+          REF_LINK = re.compile(r"references/[A-Za-z0-9._-]+\.md")
+
+          def read(path):
+              with open(path, encoding="utf-8") as fh:
+                  return fh.read()
+
+          def markdown_files():
+              for dirpath, dirnames, filenames in os.walk("."):
+                  dirnames[:] = [d for d in dirnames if d != ".git"]
+                  for name in sorted(filenames):
+                      if name.endswith(".md"):
+                          yield os.path.normpath(os.path.join(dirpath, name))
+
+          errors = []
+
+          reference_files = sorted(
+              f"{REF_DIR}/{name}"
+              for name in os.listdir(REF_DIR)
+              if name.endswith(".md")
+          )
+
+          # Who cites what: SKILL.md plus every reference file.
+          citations = {}
+          for source in [SKILL] + reference_files:
+              for link in REF_LINK.findall(read(source)):
+                  citations.setdefault(link, set()).add(source)
+
+          # 1. Every cited reference path resolves on disk.
+          for link in sorted(citations):
+              if not os.path.isfile(link):
+                  for source in sorted(citations[link]):
+                      errors.append(
+                          f"{source}: links to {link}, which does not exist on disk"
+                      )
+
+          # 2. Every reference file is cited by SKILL.md or another reference file.
+          for path in reference_files:
+              if not citations.get(path, set()) - {path}:
+                  errors.append(
+                      f"{path}: orphaned - not cited by {SKILL} or any other "
+                      f"file under {REF_DIR}/"
+                  )
+
+          # 3. Code fences are balanced in every Markdown file.
+          for path in markdown_files():
+              fences = sum(
+                  1 for line in read(path).splitlines() if line.startswith("```")
+              )
+              if fences % 2:
+                  errors.append(
+                      f"{path}: unbalanced code fences - {fences} lines begin with "
+                      f"three backticks, which is odd; every fence needs a closer"
+                  )
+
+          # 4. SKILL.md stays under the size ceiling.
+          size = os.path.getsize(SKILL)
+          if size > SKILL_MAX_BYTES:
+              errors.append(
+                  f"{SKILL}: {size} bytes exceeds the {SKILL_MAX_BYTES}-byte limit "
+                  f"by {size - SKILL_MAX_BYTES} bytes"
+              )
+
+          if errors:
+              sys.exit(
+                  "Document integrity check failed:\n"
+                  + "\n".join(f"  - {e}" for e in errors)
+              )
+
+          print(
+              f"OK: {len(reference_files)} reference files, all links resolve, "
+              f"no orphans, fences balanced, {SKILL} is {size}/{SKILL_MAX_BYTES} bytes"
+          )
+          PY
