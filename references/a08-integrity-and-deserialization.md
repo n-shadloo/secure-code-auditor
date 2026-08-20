@@ -317,8 +317,8 @@ Django gained a built-in tasks framework in the 6.0 line: `django.tasks`, a
 `@task` decorator, `Task.enqueue()` and `aenqueue()`, a `TaskResult`, and a
 `TASKS` setting shaped like `DATABASES` and `CACHES`. Every behavior below was
 read from the Django 6.0.7 source and exercised against it on 14 August 2026.
-Django 6.1 was not available to check, so treat each claim as scoped to the
-6.0 line and re-verify before relying on it against a later release.
+Django 6.1 adds to this framework, and the 6.1 items below name their release.
+Treat each unnamed claim as scoped to the 6.0 line.
 
 ### Principle layer
 

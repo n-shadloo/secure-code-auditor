@@ -468,14 +468,14 @@ file, which is why it is also the one most often reported where the scoping is
 real but sits somewhere else. Two places carry it invisibly: a viewset
 registered on a nested router under a tenant-scoped parent, and a model whose
 default manager already filters, so `Model.objects` is not the whole table.
-Read the nested case precisely: the registration alone adds no predicate, and
-what constrains the child is a parent-filter mixin in the class's bases, the
-`NestedViewSetMixin` shape. Look for that mixin, and check that the parent
-object itself is authorized for the caller, because a parent filter scopes the
-child to a parent the caller may still not own. The deciding question is what
-the class bases, the router registration, and the model's `Meta` and manager
-say — read them before concluding, and where they do scope, the finding that
-remains is the legibility of it rather than a broken control.
+Read the nested case precisely. The registration alone adds no predicate. What
+constrains the child is a parent-filter mixin in the class's bases, the
+`NestedViewSetMixin` shape. Look for that mixin. Check that the parent object
+itself is authorized for the caller. A parent filter scopes the child to a
+parent that the caller may still not own. The class bases, the router
+registration, and the model's `Meta` and manager decide the question. Read them
+before you conclude. Where they do scope, the finding that remains is the
+legibility of the scope rather than a broken control.
 
 **Write-time.** When generating a view that leans on scoping it does not
 perform — a nested router's parent lookup, a filtering default manager — name
@@ -681,6 +681,9 @@ guard for developer-initiated requests.
 - Allowlist destination hosts/schemes; reject everything else.
 - Block link-local and metadata addresses (`169.254.169.254`, `metadata.google.internal`),
   loopback, and private ranges — after DNS resolution, and re-check on redirects.
+  Connect to the address that you checked. Never let the HTTP client resolve
+  the host a second time. DNS rebinding moves the target between the check and
+  the connection.
 - The cloud metadata endpoint is the highest-value entry on that list, because
   what it returns is a live credential for the workload. Deny it in the
   application *and* require the instance's hardened, token-based metadata
@@ -798,10 +801,10 @@ Three answers, because they are routinely assumed to be one:
   public documentation covers. Using it is reasonable; depending on it directly
   is depending on something Django has not promised to keep, which is a further
   argument for reaching it through the storage API that calls it for you. The
-  containment is lexical, so a storage tree that an untrusted process can
-  write links into defeats it between the check and the open; prefer object
-  storage for untrusted content, and reject link members at ingestion as the
-  upload rules already require.
+  containment is lexical. A storage tree that an untrusted process can write
+  links into defeats it between the check and the open. Prefer object storage
+  for untrusted content. Reject link members at ingestion, as the upload rules
+  already require.
 - **`FileSystemStorage` inherits that protection, so the storage API is the
   supported route.** `path()` returns `safe_join(self.location, name)`, and
   `open()`, `exists()`, and `size()` all resolve through `path()`. On the write

@@ -589,7 +589,7 @@ The safe procedure:
 **On a rolling fleet, split step 1 in two.** Those three steps assume an
 atomic deploy. Where instances update gradually, an updated instance signs
 with the new key while a not-yet-updated instance validates with the old key
-only, so signatures bounce until the fleet converges. First ship the new key
+only. Signatures therefore bounce until the fleet converges. First ship the new key
 in `SECRET_KEY_FALLBACKS` on every instance, with the old key still signing.
 Then promote the new key to `SECRET_KEY` and move the old key into the
 fallbacks. That order keeps every instance able to validate both keys at

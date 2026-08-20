@@ -206,7 +206,8 @@ and issues no query, so `is_active` is never consulted and the token stands
 until it expires. Checked against SimpleJWT 5.5.1 source on 14 Aug 2026,
 where `JWTAuthentication` does check it under `CHECK_USER_IS_ACTIVE`,
 default `True`; DRF's `TokenAuthentication` re-reads `token.user.is_active`
-on every request.
+on every request. The `authtoken` `Token` model stores the key as plain text,
+so apply the API-key rules below to every install.
 
 **Choose the user model in the first commit.** `AUTH_USER_MODEL` is resolved
 at migration time and every migration already pointing at `auth.User` goes on
@@ -290,8 +291,8 @@ requirements above locates the one gap that matters:
 
 The validators run where `validate_password()` runs, and nowhere else. The
 built-in auth forms and views call it. `set_password()`, the model
-constructor, and a manager `create_user()` path do not call it, so a password
-set through one of them meets no policy at all. Call
+constructor, and a manager `create_user()` path do not call it. A password set
+through one of them meets no policy at all. Call
 `validate_password(password, user=user)` in every custom signup, invitation,
 reset, change, admin, import, and API path that takes a human-chosen
 password. For an account that must hold no password, call
@@ -391,9 +392,9 @@ State the cost of that check rather than absorbing it. It is an outbound call
 to a third party on every password set and change, so password changes now
 depend on that service's availability and latency, the endpoint joins the
 hosts the egress policy has to allow, and a five-character hash prefix is
-disclosed to it. The `Add-Padding` header adds decoy entries so that the
-entry count varies inside a band, and the response length stops identifying
-the queried prefix; the responses are not the same size. The
+disclosed to it. The `Add-Padding` header adds decoy entries, so the entry
+count varies inside a band. The response length stops identifying the queried
+prefix. The responses are not the same size. The
 fail-open branch is a decision and not a default: failing closed is the
 stronger posture and the right one for a high-assurance product, but it
 denies every password change during an outage nobody in the project controls.
@@ -842,8 +843,9 @@ from a client header. CGI mapping turns a client-sent `Remote-User` header into
 `HTTP_REMOTE_USER`, which is a different key. The custom-header variants are
 the trap. A subclass with `header = "HTTP_X_REMOTE_USER"` trusts a
 client-settable header. It is safe only where the proxy overwrites that header
-on every request, and strips every inbound copy, error paths and internal hops
-included (`deployment-and-runtime.md`, "Reverse proxy and forwarded headers").
+on every request and strips every inbound copy. That includes the error paths
+and the internal hops (`deployment-and-runtime.md`, "Reverse proxy and
+forwarded headers").
 
 Under ASGI the picture is different, and Django's own documentation says the
 spoofing warning applies there in all configurations. An ASGI server cannot put
@@ -861,9 +863,8 @@ That change is silent on upgrade. A 6.0 ASGI subclass with
 `header = "X_REMOTE_USER"` reads a key nothing populates on 6.1, so the lookup
 raises `KeyError` on every request. `RemoteUserMiddleware` fails closed there,
 because `force_logout_if_no_header` defaults to `True`.
-`PersistentRemoteUserMiddleware` sets it to `False`, so it returns without
-reading the header at all. The session then outlives any revocation at the
-proxy.
+`PersistentRemoteUserMiddleware` sets it to `False`, so the missing header
+logs nobody out. The session then outlives any revocation at the proxy.
 
 Django 6.1 also removed the shim for a subclass that overrides
 `process_request()` and not `aprocess_request()`. Django 6.0 warned and still

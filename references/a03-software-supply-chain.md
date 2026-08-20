@@ -664,20 +664,19 @@ Never use a temporary "allow everyone", `is_public=True`, superuser role, or
 wildcard tenant default to get through the transition. A migration that widens
 access for one deployment window is still an access-control vulnerability.
 
-Migration transaction behavior varies by database backend and by the
-migration's `atomic` setting. Separate schema operations from `RunPython` data
-work, especially on PostgreSQL, where mixing them can produce pending-trigger
-errors. For a large backfill, consider an `atomic = False` migration or a
-separate operated backfill with small explicit atomic batches, a stable ordering
-key, progress metrics, and restart-safe predicates. Do not sacrifice the
-invariant merely to make the operation resumable.
+A large backfill runs in batches. The batch boundary is where the invariant
+breaks. Never sacrifice the invariant to make the operation resumable. A batch
+that leaves rows at a permissive default widens access for that window. Batch
+design, transaction behavior, and the `atomic` setting belong to the
+`django-migration-safety` skill, which is authoritative on migration
+operations. This file owns one thing only: the access rule holds at every
+batch boundary.
 
-Use `schema_editor.connection.alias` with `.using(alias)` for every query so
-database routers and multi-database deployments are respected. Omit
-`reverse_code` when an operation is genuinely irreversible so Django refuses
-reversal. Use `migrations.RunPython.noop` only when intentionally doing nothing
-in one direction is safe and truthful; otherwise provide and test a real reverse
-or a forward repair.
+Use `schema_editor.connection.alias` with `.using(alias)` for every query. A
+query that ignores the router writes to the wrong database, which defeats
+tenant isolation. Omit `reverse_code` when an operation is genuinely
+irreversible. A reversal that runs re-widens the access the forward migration
+closed.
 
 Test:
 

@@ -344,7 +344,7 @@ Other admin surfaces:
 - Custom actions gate on `@admin.action(permissions=[...])`, checked against the
   **model-level** `has_*_permission`. Any per-object rule must be enforced inside
   the action body against the queryset. An action that declares no
-  `permissions` is filtered by nothing: `_filter_actions_by_permissions()`
+  `permissions` is filtered by nothing. `_filter_actions_by_permissions()`
   keeps it for any staff user who reaches the changelist, on the POST path as
   well as in the dropdown. From Django 6.1 the `location` argument of
   `@admin.action` widens where that reaches.
@@ -437,7 +437,9 @@ static/media, Django's own auth views, and DRF's browsable-API and schema
 endpoints all need explicit allow-listing. The cost is a maintained allow-list;
 the benefit is that adding a public endpoint becomes a conscious, reviewable act
 rather than an omission. A non-DRF view has no `permission_classes`, so either
-allow-list it or give it a project-specific marker the test can read.
+allow-list it or give it a project-specific marker the test can read. Never put
+a first-party prefix in `PUBLIC_ROUTE_PREFIXES`. A prefix also exempts each
+route that someone adds below it later.
 
 **Write-time.** When generating a new route, write its authorization decision
 in the same edit that adds it to the URLconf, and extend the allow-list above

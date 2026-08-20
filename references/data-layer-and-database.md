@@ -179,7 +179,7 @@ like any other object.
 A `WITH CHECK` clause stops a write from inserting or updating a row into
 another tenant. For an `ALL` or an `UPDATE` policy with no `WITH CHECK`
 clause, PostgreSQL uses the `USING` expression as the check as well. The trap
-is a `FOR SELECT` policy next to a separate permissive write policy: the read
+is a `FOR SELECT` policy next to a separate permissive write policy. The read
 predicate never applies to the write, and permissive policies combine with
 `OR`. Write both clauses explicitly on every policy that permits a write, so
 the reviewer reads the write rule directly.
@@ -470,9 +470,9 @@ committed data, which is also what makes a `select_for_update()` re-read
 correct in `a10-exceptional-conditions.md`, "Races, TOCTOU, and adversarial
 sequencing".
 
-`SERIALIZABLE` buys the invariants a row lock cannot express: an aggregate
-over many rows, or a predicate over rows that do not exist yet and so cannot
-be locked. PostgreSQL's `REPEATABLE READ` is snapshot isolation, and it stops
+`SERIALIZABLE` buys the invariants a row lock cannot express. Those are an
+aggregate over many rows, or a predicate over rows that do not exist yet and
+so cannot be locked. PostgreSQL's `REPEATABLE READ` is snapshot isolation, and it stops
 short of that. It aborts a transaction that modifies a row another transaction
 already changed. It permits write skew across different rows, so an invariant
 over two rows still needs `SERIALIZABLE`. Both levels hold the guarantee by
@@ -616,13 +616,14 @@ Controls, in order of leverage:
 - **Put a pool between the application and the database and cap it.** On
   Django 5.1+ with psycopg 3 this is built in, and Django 6.0 adds async-aware
   pooling; PgBouncer remains the option for a process-external pool. The pool's
-  maximum size is the actual defense, because it bounds total backends
-  regardless of how many workers exist.
+  maximum size is the defense, but Django builds one pool for each process.
+  Multiply the maximum size by the processes and by the hosts to get the
+  total backends. Only PgBouncer caps that total from outside the processes.
 - **Set a server-side statement timeout** so a slow or hostile query cannot pin
   a connection indefinitely.
-- **Size deliberately**: workers × threads × per-worker connections must stay
-  under `max_connections`, with headroom left for migrations and operator
-  sessions.
+- **Size deliberately**: hosts × workers × threads × per-worker connections
+  must stay under `max_connections`, with headroom left for migrations and
+  operator sessions.
 - **Use `ATOMIC_REQUESTS` knowingly.** It is good for write consistency and it
   holds a connection and an open transaction for the whole of every view;
   exclude long-running, streaming, and external-call views. Its correctness

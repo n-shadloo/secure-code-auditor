@@ -659,7 +659,9 @@ def scan(resolution: Resolution) -> Report:
 
     # deployment-and-runtime.md: same trust rule as SECURE_PROXY_SSL_HEADER -
     # only the proxy can make this safe, and every absolute URL Django builds
-    # (password reset links included) believes the forwarded host.
+    # from the request believes the forwarded host. A password reset link is
+    # one of them only where django.contrib.sites is absent, because
+    # get_current_site() otherwise returns the Site row.
     if "USE_X_FORWARDED_HOST" in assigns \
             and literal(assigns["USE_X_FORWARDED_HOST"]) is True:
         report.emit("USE_X_FORWARDED_HOST", "INFO",

@@ -347,7 +347,7 @@ that the database never holds. A database-only dump therefore cannot start an
 offline guess at all. Django peppers nothing by default. The supported spelling
 is a wrapping hasher: subclass the Argon2 hasher, and HMAC the password with a
 key from the secret manager before the hash. Use the same wrapper form as the
-migration above, and keep the key in the secret manager rather than in
+migration above. Keep the key in the secret manager rather than in
 `SECRET_KEY`.
 
 Rotation is a new wrap version, not a mass reset. A pepper is defense in depth
@@ -369,9 +369,8 @@ breach handling are in the same file under "Brute force and enumeration".
 
 - `SECRET_KEY`, JWT `SIGNING_KEY`, DB passwords, and third-party API keys load
   from the environment or a secrets manager — never literals in `settings.py`,
-  never committed. Read required values with `os.environ[...]`, so a missing
-  production secret fails at startup instead of becoming `None` and quietly
-  disabling a check downstream.
+  never committed. How the settings module reads a required value, and why it
+  must fail at startup, are in `service-identity-and-secrets.md`.
 - `SECRET_KEY_FALLBACKS` lets the previous key keep *validating* while the new
   key signs, which is what makes a rotation survivable. It does not cover
   everything derived from the key, and — contrary to a widely repeated claim —
@@ -616,8 +615,8 @@ Review notes:
   code so the value does not change under you at the upgrade. From Django 6.1
   the implicit default is deprecated. `salted_hmac()` and
   `django.core.signing.base64_hmac()` warn until the caller names the
-  algorithm. Treat that warning as the migration notice, because the digest
-  changes at 7.0 and every value derived from it stops verifying.
+  algorithm. Treat that warning as the migration notice. The digest changes at
+  7.0, and every value derived from it stops verifying.
 - `signing.dumps()` produces signed, base64-encoded, **readable** output. Do not
   put anything confidential in it.
 - Which subsystems `SECRET_KEY_FALLBACKS` covers during a rotation, and the
@@ -645,19 +644,13 @@ Review notes:
   index where the column must stay searchable. The mechanism, its cost, and what
   a blind index leaks are in `data-layer-and-database.md`, "Field-level
   encryption and searchable lookups"; the key's own lifecycle is below.
-- Full-disk and cloud-volume encryption answer the stolen-disk threat and
-  nothing else. They do not protect a value from a compromised running database
-  or an over-privileged query path, so they do not satisfy a requirement that a
-  column be encrypted. The distinction is what the threat can already see:
-  volume encryption defends stolen media and backups and is transparent to any
-  authenticated connection, so it stops none of the paths that actually leak a
-  column — an injected read, a stolen database credential, an over-privileged
-  operator, a replica nobody remembered. Column encryption keeps the value
-  ciphertext in the query result unless the application holds the key.
-- Encrypting a column is a real cost, not a default: it removes `LIKE`, ranges,
-  ordering, uniqueness, and useful indexing on that column. Justify it per
-  column, for narrowly-scoped high-sensitivity values that are rarely queried
-  by content, rather than adopting it wholesale.
+- Volume encryption does not satisfy a requirement that a column be encrypted.
+  It defends stolen media and backups, and it is transparent to any
+  authenticated connection. Column encryption keeps the value ciphertext in the
+  query result unless the application holds the key. The threat model that
+  justifies the column, and the query cost it removes, are in
+  `data-layer-and-database.md`, "Field-level encryption and searchable
+  lookups".
 
 ## Key lifecycle and envelope encryption
 

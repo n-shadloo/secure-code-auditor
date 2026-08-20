@@ -267,7 +267,7 @@ RFC 9112 alongside its keepalive and PROXY-protocol handling.
 The async workers carry their own floors, and those are the ones a dependency
 review misses, because a worker arrives through a `-k` flag on the command line
 rather than as a package anybody chose for its security properties:
-`eventlet>=0.40.3` for CVE-2025-58068, `gevent>=24.10.1` for CVE-2023-41419,
+`eventlet>=0.40.3` for CVE-2025-58068, `gevent>=23.9.0` for CVE-2023-41419,
 and `tornado>=6.5.0` for CVE-2025-47287. Read the worker class the deployment
 actually names and check the floor belonging to that one, rather than all three.
 

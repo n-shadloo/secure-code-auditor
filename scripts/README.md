@@ -134,8 +134,8 @@ difference between the last two is the whole value of the column:
 The mixins that count as a declaration are `LoginRequiredMixin`,
 `PermissionRequiredMixin`, and `UserPassesTestMixin`. `AccessMixin` is not one
 of them. It configures the failure handling — `login_url`, `raise_exception`,
-`handle_no_permission` — and enforces nothing on its own, so a class that
-carries only `AccessMixin` reads as `inherited`.
+`handle_no_permission` — and enforces nothing on its own. A class that carries
+only `AccessMixin` reads as `inherited`.
 
 A `ProtocolTypeRouter` row is always `absent`. `AuthMiddlewareStack` supplies
 the identity and not the authorization: it puts a user in the scope and admits
@@ -461,9 +461,9 @@ Runs alone, takes no path, and exercises source fixtures embedded in the module
 — nothing is read from or written to disk. It prints the rule identifiers
 expected and the ones produced for each fixture, reports which rules have no
 positive fixture, and reports failures explicitly. It returns **1** when any
-check fails and 0 when they all pass — the one mode whose exit code carries a
-verdict, because there the scanner itself is what is under test. Run it in CI
-and read `$?`.
+check fails and 0 when they all pass. It is the one mode whose exit code
+carries a verdict, because there the scanner itself is under test. Run it in
+CI and read `$?`.
 
 It also proves the `SEC001` redaction: it scans an assignment of a known canary
 string and asserts the canary reaches no snippet.
@@ -477,9 +477,9 @@ module-level SQL constant, `eval` as an attribute alongside `SystemRandom` and
 `secrets`, a docstring full of dangerous-looking text, `string.Template` from a
 bare `from string import Template`, `format_html` with a placeholder template
 and a separate value argument, `jwt.decode` with the signature verified, and a
-fetch of an operator-configured URL. Run it after changing a rule; a negative
-fixture that starts producing a hit is a regression on correct code, which is
-the failure this scanner exists to avoid.
+fetch of an operator-configured URL. Run it after you change a rule. A
+negative fixture that starts to produce a hit is a regression on correct code,
+which is the failure this scanner exists to avoid.
 
 ### Indicators, by owning reference
 
@@ -592,5 +592,5 @@ server-side output:
 - `NET003` — a `requests`/`httpx` verb or `urllib.request.urlopen` call whose
   URL argument derives from request data, resolved through the same taint
   machinery as the ORM identifier rules. A URL from a settings value or a
-  module constant is not reported: who last wrote the value is the SSRF
+  module constant is not reported. Who last wrote the value is the SSRF
   question, and this rule only fires when the answer is the request.

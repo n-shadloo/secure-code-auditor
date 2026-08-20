@@ -122,10 +122,10 @@ def transfer_membership(*, actor_id, membership_id, new_tenant_id):
         membership.save(update_fields=["tenant_id"])
 ```
 
-Do not perform the permission query, await unrelated work, and then update in a
-separate call; authorization state can change between those operations. The
-destination check is the half that a transfer bug drops, because the source
-check alone lets an admin move a member into any tenant by identifier.
+Do not perform the permission query, await unrelated work, and then update in
+a separate call. Authorization state can change between those operations. The
+destination check is the half that a transfer bug drops. The source check
+alone lets an admin move a member into any tenant by identifier.
 
 ## Request and tenant context
 
@@ -196,7 +196,8 @@ audience, expiry, and revocation before constructing a principal. Avoid tokens
 in query strings because URLs reach logs, history, and monitoring systems. If a
 client cannot set a header, exchange a normal authenticated HTTP request for a
 short-lived, single-purpose connection ticket rather than reusing a long-lived
-API token in the URL.
+API token in the URL. The server must delete the ticket at the first
+redemption, because a URL in a log stays replayable.
 
 ## Per-connection authorization
 

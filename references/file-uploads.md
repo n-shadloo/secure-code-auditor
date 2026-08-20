@@ -518,7 +518,9 @@ timeout treated as clean; the object copied to the served prefix before the
 verdict is recorded; a scan run against the type in the database rather than
 the bytes in the store; and an object that can still be overwritten between
 the scan and the serve. The last is why the served prefix is write-denied to
-the uploader and why object versioning is worth having. Selecting a scanning
+the uploader and why object versioning is worth having. Copy the exact
+`versionId` or generation that the scanner read, so a write after the scan
+cannot reach the reader. Selecting a scanning
 engine is a separate decision and belongs to the dependency gate in
 `a03-software-supply-chain.md`.
 
@@ -806,8 +808,9 @@ modes. Python 3.12 adds extraction filters. Call
 rejects absolute names, parent-directory escapes, links that point outside the
 destination, device nodes, and dangerous modes.
 
-The filter API is backported to Python 3.9.17, 3.10.12, and 3.11.4. Python 3.12
-warns when the caller gives no filter. Python 3.14 makes `"data"` the default.
+The filter API is backported to Python 3.8.17, 3.9.17, 3.10.12, and 3.11.4.
+Python 3.12 warns when the caller gives no filter. Python 3.14 makes `"data"`
+the default.
 Pass the filter explicitly, and do not depend on the version default. An older
 micro version has no filter API, so test with `hasattr(tarfile, "data_filter")`
 before you call it. For a user upload, reject a tar member that is a symlink or

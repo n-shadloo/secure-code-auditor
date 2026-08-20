@@ -392,7 +392,8 @@ machine token".
 
 **Correlation identity.** One request identifier, minted at the edge and
 propagated through the view, the task, and the outbound call, is what turns
-three logs into one narrative. The service above already takes `request_id`
+three logs into one narrative. The edge must replace a client-supplied
+`X-Request-ID` with its own value. The service above already takes `request_id`
 as an explicit argument; the point here is that it must be the same value
 across tiers rather than one generated per tier.
 

@@ -703,9 +703,9 @@ is routinely read as coverage it never provided:
   Read that list as part of the review; an entry in it is a decision somebody
   made once and nobody has revisited.
 
-One thing about the command itself changed. Django 6.1 passes every configured
-database alias to `run_checks()` when `--database` names none, where Django 6.0
-passed `None`. Checks tagged `database` stay skipped without an explicit alias,
+One thing about the command itself changed. Django 6.1's `run_checks()`
+defaults `databases` to every configured alias when `--database` names none,
+where Django 6.0 left it `None`. Checks tagged `database` stay skipped without an explicit alias,
 so Django's own deploy checks still read settings alone. A custom or
 third-party check that accepts `databases` now receives every alias and can
 open a connection. Confirm the pipeline step has a database it may reach, and

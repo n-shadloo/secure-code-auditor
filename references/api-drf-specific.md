@@ -285,8 +285,8 @@ row is one of them. Declare the relation with a scoped queryset, or scope it
 per request in `get_fields()` or in `validate_<field>()` from
 `self.context["request"]`. The same rule reaches `SlugRelatedField` and nested
 writes. `UniqueValidator` and `UniqueTogetherValidator` run their own
-querysets too, and an unscoped validator queryset answers whether a value
-exists in another tenant, which is an existence oracle.
+querysets too. An unscoped validator queryset answers whether a value exists
+in another tenant, which is an existence oracle.
 
 **Write-time.** When a serializer gains a writable relation, write the scoped
 queryset in the same edit. State in one line which principal scope that
@@ -300,20 +300,22 @@ migrations later. `exclude = [...]` fails open the same way an excluded
 serializer field does: the next added field is writable by default. Require an
 explicit `fields` allowlist on every `ModelForm` bound to request data.
 
-Treat a server-owned field rendered as a form input as the same finding: a
-missing `disabled=True`, or a value round-tripped through a hidden input and
-trusted on POST. A hidden field is client input and not server state. The
-bundled scanner's `CFG001` fires on the `Meta` line in either container.
+Treat a server-owned field rendered as a form input as the same finding. The
+shape is a missing `disabled=True`, or a value round-tripped through a hidden
+input and trusted on POST. A hidden field is client input and not server
+state. The bundled scanner's `CFG001` fires on the `Meta` line in either
+container.
 
 Formsets add one multiplier: the management form's counts (`TOTAL_FORMS`) are
 client input. Django bounds instantiation at `absolute_max`, which defaults to
 `max_num + 1000`, and `DATA_UPLOAD_MAX_NUMBER_FIELDS` bounds the request
 itself. So the review question is not whether a bound exists. It is whether
-the project raised one or removed one. A formset factory that takes a large
-`absolute_max`, a `validate_max=False` on data that feeds bulk model writes,
-or a raised `DATA_UPLOAD_MAX_NUMBER_FIELDS` is a caller-controlled work
-multiplier, and it belongs in the table in `a06-insecure-design.md`,
-"Algorithmic resource exhaustion", with every other one.
+the project raised one or removed one. Three shapes are a caller-controlled
+work multiplier. The first is a formset factory that takes a large
+`absolute_max`. The second is a `validate_max=False` on data that feeds bulk
+model writes. The third is a raised `DATA_UPLOAD_MAX_NUMBER_FIELDS`. Each
+belongs in the table in `a06-insecure-design.md`, "Algorithmic resource
+exhaustion".
 
 **Write-time.** When generating a `ModelForm`, write the explicit `fields`
 list in the same edit that creates the class. Mark a server-owned rendered
@@ -952,6 +954,8 @@ stream — once `request.data` has been accessed, reading `request.body` raises
 and reads the raw body second will therefore fail at runtime, and the tempting
 fix — re-serializing the parsed data — silently breaks the HMAC, because key
 order and separators will not match what was signed.
+`DATA_UPLOAD_MAX_MEMORY_SIZE` bounds `request.body` at 2.5 MB by default.
+Never raise that bound for a webhook receiver.
 
 ```python
 # Correct: read and verify the raw body before anything parses the stream

@@ -247,7 +247,9 @@ class Reservation(models.Model):
   arrives as an entirely valid-looking request (CWE-190, CWE-191).
 - Non-overlapping intervals, which is what booking and reservation systems
   actually need, are PostgreSQL exclusion constraints, available through
-  `ExclusionConstraint` in `django.contrib.postgres.constraints`.
+  `ExclusionConstraint` in `django.contrib.postgres.constraints`. A scalar
+  column beside a range needs the `btree_gist` extension, which the
+  `BtreeGistExtension` migration operation installs.
 - A constraint added to a table that already violates it fails at deploy time.
   Sequencing that safely is in `a03-software-supply-chain.md`, "Migration and
   data-integrity safety".
@@ -338,12 +340,12 @@ with transaction.atomic():
   enqueue itself is lost when the process dies between the commit and the
   callback, so `on_commit` orders the work without making it durable. Where
   the record must not be lost, use the transactional outbox in
-  `a09-logging-and-alerting.md`, "Lifecycle hooks and audit guarantees", and
-  let `django-async-jobs` own the dispatcher that drains it. Past the broker,
-  a worker that finishes the work and dies before acknowledging causes a
-  redelivery, so every task must be safe to run twice: re-check state before
-  acting rather than assuming the first run did not happen. That is the same
-  design as the next section, applied to a worker.
+  `a09-logging-and-alerting.md`, "Lifecycle hooks and audit guarantees". Let
+  `django-async-jobs` own the dispatcher that drains it. Past the broker, a
+  worker that finishes the work and dies before acknowledging causes a
+  redelivery. Every task must therefore be safe to run twice. Re-check the
+  state before you act, rather than assuming the first run did not happen.
+  That is the same design as the next section, applied to a worker.
 - Two tasks enqueued in order are not guaranteed to execute in order or on the
   same worker. Never let task B assume it can see task A's effect; have it
   check.
@@ -499,8 +501,8 @@ def handle(actor, key, body):
     return Response(result, status=200)
 ```
 
-The fingerprint above digests the body alone; canonicalize the method and the
-route into it as well, so one key sent to two endpoints cannot replay the
+The fingerprint above digests the body alone. Canonicalize the method and the
+route into it as well. One key sent to two endpoints then cannot replay the
 wrong response.
 
 The record, the effect, and the stored response commit together, and that is
