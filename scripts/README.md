@@ -19,12 +19,21 @@ These hold for all three scripts and are not negotiable:
 - **No network.** Nothing here opens a connection.
 - **None of them imports or executes the audited project.** All three parse
   with the `ast` module; none runs a line of the code it reads.
-- **Exit code is always 0.** Output is the product, never the exit code; these
-  are aids, not gates.
+- **Exit code is always 0, with one exception.** Output is the product, never
+  the exit code; these are aids, not gates. The exception is
+  `dangerous_patterns.py --selftest`, which returns 1 when a check fails,
+  because there the scanner itself is what is under test.
 - **Output is indicators to verify, not confirmed vulnerabilities.** Each row
   names the reference file that owns the follow-up.
 - **A file that cannot be parsed is reported, never skipped in silence.** A
-  silent skip is a false negative wearing the clothes of a clean result.
+  silent skip is a false negative wearing the clothes of a clean result. A
+  directory that cannot be read is reported the same way and counted as a
+  traversal error.
+- **A `--json` stream always ends with one `kind: "summary"` record.** An empty
+  stream never occurs. A run that finds nothing still writes the summary, so a
+  reader can tell a clean tree from a run that stopped. A path that is not a
+  file or a directory writes one `kind: "error"` record and the summary, and
+  still exits 0.
 - **`--json` is the mode intended for agent use.** It is JSON Lines in all
   three: one object per record, one record per line, so a large tree streams
   and a partial read is still parseable. The default output is for a human
@@ -78,7 +87,7 @@ the reference file that answers that.
 | `graphql` | schema constructions, `Query`/`Mutation` type definitions, and resolver methods | `graphql-and-alternative-api-surfaces.md` |
 | `grpc` | classes deriving from a generated `Servicer` base, with their method names | `graphql-and-alternative-api-surfaces.md` |
 | `channels` | `ProtocolTypeRouter` and `URLRouter` entries and consumer classes | `async-and-channels.md` |
-| `celery` | functions decorated with `shared_task` or an app `task` attribute, and literal beat-schedule entries | `a08-integrity-and-deserialization.md` |
+| `celery` | functions decorated with `shared_task` or an app `task` attribute, and literal beat-schedule entries. A bare `@task` resolved to `django.tasks` is reported with `system: django-tasks`, because its default backend executes the task inline in the caller's transaction; `a08-integrity-and-deserialization.md`, "Django's built-in tasks framework", owns the difference | `a08-integrity-and-deserialization.md` |
 | `command` | modules under a `management/commands/` path with a `Command` class | `a05-injection.md` |
 | `signal` | `@receiver` decorators and `.connect()` calls, with the signal and the sender where literal | `a09-logging-and-alerting.md` |
 | `admin` | `@admin.register`, `admin.site.register`, `ModelAdmin` subclasses, and their declared `actions` | `authorization-architecture.md` |
@@ -114,13 +123,25 @@ difference between the last two is the whole value of the column:
   row.
 - **`inherited`** — this site declares nothing and something upstream supplies
   it: a base class, `DEFAULT_PERMISSION_CLASSES`, a router-level `auth=`, an
-  admin permission check, a Channels middleware stack. **Not visible from
-  here**, which is a different fact from its absence.
+  admin permission check. **Not visible from here**, which is a different fact
+  from its absence.
 - **`absent`** — this site declares nothing and the construct has no default
   that would supply one: a Ninja API, router, or operation with no `auth=`, a
   gRPC servicer, a plain Django view carrying no decorator or mixin. Middleware
   or a check inside the body may still apply; this column looks for neither, so
   `absent` is a statement about declarations and never a finding.
+
+The mixins that count as a declaration are `LoginRequiredMixin`,
+`PermissionRequiredMixin`, and `UserPassesTestMixin`. `AccessMixin` is not one
+of them. It configures the failure handling — `login_url`, `raise_exception`,
+`handle_no_permission` — and enforces nothing on its own, so a class that
+carries only `AccessMixin` reads as `inherited`.
+
+A `ProtocolTypeRouter` row is always `absent`. `AuthMiddlewareStack` supplies
+the identity and not the authorization: it puts a user in the scope and admits
+every consumer it wraps. The stack stays in the row's `stack` detail, where it
+answers the different question of whether a consumer can see a user at all.
+Each consumer carries its own state.
 
 Collapsing `inherited` and `absent` into "missing" would rebuild exactly the
 false positive this script exists to avoid.
@@ -151,6 +172,14 @@ built on.
 | `reference` | the reference file that owns the family | absent |
 | `detail` | an object of family-specific fields, empty values omitted | absent |
 | `error` | absent | the parser's message |
+
+Two more shapes close the stream. A `kind: "error"` record names a path that is
+not a file or a directory, or a `--kind` value that names no family. A
+`kind: "summary"` record is always the last line, and it carries `path`,
+`files_discovered`, `files_scanned`, `files_unparsed`, `entries`, and
+`walk_errors`. A directory the walk cannot read is reported as `unparsed` and
+counted in `walk_errors`. The default output ends with the same counts on one
+line.
 
 ### Limits
 
@@ -211,11 +240,15 @@ it could not see anything.
   reported as an augmentation for the same reason — the previous behavior of
   declining to judge it is kept, and now says so out loud.
 
-`--json` emits JSON Lines with three record shapes: `setting`, carrying `file`,
+`--json` emits JSON Lines with five record shapes: `setting`, carrying `file`,
 `origin` (the module the effective value came from, `null` when unset), `line`,
 `setting`, `severity`, `message`, `reference`, and `conditional`; `note`, for a
-cycle, an unresolvable import, or a module named rather than scanned; and
-`unparsed`, for a module that could not be read.
+cycle, an unresolvable import, a module named rather than scanned, or a
+directory that could not be read; `unparsed`, for a module that could not be
+read; `error`, for a path that is not a file or a directory; and `summary`,
+always the last line, carrying `path`, `files_discovered`, `files_scanned`,
+`files_unparsed`, `findings`, and `walk_errors`. The default output ends with
+the same counts on one line.
 
 ### Checks, by owning reference
 
@@ -224,12 +257,28 @@ cycle, an unresolvable import, or a module named rather than scanned; and
 - `DEBUG` is `True`.
 - `ALLOWED_HOSTS` is empty or contains `*`.
 - `SECRET_KEY` is a hardcoded string literal, or carries the
-  `django-insecure-` prefix `startproject` writes. Where the key should live
-  and how it rotates is `service-identity-and-secrets.md`.
-- `SECURE_SSL_REDIRECT`, `SECURE_HSTS_SECONDS`,
-  `SECURE_HSTS_INCLUDE_SUBDOMAINS`, `SECURE_CONTENT_TYPE_NOSNIFF`,
-  `SESSION_COOKIE_SECURE`, `SESSION_COOKIE_HTTPONLY`, and
-  `CSRF_COOKIE_SECURE` are unset or not `True`.
+  `django-insecure-` prefix `startproject` writes. A dynamic `SECRET_KEY` is
+  reported as INFO to confirm by hand, like every other dynamic value. Where
+  the key should live and how it rotates is `service-identity-and-secrets.md`.
+- `SECURE_SSL_REDIRECT`, `SECURE_HSTS_SECONDS`, `SESSION_COOKIE_SECURE`, and
+  `CSRF_COOKIE_SECURE` are unset or not `True`. Django's default for each is
+  the unsafe value, so the absence is the finding.
+- `SECURE_CONTENT_TYPE_NOSNIFF` and `SESSION_COOKIE_HTTPONLY` are set to
+  something other than `True`. Their absence is reported as INFO and names the
+  default, because Django already defaults each to `True`.
+- `SECURE_HSTS_INCLUDE_SUBDOMAINS` is not `True`, judged **only** when
+  `SECURE_HSTS_SECONDS` is positive or dynamic. An HSTS companion setting does
+  nothing while HSTS is off, so reporting it there would be noise.
+- `MIDDLEWARE`, judged only when it is a literal list with no later `+=`:
+  `CsrfViewMiddleware` absent (HIGH), `SecurityMiddleware` absent (MEDIUM),
+  `XFrameOptionsMiddleware` absent (LOW), and `SECURE_CSP` /
+  `SECURE_CSP_REPORT_ONLY` present with no CSP middleware installed (MEDIUM) —
+  the settings are inert without it. An augmented or dynamic list is reported
+  as exactly that rather than judged.
+- `SESSION_COOKIE_SAMESITE` / `CSRF_COOKIE_SAMESITE` weakened: Python `None`
+  removes the attribute; the string `"None"` opts into cross-site sending and
+  is reported higher when the matching `*_SECURE` flag is not `True`.
+- `SECURE_CROSS_ORIGIN_OPENER_POLICY` set to `None` or `"unsafe-none"`.
 - `X_FRAME_OPTIONS` is set to something other than `DENY`.
 - `CORS_ALLOW_ALL_ORIGINS` is `True`, raised in severity when
   `CORS_ALLOW_CREDENTIALS` is `True` alongside it.
@@ -240,8 +289,22 @@ cycle, an unresolvable import, or a module named rather than scanned; and
 - `SECURE_PROXY_SSL_HEADER` is set. Informational: no settings check can tell a
   safe proxy header from a spoofable one, so the answer is at the proxy.
 
+**`a07-authentication-failures.md`**:
+
+- `SESSION_ENGINE` names `signed_cookies` — no server-side record exists, so no
+  single session can be revoked.
+
+**`api-drf-specific.md`**:
+
+- A `REST_FRAMEWORK` literal with no `DEFAULT_PERMISSION_CLASSES`, or with
+  `AllowAny` in it — DRF's own default is `AllowAny`, so a view that declares
+  nothing is public. A block with no `DEFAULT_AUTHENTICATION_CLASSES` is
+  reported as INFO.
+
 **`deployment-and-runtime.md`**:
 
+- `USE_X_FORWARDED_HOST` is `True`. Informational, same reasoning as
+  `SECURE_PROXY_SSL_HEADER`: only the proxy can make it safe.
 - `INSTALLED_APPS` installs `debug_toolbar`, `silk`, or `django_extensions`
   unconditionally. An `if DEBUG:` append is still not judged as an
   unconditional install — it is reported as an augmentation naming the module
@@ -251,9 +314,15 @@ cycle, an unresolvable import, or a module named rather than scanned; and
 
 - A PostgreSQL alias whose `OPTIONS` do not set `sslmode` to `verify-ca` or
   `verify-full`. `require` encrypts without validating the server that
-  answered.
-- `OPTIONS["pool"]` set while `CONN_MAX_AGE` is not `0`, which Django rejects
-  at startup with `ImproperlyConfigured`.
+  answered. PostGIS aliases are included: the engine
+  `django.contrib.gis.db.backends.postgis` carries the same libpq options and
+  does not contain the substring `postgresql`.
+- A MySQL/MariaDB alias whose `OPTIONS` carry no `ssl` — the server is dialed,
+  not verified.
+- `OPTIONS["pool"]` **truthy or dynamic** while `CONN_MAX_AGE` is not `0`,
+  which Django rejects at startup with `ImproperlyConfigured`. Django reads the
+  value for truth, so a literal `"pool": False` is not a pool and is not
+  reported.
 
 **`a10-exceptional-conditions.md`**:
 
@@ -363,10 +432,10 @@ large tree can be streamed. A `kind` field discriminates the two shapes:
 | `column` | 1-based column | column reported by the parser |
 | `rule` | stable rule identifier | absent |
 | `severity` | `HIGH`, `MEDIUM`, or `LOW` | absent |
-| `category` | `sql`, `command`, `deser`, `xss`, `tls`, `crypto`, `drf`, `config`, `csrf`, `graphql`, `secret` | absent |
+| `category` | `sql`, `command`, `deser`, `xss`, `tls`, `ssrf`, `crypto`, `drf`, `config`, `csrf`, `graphql`, `secret` | absent |
 | `message` | what the rule decided | absent |
 | `reference` | the reference file that owns the rule | absent |
-| `snippet` | the source line, stripped, capped at 160 characters | absent |
+| `snippet` | the source line, stripped, capped at 160 characters, with ANSI escapes and control bytes removed; a `SEC001` snippet is the fixed text `<redacted: secret-shaped literal>`, so a report never prints the secret back | absent |
 | `error` | absent | the parser's message |
 
 The owning reference is a field of its own in JSON and is appended to the
@@ -375,7 +444,12 @@ for it without guessing and a human reading the terminal sees the same routing.
 
 A file that fails to parse — or that cannot be read — is reported as unparsed
 in both modes and counted separately in the summary. It is never skipped in
-silence.
+silence. A directory the walk cannot read is reported the same way.
+
+Two more shapes close the stream. A `kind: "error"` record names a path that is
+not a file or a directory. A `kind: "summary"` record is always the last line,
+and it carries `path`, `files_discovered`, `files_scanned`, `files_unparsed`,
+`hits` (after `--min-severity` filtering), and `walk_errors`.
 
 ### --selftest
 
@@ -386,8 +460,13 @@ python scripts/dangerous_patterns.py --selftest
 Runs alone, takes no path, and exercises source fixtures embedded in the module
 — nothing is read from or written to disk. It prints the rule identifiers
 expected and the ones produced for each fixture, reports which rules have no
-positive fixture, and reports failures explicitly. It exits 0 whether or not
-the fixtures pass, like every other mode.
+positive fixture, and reports failures explicitly. It returns **1** when any
+check fails and 0 when they all pass — the one mode whose exit code carries a
+verdict, because there the scanner itself is what is under test. Run it in CI
+and read `$?`.
+
+It also proves the `SEC001` redaction: it scans an assignment of a known canary
+string and asserts the canary reaches no snippet.
 
 There is one positive fixture per rule. The negative fixtures are correct code
 that must produce **no** hit: parameterized `cursor.execute` with `%s` and a
@@ -395,9 +474,12 @@ params sequence, `Manager.raw` with params, a fully literal `shell=True`
 command, `mark_safe` on a constant, `yaml.load` with `SafeLoader`, a secret
 assigned from `os.environ`, a literal dict expanded into `filter`, a
 module-level SQL constant, `eval` as an attribute alongside `SystemRandom` and
-`secrets`, and a docstring full of dangerous-looking text. Run it after
-changing a rule; a negative fixture that starts producing a hit is a
-regression on correct code, which is the failure this scanner exists to avoid.
+`secrets`, a docstring full of dangerous-looking text, `string.Template` from a
+bare `from string import Template`, `format_html` with a placeholder template
+and a separate value argument, `jwt.decode` with the signature verified, and a
+fetch of an operator-configured URL. Run it after changing a rule; a negative
+fixture that starts producing a hit is a regression on correct code, which is
+the failure this scanner exists to avoid.
 
 ### Indicators, by owning reference
 
@@ -430,17 +512,27 @@ server-side output:
   argument is not constant, LOW when they all are.
 - `TPL001` — `mark_safe` on a value that is not a constant. `mark_safe` on a
   constant is not reported.
-- `TPL002` — `format_html` whose first argument is an f-string, which
-  interpolates before it escapes.
+- `TPL002` — `format_html` whose first argument is already interpolated: an
+  f-string, a `%` operation, or a `.format()` call. The values went in before
+  escaping ran. `format_html("{}", value)` is the correct form and is not
+  reported.
 - `TPL003` — `Template(...)` or `Engine.from_string(...)` on a non-constant.
+  `string.Template` is exempt in both spellings — the attribute form and
+  `from string import Template` — because it is the stdlib substitution class
+  and not a template engine.
 - `TPL004` — `autoescape=False`.
 
 **`a08-integrity-and-deserialization.md`**:
 
-- `DES001` — `pickle.load` / `pickle.loads`, resolved through `import ... as`
-  and `from ... import`.
-- `DES002` — `yaml.load` whose `Loader` is absent or is not a `SafeLoader`,
-  decided from the keyword or the second positional argument.
+- `DES001` — `pickle.load` / `pickle.loads` and the libraries that carry the
+  same protocol: `cPickle`, `_pickle`, `dill`, `cloudpickle`, and
+  `joblib.load`. Resolved through `import ... as` and `from ... import`.
+- `DES002` — the unsafe `yaml` loaders. `yaml.load` and `yaml.load_all` whose
+  `Loader` is absent or is not a `SafeLoader`, decided from the keyword or the
+  second positional argument; `yaml.unsafe_load` and `yaml.unsafe_load_all`,
+  which construct arbitrary Python objects; and `yaml.full_load` and
+  `yaml.full_load_all` at MEDIUM, because the object set is wider than
+  `safe_load` and the wider set can be deliberate.
 - `DES003` — `marshal.load` / `marshal.loads`.
 - `DES004` — `jsonpickle.decode` / `jsonpickle.loads`.
 - `DES005` — a Celery task or result serializer set to `"pickle"`.
@@ -452,6 +544,9 @@ server-side output:
 
 - `NET001` — `verify=False`, which disables TLS certificate verification on an
   outbound call.
+- `NET002` — `ssl._create_unverified_context()`, `check_hostname = False`, or
+  `verify_mode = ssl.CERT_NONE`. The same failure `NET001` catches at the
+  `requests` layer, caught where a custom client builds its own context.
 - `RND001` — `random.random`, `randint`, `choice`, `shuffle`, `sample`, and
   `random.Random`. LOW: the default generator is a Mersenne Twister and is
   reconstructible from its output, so each hit turns on whether the value is a
@@ -461,11 +556,15 @@ server-side output:
 **`service-identity-and-secrets.md`**:
 
 - `SEC001` — a name ending in `SECRET`, `SECRET_KEY`, `SIGNING_KEY`,
-  `API_KEY`, `ACCESS_KEY`, `PRIVATE_KEY`, `PASSWORD`, or `TOKEN` assigned a
-  string literal of eight characters or more. Heuristic, so confirm the value
-  is not a placeholder. Any assignment whose value is a call is structurally
-  excluded, which covers `os.environ`, `env()`, `config()`, and every other
-  loader without naming them.
+  `API_KEY`, `ACCESS_KEY`, `PRIVATE_KEY`, `PASSWORD`, `PASSWD`, `PASSPHRASE`,
+  or `TOKEN` assigned a `str` or `bytes` literal of eight characters or more.
+  Heuristic, so confirm the value is not a placeholder. Any assignment whose
+  value is a call is structurally excluded, which covers `os.environ`,
+  `env()`, `config()`, and every other loader without naming them. The snippet
+  is redacted: the report names the line and never prints the literal.
+- `SEC002` — `jwt.decode` with `verify=False` or an `options` literal carrying
+  `verify_signature: False`. The token's contents are then whatever the caller
+  wrote.
 
 **`a02-security-misconfiguration.md`**:
 
@@ -475,7 +574,8 @@ server-side output:
 
 **`api-drf-specific.md`**:
 
-- `CFG001` — `fields = "__all__"` on a serializer.
+- `CFG001` — `fields = "__all__"` on a serializer or `ModelForm` `Meta`. Every
+  model field is exposed or writable, including ones added later.
 - `CFG005` — `@csrf_exempt`. Routed here rather than to the settings file
   because DRF enforces CSRF inside `SessionAuthentication` rather than through
   the middleware, so what `authentication_classes` resolves to for the view
@@ -486,3 +586,11 @@ server-side output:
 - `CFG006` — graphene `bypass_get_queryset`, as a decorator, a keyword, or an
   assignment. It makes traversal skip `get_queryset` entirely, so the resolver
   opts out of every scope its type declares.
+
+**`a01-broken-access-control.md`**:
+
+- `NET003` — a `requests`/`httpx` verb or `urllib.request.urlopen` call whose
+  URL argument derives from request data, resolved through the same taint
+  machinery as the ORM identifier rules. A URL from a settings value or a
+  module constant is not reported: who last wrote the value is the SSRF
+  question, and this rule only fires when the answer is the request.

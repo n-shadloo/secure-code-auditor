@@ -33,6 +33,7 @@ import argparse
 import ast
 import json
 import os
+import re
 import sys
 from collections import namedtuple
 
@@ -86,7 +87,8 @@ RULES = {
     "TPL001": ("xss", "MEDIUM", "a05-injection.md",
                "mark_safe on a value that is not a constant disables autoescaping"),
     "TPL002": ("xss", "MEDIUM", "a05-injection.md",
-               "format_html given an f-string interpolates before it escapes, defeating it"),
+               "format_html given an already-interpolated first argument (f-string, %, or "
+               ".format) - the values were inserted before escaping ran"),
     "TPL003": ("xss", "HIGH", "a05-injection.md",
                "template compiled from a value that is not a constant - where that source comes "
                "from decides whether a caller can author template code"),
@@ -98,7 +100,8 @@ RULES = {
                "random.* is a statistical PRNG reconstructible from its output - verify this "
                "value is not a secret, a token, or an identifier (use secrets)"),
     "CFG001": ("drf", "MEDIUM", "api-drf-specific.md",
-               "serializer fields='__all__' exposes every model field, including ones added later"),
+               "fields='__all__' on a serializer or ModelForm Meta exposes every model field, "
+               "including ones added later"),
     "CFG002": ("config", "MEDIUM", "a02-security-misconfiguration.md",
                "CORS_ALLOW_ALL_ORIGINS = True - use an allowlist"),
     "CFG003": ("config", "HIGH", "a02-security-misconfiguration.md",
@@ -115,6 +118,16 @@ RULES = {
     "SEC001": ("secret", "HIGH", "service-identity-and-secrets.md",
                "secret-shaped name assigned a string literal - load it from the environment "
                "(heuristic: confirm it is not a placeholder)"),
+    "SEC002": ("secret", "HIGH", "service-identity-and-secrets.md",
+               "jwt.decode with signature verification disabled accepts any caller-minted "
+               "token - verify the signature and pin algorithm, issuer, and audience"),
+    "NET002": ("tls", "HIGH", "a04-cryptographic-failures.md",
+               "TLS certificate verification disabled at the ssl layer - the connection "
+               "trusts whoever answers"),
+    "NET003": ("ssrf", "MEDIUM", "a01-broken-access-control.md",
+               "outbound HTTP call whose URL derives from request data - apply the "
+               "destination allowlist, the post-resolution address check, and bounded "
+               "redirects at the call"),
 }
 
 # --- SQL -------------------------------------------------------------------
@@ -146,9 +159,32 @@ INTERPOLATED = "interpolated"
 UNRESOLVED = "unresolved"
 
 SECRET_SUFFIXES = ("SECRET", "SECRET_KEY", "SIGNING_KEY", "API_KEY", "ACCESS_KEY",
-                   "PRIVATE_KEY", "PASSWORD", "TOKEN")
+                   "PRIVATE_KEY", "PASSWORD", "PASSWD", "PASSPHRASE", "TOKEN")
 
 PICKLE_CONTENT = ("pickle", "application/x-python-serialize")
+
+# Outbound HTTP call sites whose URL argument is worth reading when it derives
+# from request data. Resolved through imports, so `import requests as rq` and
+# `from httpx import get` both land here; a bare `session.get` on an arbitrary
+# receiver deliberately does not, because the receiver is unresolvable.
+HTTP_FETCHERS = frozenset(
+    "%s.%s" % (module, method)
+    for module in ("requests", "httpx")
+    for method in ("get", "post", "put", "patch", "delete", "head", "options", "request")
+) | {"urllib.request.urlopen"}
+
+# A source line goes into the report and into the JSON stream as it is. A
+# control byte or an ANSI escape in that line acts on the terminal that prints
+# the report, so every snippet is cleaned first. A tab becomes one space, which
+# keeps the words apart.
+ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b[@-Z\\-_]")
+CONTROL_BYTES = {code: None for code in range(32) if code != 9}
+CONTROL_BYTES[9] = " "
+CONTROL_BYTES[127] = None
+
+# A SEC001 hit names a secret-shaped literal. Its snippet holds the literal, so
+# the report would print the secret back. SEC001 gets this fixed text instead.
+SECRET_SNIPPET = "<redacted: secret-shaped literal>"
 
 
 def _walk_scope(body):
@@ -236,6 +272,11 @@ def _literal(node):
         return None
 
 
+def _sanitize(text):
+    """Remove the ANSI escapes and the control bytes from one snippet."""
+    return ANSI_ESCAPE.sub("", text).translate(CONTROL_BYTES)
+
+
 def _target_name(node):
     """The bound name of an assignment target, whether plain or an attribute."""
     if isinstance(node, ast.Name):
@@ -259,7 +300,14 @@ class Scanner(ast.NodeVisitor):
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
                 for alias in node.names:
-                    self.imported[alias.asname or alias.name.split(".")[0]] = alias.name
+                    if alias.asname:
+                        self.imported[alias.asname] = alias.name
+                    else:
+                        # `import a.b` binds the name `a`, and `a` is the
+                        # package `a`. A map from `a` to `a.b` makes a chain
+                        # resolve with the second part twice.
+                        top = alias.name.split(".")[0]
+                        self.imported[top] = top
             elif isinstance(node, ast.ImportFrom) and node.module and not node.level:
                 for alias in node.names:
                     self.imported[alias.asname or alias.name] = "%s.%s" % (node.module, alias.name)
@@ -269,15 +317,15 @@ class Scanner(ast.NodeVisitor):
 
     def _snippet(self, lineno):
         if 1 <= lineno <= len(self.lines):
-            return self.lines[lineno - 1].strip()[:160]
+            return _sanitize(self.lines[lineno - 1].strip()[:160])
         return ""
 
     def _emit(self, node, rule, severity=None, message=None):
         category, default_severity, reference, default_message = RULES[rule]
+        snippet = SECRET_SNIPPET if rule == "SEC001" else self._snippet(node.lineno)
         self.hits.append(Hit(self.path, node.lineno, node.col_offset + 1, rule,
                              severity or default_severity, category,
-                             message or default_message, reference,
-                             self._snippet(node.lineno)))
+                             message or default_message, reference, snippet))
 
     def _dotted(self, node):
         """The dotted path of a name or attribute chain, resolved through imports."""
@@ -407,6 +455,14 @@ class Scanner(ast.NodeVisitor):
             self._emit(node, "CFG001")
         elif upper == "BYPASS_GET_QUERYSET" and _literal(value) is True:
             self._emit(node, "CFG006")
+        elif upper == "CHECK_HOSTNAME" and _literal(value) is False:
+            self._emit(node, "NET002",
+                       message="check_hostname = False stops matching the certificate to the "
+                               "server it came from")
+        elif upper == "VERIFY_MODE" and (self._dotted(value) or "").endswith("CERT_NONE"):
+            self._emit(node, "NET002",
+                       message="verify_mode = ssl.CERT_NONE disables certificate verification "
+                               "on this context")
         elif upper in ("CELERY_TASK_SERIALIZER", "CELERY_RESULT_SERIALIZER",
                        "TASK_SERIALIZER", "RESULT_SERIALIZER"):
             if _literal(value) == "pickle":
@@ -422,7 +478,7 @@ class Scanner(ast.NodeVisitor):
         # excluded rather than pattern-matched out.
         if any(upper.endswith(suffix) for suffix in SECRET_SUFFIXES):
             literal = value.value if isinstance(value, ast.Constant) else None
-            if isinstance(literal, str) and len(literal) >= 8:
+            if isinstance(literal, (str, bytes)) and len(literal) >= 8:
                 self._emit(node, "SEC001")
 
     # -- calls -------------------------------------------------------------
@@ -442,7 +498,36 @@ class Scanner(ast.NodeVisitor):
         if dotted in ("random.random", "random.randint", "random.choice", "random.shuffle",
                       "random.sample", "random.Random"):
             self._emit(node, "RND001")
+        if dotted == "ssl._create_unverified_context":
+            self._emit(node, "NET002")
+        if dotted == "jwt.decode":
+            self._check_jwt_decode(node)
+        if dotted in HTTP_FETCHERS:
+            self._check_outbound_url(node, dotted)
         self.generic_visit(node)
+
+    def _check_jwt_decode(self, node):
+        for kw in node.keywords:
+            if kw.arg == "verify" and _literal(kw.value) is False:
+                self._emit(node, "SEC002")
+                return
+            if kw.arg == "options":
+                options = _literal(kw.value)
+                if isinstance(options, dict) and options.get("verify_signature") is False:
+                    self._emit(node, "SEC002")
+                    return
+
+    def _check_outbound_url(self, node, dotted):
+        index = 1 if dotted.endswith(".request") else 0
+        url = None
+        if len(node.args) > index:
+            url = node.args[index]
+        else:
+            for kw in node.keywords:
+                if kw.arg == "url":
+                    url = kw.value
+        if url is not None and self._tainted(url):
+            self._emit(node, "NET003")
 
     def _check_sql(self, node, attr, bare, func):
         if attr in CURSOR_METHODS and node.args:
@@ -528,13 +613,22 @@ class Scanner(ast.NodeVisitor):
 
     def _check_deserialization(self, node, dotted):
         if dotted in ("pickle.load", "pickle.loads", "cPickle.load", "cPickle.loads",
-                      "_pickle.load", "_pickle.loads"):
+                      "_pickle.load", "_pickle.loads", "dill.load", "dill.loads",
+                      "cloudpickle.load", "cloudpickle.loads", "joblib.load"):
             self._emit(node, "DES001")
         elif dotted in ("marshal.load", "marshal.loads"):
             self._emit(node, "DES003")
         elif dotted in ("jsonpickle.decode", "jsonpickle.loads"):
             self._emit(node, "DES004")
-        elif dotted == "yaml.load":
+        elif dotted in ("yaml.unsafe_load", "yaml.unsafe_load_all"):
+            self._emit(node, "DES002",
+                       message="yaml.unsafe_load constructs arbitrary Python objects - use "
+                               "yaml.safe_load")
+        elif dotted in ("yaml.full_load", "yaml.full_load_all"):
+            self._emit(node, "DES002", severity="MEDIUM",
+                       message="yaml.full_load constructs a wider object set than safe_load - "
+                               "use yaml.safe_load unless the wider set is deliberate")
+        elif dotted in ("yaml.load", "yaml.load_all"):
             loader = None
             for keyword in node.keywords:
                 if keyword.arg == "Loader":
@@ -558,15 +652,11 @@ class Scanner(ast.NodeVisitor):
             if self._classify(node.args[0]) != CONSTANT:
                 self._emit(node, "TPL001")
         elif name == "format_html" and node.args:
-            first = node.args[0]
-            if isinstance(first, ast.JoinedStr) and any(
-                    isinstance(v, ast.FormattedValue) for v in first.values):
+            if self._classify(node.args[0]) == INTERPOLATED:
                 self._emit(node, "TPL002")
         elif name in ("Template", "from_string") and node.args:
-            if name == "Template" and isinstance(node.func, ast.Attribute):
-                receiver = node.func.value
-                if isinstance(receiver, ast.Name) and receiver.id == "string":
-                    return
+            if name == "Template" and self._dotted(node.func) == "string.Template":
+                return
             if self._classify(node.args[0]) != CONSTANT:
                 self._emit(node, "TPL003")
 
@@ -606,8 +696,13 @@ def scan_file(path):
     return scan_source(path, source)
 
 
-def iter_py_files(root):
-    for dirpath, dirnames, filenames in os.walk(root):
+def iter_py_files(root, errors=None):
+    """Yield every .py file under root, recording the directories it cannot read."""
+    def record(exc):
+        if errors is not None:
+            errors.append((getattr(exc, "filename", None) or root, str(exc)))
+
+    for dirpath, dirnames, filenames in os.walk(root, onerror=record):
         dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
         for name in filenames:
             if name.endswith(".py"):
@@ -837,6 +932,83 @@ def documented():
     """
     return None
 '''),
+    ("DES002 yaml.unsafe_load", {"DES002"}, '''
+import yaml
+
+def parse(payload):
+    return yaml.unsafe_load(payload)
+'''),
+    ("DES002 yaml.full_load through from-import", {"DES002"}, '''
+from yaml import full_load
+
+def parse(payload):
+    return full_load(payload)
+'''),
+    ("DES001 joblib.load", {"DES001"}, '''
+import joblib
+
+def restore(path):
+    return joblib.load(path)
+'''),
+    ("TPL002 format_html on a percent-formatted template", {"TPL002"}, '''
+from django.utils.html import format_html
+
+def row(value):
+    return format_html("<td>%s</td>" % value)
+'''),
+    ("SEC002 jwt.decode with verification off", {"SEC002"}, '''
+import jwt
+
+def read_token(token, key):
+    return jwt.decode(token, key, options={"verify_signature": False})
+'''),
+    ("NET002 unverified ssl context", {"NET002"}, '''
+import ssl
+
+def insecure_context():
+    context = ssl._create_unverified_context()
+    context.check_hostname = False
+    return context
+'''),
+    ("NET003 fetch of a request-derived URL", {"NET003"}, '''
+import requests
+
+def preview(request):
+    target = request.GET["url"]
+    return requests.get(target, timeout=5)
+'''),
+    ("NET003 urlopen of a request-derived URL", {"NET003"}, '''
+import urllib.request
+
+def preview(request):
+    return urllib.request.urlopen(request.GET["url"])
+'''),
+    ("negative: string.Template from a bare import", set(), '''
+from string import Template
+
+def greeting(name):
+    return Template("Hello, $name").substitute(name=name)
+'''),
+    ("negative: fetch of an operator-configured URL", set(), '''
+import requests
+
+WEBHOOK_URL = "https://hooks.internal.example/notify"
+
+def notify(payload):
+    return requests.post(WEBHOOK_URL, json=payload, timeout=5)
+'''),
+    ("negative: jwt.decode with verification on", set(), '''
+import jwt
+
+def read_token(token, key):
+    return jwt.decode(token, key, algorithms=["RS256"], audience="api")
+'''),
+    ("negative: format_html with a placeholder template", set(), '''
+from django.utils.html import format_html
+
+def row(value):
+    return format_html("<td>{}</td>", value)
+'''),
 ]
 
 
@@ -847,6 +1019,7 @@ def selftest():
           % (len(FIXTURES), positive, len(FIXTURES) - positive))
 
     failures = []
+    passed = 0
     for name, expected, source in FIXTURES:
         hits, unparsed = scan_source("<%s>" % name, source)
         produced = {hit.rule for hit in hits}
@@ -857,6 +1030,7 @@ def selftest():
             produced_text = ", ".join(sorted(produced)) or "-"
             if produced == expected:
                 status = "ok"
+                passed += 1
             else:
                 status = "FAIL"
                 failures.append(
@@ -874,14 +1048,30 @@ def selftest():
         failures.append("no positive fixture for: %s" % ", ".join(missing))
         print("# uncovered rules: %s" % ", ".join(missing))
 
-    print("# %d passed, %d failed." % (len(FIXTURES) - len(failures), len(failures)))
+    # A SEC001 snippet must never carry the literal it reports. The canary is
+    # scanned here rather than in FIXTURES, because a fixture states rules and
+    # this check states the text of a snippet.
+    canary = "CANARY-9f4k2m8q1x"
+    canary_hits, _ = scan_source("<redaction>", 'SECRET_KEY = "%s"\n' % canary)
+    leaked = [hit for hit in canary_hits if canary in hit.snippet]
+    if not canary_hits:
+        failures.append("redaction: the canary assignment produced no hit to redact")
+    if leaked:
+        failures.append("redaction: the secret literal reached %d snippet(s)" % len(leaked))
+    print("# redaction: %s"
+          % ("FAILED" if leaked or not canary_hits
+             else "the secret literal is absent from every snippet"))
+
+    print("# %d fixture(s) passed, %d check(s) failed." % (passed, len(failures)))
     if failures:
         print("\n# FAILURES")
         for failure in failures:
             print("#   %s" % failure)
     else:
         print("# every negative fixture produced no hit.")
-    return 0
+    # The self-test is the one path where a nonzero exit is part of the
+    # contract: CI reads it as the gate on this scanner.
+    return 1 if failures else 0
 
 
 def main():
@@ -902,13 +1092,17 @@ def main():
         return selftest()
 
     path = args.path or "."
+    walk_errors = []
+    missing = False
     if os.path.isfile(path):
         targets = [path]
     elif os.path.isdir(path):
-        targets = list(iter_py_files(path))
+        targets = list(iter_py_files(path, walk_errors))
     else:
-        print("Not a file or directory: %s" % path, file=sys.stderr)
-        return 0
+        targets = []
+        missing = True
+        if not args.json:
+            print("Not a file or directory: %s" % path, file=sys.stderr)
 
     threshold = SEVERITY_ORDER[args.min_severity]
     per_file = []
@@ -929,6 +1123,9 @@ def main():
                 counts[hit.severity] += 1
 
     if args.json:
+        if missing:
+            print(json.dumps({"kind": "error", "file": path,
+                              "error": "not a file or directory"}, sort_keys=True))
         for target, hits in per_file:
             for hit in hits:
                 print(json.dumps({
@@ -951,6 +1148,17 @@ def main():
                 "column": failure.column,
                 "error": failure.error,
             }, sort_keys=True))
+        # The stream always ends here, so a reader that gets no summary knows
+        # the scan stopped rather than finding nothing.
+        print(json.dumps({
+            "kind": "summary",
+            "path": path,
+            "files_discovered": len(targets),
+            "files_scanned": len(targets) - len(unparsed),
+            "files_unparsed": len(unparsed),
+            "hits": total,
+            "walk_errors": len(walk_errors),
+        }, sort_keys=True))
         return 0
 
     for target, hits in per_file:
@@ -966,11 +1174,21 @@ def main():
         for failure in unparsed:
             print("  %s: %s" % (failure.path, failure.error))
 
+    if walk_errors:
+        print("\n# not traversed")
+        for directory, error in walk_errors:
+            print("  %s: %s" % (directory, error))
+
     print("\n# %d indicator(s): %d high, %d medium, %d low."
           % (total, counts["HIGH"], counts["MEDIUM"], counts["LOW"]))
+    print("# %d file(s) discovered, %d scanned, %d unparsed; %d traversal error(s)."
+          % (len(targets), len(targets) - len(unparsed), len(unparsed), len(walk_errors)))
     if unparsed:
         print("# %d file(s) could not be parsed and were NOT scanned - a silent skip would look "
               "like a clean result." % len(unparsed))
+    if walk_errors:
+        print("# %d director(ies) could not be read and were NOT scanned - a silent skip would "
+              "look like a clean result." % len(walk_errors))
     print("# Indicators are leads, not confirmed findings. Verify each by reading the code and "
           "tracing the data flow.")
     return 0

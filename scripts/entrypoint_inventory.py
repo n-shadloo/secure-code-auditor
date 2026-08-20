@@ -90,8 +90,10 @@ DRF_VIEW_BASES = {"APIView", "GenericAPIView", "ViewSet", "GenericViewSet", "Mod
                   "ReadOnlyModelViewSet", "ViewSetMixin"}
 PLAIN_VIEW_BASES = {"View", "TemplateView", "ListView", "DetailView", "CreateView", "UpdateView",
                     "DeleteView", "FormView", "RedirectView", "object"}
-AUTH_MIXINS = {"LoginRequiredMixin", "PermissionRequiredMixin", "UserPassesTestMixin",
-               "AccessMixin"}
+# AccessMixin is deliberately absent: it configures the failure handling
+# (login_url, raise_exception, handle_no_permission) and enforces nothing on
+# its own, so a class that only has it declares no authorization.
+AUTH_MIXINS = {"LoginRequiredMixin", "PermissionRequiredMixin", "UserPassesTestMixin"}
 AUTH_DECORATORS = {"login_required", "permission_required", "user_passes_test",
                    "staff_member_required", "permission_classes"}
 
@@ -222,6 +224,7 @@ class ModuleScan:
         self.module = module
         self.tree = tree
         self.imports = set()
+        self.import_map = {}    # bound name -> the dotted path that name refers to
         self.routes = {}        # name -> [Decl], in source order
         self.routers = {}       # router variable -> [Registration]
         self.ninja = {}         # api/router variable -> auth declared at construction
@@ -236,8 +239,15 @@ class ModuleScan:
             if isinstance(node, ast.Import):
                 for alias in node.names:
                     self.imports.add(alias.name.split(".")[0])
+                    # `import a.b` binds `a`, which is the package `a`.
+                    self.import_map[alias.asname or alias.name.split(".")[0]] = (
+                        alias.name if alias.asname else alias.name.split(".")[0])
             elif isinstance(node, ast.ImportFrom) and node.module:
                 self.imports.add(node.module.split(".")[0])
+                if not node.level:
+                    for alias in node.names:
+                        self.import_map[alias.asname or alias.name] = (
+                            "%s.%s" % (node.module, alias.name))
 
         self._collect_constructions()
         self._collect_registrations()
@@ -250,6 +260,17 @@ class ModuleScan:
         self._collect_signal_connects()
         self._collect_command()
         return self
+
+    def _resolved(self, node):
+        """The dotted path of a name or attribute chain, resolved through imports."""
+        path = dotted(node)
+        if not path:
+            return None
+        parts = path.split(".")
+        head = self.import_map.get(parts[0])
+        if head:
+            parts[0:1] = head.split(".")
+        return ".".join(parts)
 
     def add(self, family, node, label, detail=None, authz=None):
         self.entries.append(Entry(family, self.path, node.lineno, node.col_offset + 1,
@@ -318,9 +339,13 @@ class ModuleScan:
         for key, value in zip(mapping.keys, mapping.values):
             protocol = literal(key) or "?"
             wrapper = render(value) or "<expression>"
-            authenticated = "AuthMiddleware" in ast.dump(value)
+            # AuthMiddlewareStack supplies the identity, not the authorization:
+            # it puts a user in the scope and permits every consumer it wraps.
+            # The stack stays in the detail; the column reports ABSENT, because
+            # the router declares no authorization and has no default that
+            # supplies one. The consumer rows carry their own state.
             self.add("channels", node, "ProtocolTypeRouter[%s]" % protocol,
-                     {"stack": wrapper}, DECLARED if authenticated else ABSENT)
+                     {"stack": wrapper}, ABSENT)
 
     def _collect_signal_connects(self):
         for node in ast.walk(self.tree):
@@ -444,13 +469,24 @@ class ModuleScan:
         decorators = dict(decorator_names(node))
         names = set(decorators)
 
-        if "shared_task" in names or any(
-                tail(d.func if isinstance(d, ast.Call) else d) == "task"
-                for d in node.decorator_list):
+        task_decorator = None
+        for decorator in node.decorator_list:
+            target = decorator.func if isinstance(decorator, ast.Call) else decorator
+            if tail(target) in ("shared_task", "task"):
+                task_decorator = target
+                break
+        if task_decorator is not None:
             call = decorators.get("shared_task") or decorators.get("task")
+            # a08-integrity-and-deserialization.md, "Django's built-in tasks
+            # framework": a bare `@task` that resolves to django.tasks is not
+            # Celery. Its default backend runs the task inline in the caller's
+            # transaction, so the row states which system it belongs to.
+            resolved = self._resolved(task_decorator) or ""
+            system = "django-tasks" if resolved.startswith("django.tasks") else "celery"
             self.add("celery", node, "%s.%s" % (self.module, node.name) if self.module
                      else node.name,
-                     {"name": render(keyword(call, "name")) if call else None,
+                     {"system": system,
+                      "name": render(keyword(call, "name")) if call else None,
                       "bind": render(keyword(call, "bind")) if call else None,
                       "queue": render(keyword(call, "queue")) if call else None})
             return
@@ -597,11 +633,17 @@ class ModuleScan:
 # --- the project ------------------------------------------------------------
 
 
-def iter_py_files(root):
+def iter_py_files(root, errors=None):
+    """Yield every .py file under root, recording the directories it cannot read."""
     if os.path.isfile(root):
         yield root
         return
-    for dirpath, dirnames, filenames in os.walk(root):
+
+    def record(exc):
+        if errors is not None:
+            errors.append((getattr(exc, "filename", None) or root, str(exc)))
+
+    for dirpath, dirnames, filenames in os.walk(root, onerror=record):
         dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
         for name in sorted(filenames):
             if name.endswith(".py"):
@@ -621,12 +663,15 @@ class Project:
         self.root = root
         self.modules = []
         self.unparsed = []
+        self.walk_errors = []
+        self.discovered = 0
         self.by_dotted = {}
         self.views = {}
         self.notes = []
 
     def load(self):
-        for path in iter_py_files(self.root):
+        for path in iter_py_files(self.root, self.walk_errors):
+            self.discovered += 1
             try:
                 with open(path, "r", encoding="utf-8", errors="replace") as fh:
                     source = fh.read()
@@ -889,6 +934,19 @@ def print_json(entries, unparsed):
         }, sort_keys=True))
 
 
+def print_summary(path, discovered, scanned, unparsed, entries, walk_errors):
+    """The last record of every JSON stream, so an empty stream never occurs."""
+    print(json.dumps({
+        "kind": "summary",
+        "path": path,
+        "files_discovered": discovered,
+        "files_scanned": scanned,
+        "files_unparsed": unparsed,
+        "entries": entries,
+        "walk_errors": walk_errors,
+    }, sort_keys=True))
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Read-only, AST-based inventory of application entry points.")
@@ -907,14 +965,26 @@ def main():
                      if name.strip()]
         unknown = [name for name in requested if name not in FAMILIES]
         if unknown:
-            print("Unknown famil(ies): %s. Valid: %s"
-                  % (", ".join(unknown), ", ".join(FAMILIES)), file=sys.stderr)
+            message = "unknown famil(ies): %s. Valid: %s" % (", ".join(unknown),
+                                                             ", ".join(FAMILIES))
+            if args.json:
+                print(json.dumps({"kind": "error", "file": args.path or ".",
+                                  "error": message}, sort_keys=True))
+                print_summary(args.path or ".", 0, 0, 0, 0, 0)
+            else:
+                print("Unknown famil(ies): %s. Valid: %s"
+                      % (", ".join(unknown), ", ".join(FAMILIES)), file=sys.stderr)
             return 0
         families = [name for name in FAMILIES if name in requested]
 
     root = args.path or "."
-    if not os.path.exists(root):
-        print("Not a file or directory: %s" % root, file=sys.stderr)
+    if not (os.path.isfile(root) or os.path.isdir(root)):
+        if args.json:
+            print(json.dumps({"kind": "error", "file": root,
+                              "error": "not a file or directory"}, sort_keys=True))
+            print_summary(root, 0, 0, 0, 0, 0)
+        else:
+            print("Not a file or directory: %s" % root, file=sys.stderr)
         return 0
 
     context, notes = ({}, [])
@@ -956,8 +1026,18 @@ def main():
 
     if args.json:
         print_json(entries, project.unparsed)
+        for directory, error in project.walk_errors:
+            print(json.dumps({"kind": "unparsed", "file": directory, "line": 0, "column": 0,
+                              "error": "could not be read: %s" % error}, sort_keys=True))
+        print_summary(root, project.discovered, len(project.modules),
+                      len(project.unparsed), len(entries), len(project.walk_errors))
     else:
         print_text(root, entries, project.unparsed, families, context, notes, roots)
+        for directory, error in project.walk_errors:
+            print("# %s could not be read and was NOT scanned: %s" % (directory, error))
+        print("# %d file(s) discovered, %d scanned, %d unparsed; %d traversal error(s)."
+              % (project.discovered, len(project.modules), len(project.unparsed),
+                 len(project.walk_errors)))
     return 0
 
 

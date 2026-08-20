@@ -54,6 +54,8 @@ A10 = "a10-exceptional-conditions.md"
 DATA = "data-layer-and-database.md"
 DEPLOY = "deployment-and-runtime.md"
 SECRETS = "service-identity-and-secrets.md"
+A07 = "a07-authentication-failures.md"
+DRF = "api-drf-specific.md"
 
 # setting -> (insecure_literal_value, human note). We only judge literals.
 BOOL_TRUE_BAD = "insecure if this is the production value"
@@ -67,6 +69,18 @@ CHECKS = {
     "SESSION_COOKIE_HTTPONLY": ("should be True", False),
     "CSRF_COOKIE_SECURE": ("should be True", False),
     "SECURE_HSTS_INCLUDE_SUBDOMAINS": ("should be True with HSTS", False),
+}
+
+# An HSTS companion setting does nothing while SECURE_HSTS_SECONDS is absent
+# or zero. Judge one only when HSTS is on, or when the scan cannot read it.
+HSTS_COMPANIONS = ("SECURE_HSTS_INCLUDE_SUBDOMAINS", "SECURE_HSTS_PRELOAD")
+
+# Settings whose Django default already equals the value the check expects.
+# Verified against django/conf/global_settings.py in Django 6.0. The absence of
+# one of these is a fact to know, not a weakness, so it is reported as INFO.
+SAFE_DEFAULTS = {
+    "SECURE_CONTENT_TYPE_NOSNIFF": "True",
+    "SESSION_COOKIE_HTTPONLY": "True",
 }
 
 UNSET = "not set in this module or anything it imports"
@@ -259,7 +273,10 @@ def resolve_package(directory: str):
     checks against it would print a page of "not set" that reads exactly like a
     settings module with everything missing.
     """
-    names = sorted(name for name in os.listdir(directory) if name.endswith(".py"))
+    try:
+        names = sorted(name for name in os.listdir(directory) if name.endswith(".py"))
+    except OSError as exc:
+        return [], [], [], [(directory, str(exc))]
     resolutions = [resolve_settings(os.path.join(directory, name)) for name in names]
     imported = set()
     for resolution in resolutions:
@@ -274,7 +291,7 @@ def resolve_package(directory: str):
     roots = [r for r in roots if r.assigns or r.unparsed or r.notes]
     folded = [os.path.join(directory, name) for name in names
               if os.path.realpath(os.path.join(directory, name)) in imported]
-    return roots, folded, empty
+    return roots, folded, empty, []
 
 
 # --- the checks -------------------------------------------------------------
@@ -334,7 +351,9 @@ def check_databases(assigns: dict[str, ast.AST], report: Report) -> None:
 
         # data-layer-and-database.md: only verify-ca/verify-full validate the
         # server certificate; "require" encrypts and accepts whatever answers.
-        if isinstance(engine, str) and "postgresql" in engine and not options_dynamic:
+        postgres = isinstance(engine, str) and ("postgresql" in engine
+                                                or engine.endswith("postgis"))
+        if postgres and not options_dynamic:
             sslmode = literal(options["sslmode"]) if options and "sslmode" in options else None
             if sslmode in ("verify-full", "verify-ca"):
                 report.emit("DATABASES", "OK",
@@ -349,9 +368,22 @@ def check_databases(assigns: dict[str, ast.AST], report: Report) -> None:
                             "DATABASES['%s'] sslmode %s - only 'verify-ca'/'verify-full' validate "
                             "the server certificate" % (alias, shown), DATA)
 
+        # data-layer-and-database.md: MySQL/MariaDB verify the server only when
+        # OPTIONS['ssl'] supplies a CA; without it the connection is unencrypted
+        # or unverified depending on the server's default.
+        if isinstance(engine, str) and engine.rsplit(".", 1)[-1] in ("mysql",) \
+                and not options_dynamic:
+            if not options or "ssl" not in options:
+                report.emit("DATABASES", "MEDIUM",
+                            "DATABASES['%s'] has no OPTIONS['ssl'] - supply the CA so the MySQL "
+                            "server is verified, not merely dialed" % alias, DATA)
+
         # data-layer-and-database.md: the built-in pool requires CONN_MAX_AGE = 0
         # or Django raises ImproperlyConfigured at startup.
-        if options and "pool" in options:
+        # Django reads the value for truth, so a literal `"pool": False` and an
+        # empty dict are not a pool.
+        pool = literal(options["pool"]) if options and "pool" in options else False
+        if pool is _DYNAMIC or pool:
             conn_max_age = literal(conf["CONN_MAX_AGE"]) if "CONN_MAX_AGE" in conf else 0
             if conn_max_age is _DYNAMIC:
                 report.emit("DATABASES", "INFO",
@@ -419,17 +451,27 @@ def scan(resolution: Resolution) -> Report:
                             "SECRET_KEY is a hardcoded string literal - load it from the "
                             "environment", SECRETS)
         elif val is _DYNAMIC:
-            report.emit("SECRET_KEY", "OK",
-                        "SECRET_KEY is dynamic (good if from env/secrets manager)", SECRETS)
+            report.emit("SECRET_KEY", "INFO",
+                        "SECRET_KEY is dynamic - confirm the source is the environment or a "
+                        "secrets manager", SECRETS)
 
     # boolean-ish security flags
+    hsts = literal(assigns["SECURE_HSTS_SECONDS"]) if "SECURE_HSTS_SECONDS" in assigns else 0
+    hsts_on = hsts is _DYNAMIC or (isinstance(hsts, int) and hsts > 0)
     for name, (note, bad_default) in CHECKS.items():
         if name == "DEBUG":
             continue
         if report.conditional(name, A02):
             continue
+        if name in HSTS_COMPANIONS and not hsts_on:
+            continue
         if name not in assigns:
-            report.emit(name, "LOW", "%s not set - %s" % (name, note), A02)
+            if name in SAFE_DEFAULTS:
+                report.emit(name, "INFO",
+                            "%s not set - Django's default is %s, which is already the expected "
+                            "value" % (name, SAFE_DEFAULTS[name]), A02)
+            else:
+                report.emit(name, "LOW", "%s not set - %s" % (name, note), A02)
             continue
         val = literal(assigns[name])
         if val is _DYNAMIC:
@@ -529,6 +571,131 @@ def scan(resolution: Resolution) -> Report:
                             "PASSWORD_HASHERS starts with %r - verify the first entry is "
                             "memory-hard; Argon2id is the preferred choice" % hashers[0], A04)
 
+    # a02-security-misconfiguration.md: middleware membership, judged only on a
+    # literal list with no later `+=` - an augmented list may add what the
+    # literal lacks, and asserting an absence there would be a false positive.
+    if "MIDDLEWARE" in assigns and not report.conditional("MIDDLEWARE", A02):
+        if "MIDDLEWARE" in resolution.augments:
+            report.emit("MIDDLEWARE", "INFO",
+                        "MIDDLEWARE is extended with += - membership is not judged; confirm "
+                        "Security/Csrf/XFrameOptions middleware by hand", A02)
+        else:
+            mw = literal(assigns["MIDDLEWARE"])
+            if mw is _DYNAMIC:
+                report.emit("MIDDLEWARE", "INFO",
+                            "MIDDLEWARE is dynamic - verify SecurityMiddleware, "
+                            "CsrfViewMiddleware, and XFrameOptionsMiddleware are present", A02)
+            elif isinstance(mw, (list, tuple)):
+                entries = [m for m in mw if isinstance(m, str)]
+
+                def present(suffix):
+                    return any(entry.endswith(suffix) for entry in entries)
+
+                if not present("CsrfViewMiddleware"):
+                    report.emit("MIDDLEWARE", "HIGH",
+                                "MIDDLEWARE has no CsrfViewMiddleware - cookie-authenticated "
+                                "state changes run with no CSRF check", A02)
+                if not present("SecurityMiddleware"):
+                    report.emit("MIDDLEWARE", "MEDIUM",
+                                "MIDDLEWARE has no SecurityMiddleware - the SECURE_* header and "
+                                "redirect settings are inert without it", A02)
+                if not present("XFrameOptionsMiddleware"):
+                    report.emit("MIDDLEWARE", "LOW",
+                                "MIDDLEWARE has no XFrameOptionsMiddleware - X_FRAME_OPTIONS "
+                                "emits no header without it", A02)
+                csp_settings = [name for name in ("SECURE_CSP", "SECURE_CSP_REPORT_ONLY")
+                                if name in assigns]
+                if csp_settings and not present("ContentSecurityPolicyMiddleware") \
+                        and not any("csp" in entry.lower() for entry in entries):
+                    report.emit("MIDDLEWARE", "MEDIUM",
+                                "%s set but no CSP middleware is installed - the setting is "
+                                "inert without django.middleware.csp."
+                                "ContentSecurityPolicyMiddleware (Django 6.0+) or django-csp's "
+                                "middleware before it" % " and ".join(csp_settings), A02)
+
+    # a07-authentication-failures.md: signed_cookies holds no server-side
+    # record, so nothing can revoke one session early.
+    if "SESSION_ENGINE" in assigns and not report.conditional("SESSION_ENGINE", A07):
+        val = literal(assigns["SESSION_ENGINE"])
+        if isinstance(val, str) and val.endswith("signed_cookies"):
+            report.emit("SESSION_ENGINE", "MEDIUM",
+                        "SESSION_ENGINE is signed_cookies - the server holds no session record, "
+                        "so logout clears the browser copy only and a captured cookie stays "
+                        "valid until SESSION_COOKIE_AGE runs out; the payload is signed, not "
+                        "encrypted", A07)
+
+    # a02-security-misconfiguration.md: SameSite weakened. Django's default is
+    # 'Lax'; Python None removes the attribute, the string "None" opts into
+    # cross-site sending and requires Secure to be accepted at all.
+    for name in ("SESSION_COOKIE_SAMESITE", "CSRF_COOKIE_SAMESITE"):
+        if name in assigns and not report.conditional(name, A02):
+            val = literal(assigns[name])
+            if val is None:
+                report.emit(name, "LOW",
+                            "%s = None removes the SameSite attribute - Django's default is "
+                            "'Lax'" % name, A02)
+            elif val == "None":
+                secure_name = name.replace("_SAMESITE", "_SECURE")
+                secure = assigns.get(secure_name)
+                severity = "LOW" if secure is not None and literal(secure) is True else "MEDIUM"
+                report.emit(name, severity,
+                            "%s = 'None' opts into cross-site sending%s" % (
+                                name,
+                                "" if severity == "LOW"
+                                else " and %s is not True, so browsers drop the cookie "
+                                     "entirely" % secure_name), A02)
+
+    # a02-security-misconfiguration.md: SecurityMiddleware sends
+    # Cross-Origin-Opener-Policy: same-origin by default; None or 'unsafe-none'
+    # switches that isolation off.
+    if "SECURE_CROSS_ORIGIN_OPENER_POLICY" in assigns \
+            and not report.conditional("SECURE_CROSS_ORIGIN_OPENER_POLICY", A02):
+        val = literal(assigns["SECURE_CROSS_ORIGIN_OPENER_POLICY"])
+        if val is None or val == "unsafe-none":
+            report.emit("SECURE_CROSS_ORIGIN_OPENER_POLICY", "LOW",
+                        "SECURE_CROSS_ORIGIN_OPENER_POLICY weakened to %r - the 'same-origin' "
+                        "default keeps other origins from holding a handle to this window"
+                        % val, A02)
+
+    # deployment-and-runtime.md: same trust rule as SECURE_PROXY_SSL_HEADER -
+    # only the proxy can make this safe, and every absolute URL Django builds
+    # (password reset links included) believes the forwarded host.
+    if "USE_X_FORWARDED_HOST" in assigns \
+            and literal(assigns["USE_X_FORWARDED_HOST"]) is True:
+        report.emit("USE_X_FORWARDED_HOST", "INFO",
+                    "USE_X_FORWARDED_HOST = True - only safe if the proxy sets X-Forwarded-Host "
+                    "unconditionally and strips any client-supplied copy", DEPLOY)
+
+    # api-drf-specific.md: DRF's own default permission is AllowAny, so a
+    # REST_FRAMEWORK block that leaves DEFAULT_PERMISSION_CLASSES unset makes
+    # every view that declares nothing public.
+    if "REST_FRAMEWORK" in assigns and not report.conditional("REST_FRAMEWORK", DRF):
+        conf = dict_items(assigns["REST_FRAMEWORK"])
+        if conf is None:
+            report.emit("REST_FRAMEWORK", "INFO",
+                        "REST_FRAMEWORK is dynamic - verify DEFAULT_PERMISSION_CLASSES and "
+                        "DEFAULT_AUTHENTICATION_CLASSES by hand", DRF)
+        else:
+            if "DEFAULT_PERMISSION_CLASSES" not in conf:
+                report.emit("REST_FRAMEWORK", "MEDIUM",
+                            "REST_FRAMEWORK sets no DEFAULT_PERMISSION_CLASSES - DRF defaults "
+                            "to AllowAny, so every view that declares nothing is public", DRF)
+            else:
+                perms = literal(conf["DEFAULT_PERMISSION_CLASSES"])
+                if perms is _DYNAMIC:
+                    report.emit("REST_FRAMEWORK", "INFO",
+                                "DEFAULT_PERMISSION_CLASSES is dynamic - verify the default "
+                                "denies", DRF)
+                elif isinstance(perms, (list, tuple)) and any(
+                        isinstance(p, str) and p.endswith("AllowAny") for p in perms):
+                    report.emit("REST_FRAMEWORK", "MEDIUM",
+                                "DEFAULT_PERMISSION_CLASSES is AllowAny - every view that "
+                                "declares nothing is public", DRF)
+            if "DEFAULT_AUTHENTICATION_CLASSES" not in conf:
+                report.emit("REST_FRAMEWORK", "INFO",
+                            "REST_FRAMEWORK sets no DEFAULT_AUTHENTICATION_CLASSES - views fall "
+                            "back on session and basic authentication", DRF)
+
     # a08-integrity-and-deserialization.md: pickle sessions were removed in
     # Django 5.0, so any pickle serializer here is a custom one.
     if "SESSION_SERIALIZER" in assigns and not report.conditional("SESSION_SERIALIZER", A08):
@@ -587,25 +754,40 @@ def main() -> int:
                         help="Emit one JSON object per record, one per line")
     args = parser.parse_args()
 
+    discovered = 0
+    missing = False
     if os.path.isdir(args.path):
-        resolutions, folded, empty = resolve_package(args.path)
+        resolutions, folded, empty, walk_errors = resolve_package(args.path)
+        discovered = len(resolutions) + len(folded) + len(empty)
     elif os.path.isfile(args.path):
-        resolutions, folded, empty = [resolve_settings(args.path)], [], []
+        resolutions, folded, empty, walk_errors = [resolve_settings(args.path)], [], [], []
+        discovered = 1
     else:
-        print("Cannot read %s: not a file or directory" % args.path, file=sys.stderr)
-        return 0
+        resolutions, folded, empty, walk_errors = [], [], [], []
+        missing = True
+        if not args.json:
+            print("Cannot read %s: not a file or directory" % args.path, file=sys.stderr)
 
+    scanned = set(folded) | set(empty)
+    unparsed_total = 0
+    findings_total = 0
     for resolution in resolutions:
         # Nothing parsed, so there is nothing to judge: report the failure
         # rather than a page of checks reading "not set".
         report = Report(resolution) if resolution.unparsed and not resolution.assigns \
             else scan(resolution)
+        scanned.update(resolution.modules)
+        unparsed_total += len(resolution.unparsed)
+        findings_total += len(report.findings)
         if args.json:
             print_json(resolution, report)
         else:
             print_text(resolution, report)
 
     if args.json:
+        if missing:
+            print(json.dumps({"kind": "error", "file": args.path,
+                              "error": "not a file or directory"}, sort_keys=True))
         for path in folded:
             print(json.dumps({"kind": "note", "file": path, "severity": "INFO",
                               "message": "folded in as an imported base rather than scanned on "
@@ -614,6 +796,21 @@ def main() -> int:
             print(json.dumps({"kind": "note", "file": path, "severity": "INFO",
                               "message": "assigns nothing - named rather than scanned"},
                              sort_keys=True))
+        for directory, error in walk_errors:
+            print(json.dumps({"kind": "note", "file": directory, "severity": "MEDIUM",
+                              "message": "could not be read and was NOT scanned: %s" % error},
+                             sort_keys=True))
+        # The stream always ends here, so a reader that gets no summary knows
+        # the scan stopped rather than finding nothing.
+        print(json.dumps({
+            "kind": "summary",
+            "path": args.path,
+            "files_discovered": discovered,
+            "files_scanned": len(scanned),
+            "files_unparsed": unparsed_total,
+            "findings": findings_total,
+            "walk_errors": len(walk_errors),
+        }, sort_keys=True))
         return 0
 
     if folded:
@@ -621,8 +818,13 @@ def main() -> int:
               % ", ".join(folded))
     if empty:
         print("# assigns nothing, so named rather than scanned: %s" % ", ".join(empty))
+    for directory, error in walk_errors:
+        print("# %s could not be read and was NOT scanned: %s" % (directory, error))
     if not resolutions:
         print("# no module in %s assigns anything - nothing was scanned." % args.path)
+    print("# %d module(s) discovered, %d scanned, %d unparsed; %d finding(s); %d traversal "
+          "error(s)." % (discovered, len(scanned), unparsed_total, findings_total,
+                         len(walk_errors)))
     print("# Done. Findings are indicators; confirm each by reading the code.")
     return 0
 

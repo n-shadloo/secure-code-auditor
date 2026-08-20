@@ -50,3 +50,45 @@ jobs:
 
           print(f"OK: name={data['name']} description={len(description)} chars")
           PY
+
+  scanners:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run the dangerous_patterns self-test
+        run: python scripts/dangerous_patterns.py --selftest
+      - name: Every JSON stream ends with a summary record
+        run: |
+          python - <<'PY'
+          import json, subprocess, sys
+
+          scripts = ("dangerous_patterns.py", "settings_scan.py", "entrypoint_inventory.py")
+          errors = []
+          for name in scripts:
+              run = subprocess.run(
+                  [sys.executable, "scripts/" + name, "/nonexistent/path", "--json"],
+                  capture_output=True, text=True)
+              if run.returncode != 0:
+                  errors.append(f"{name}: exit {run.returncode}, expected 0")
+              lines = [line for line in run.stdout.splitlines() if line.strip()]
+              if not lines:
+                  errors.append(f"{name}: empty JSON stream on a missing path")
+                  continue
+              try:
+                  last = json.loads(lines[-1])
+              except json.JSONDecodeError as exc:
+                  errors.append(f"{name}: last line is not JSON: {exc}")
+                  continue
+              if last.get("kind") != "summary":
+                  errors.append(f"{name}: last record kind is {last.get('kind')!r}, "
+                                "expected 'summary'")
+              else:
+                  print(f"OK: {name} -> {last}")
+
+          if errors:
+              sys.exit("scanner summary smoke check failed:\n"
+                       + "\n".join(f"  - {e}" for e in errors))
+          PY
