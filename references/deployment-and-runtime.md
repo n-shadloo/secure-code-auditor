@@ -409,6 +409,10 @@ console or Debug Toolbar, medium for metrics and health disclosure.
   (default 100), and `--limit-request-field-size` (default 8190) bound the
   request line and headers before any Django code runs.
 
+This file owns the finding on whether a setting or a runtime posture is unsafe.
+Deploy sequencing, process supervision, and rollback behavior are outside its
+scope.
+
 ## systemd hardening
 
 Restrict the service unit:

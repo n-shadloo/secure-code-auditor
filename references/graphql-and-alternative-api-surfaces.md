@@ -479,6 +479,10 @@ against query counts under a realistic nested document rather than trusting
 that the optimizer engaged. The pool-side consequence and its limits are in
 `data-layer-and-database.md`, "Connection exhaustion and query timeouts".
 
+This file owns the finding when an unbounded query becomes a
+denial-of-service surface or a scope bypass. Query count, batching, and plan
+work are outside its scope.
+
 ## Persisted queries and operation allowlists
 
 Where the API serves only first-party clients — which is most Django GraphQL

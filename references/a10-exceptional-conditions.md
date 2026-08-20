@@ -340,12 +340,13 @@ with transaction.atomic():
   enqueue itself is lost when the process dies between the commit and the
   callback, so `on_commit` orders the work without making it durable. Where
   the record must not be lost, use the transactional outbox in
-  `a09-logging-and-alerting.md`, "Lifecycle hooks and audit guarantees". Let
-  `django-async-jobs` own the dispatcher that drains it. Past the broker, a
-  worker that finishes the work and dies before acknowledging causes a
-  redelivery. Every task must therefore be safe to run twice. Re-check the
-  state before you act, rather than assuming the first run did not happen.
-  That is the same design as the next section, applied to a worker.
+  `a09-logging-and-alerting.md`, "Lifecycle hooks and audit guarantees". The
+  dispatcher that drains it belongs to queue delivery and retry mechanics,
+  which this file does not cover. Past the broker, a worker that finishes the
+  work and dies before acknowledging causes a redelivery. Every task must
+  therefore be safe to run twice. Re-check the state before you act, rather
+  than assuming the first run did not happen. That is the same design as the
+  next section, applied to a worker.
 - Two tasks enqueued in order are not guaranteed to execute in order or on the
   same worker. Never let task B assume it can see task A's effect; have it
   check.

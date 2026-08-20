@@ -667,10 +667,9 @@ access for one deployment window is still an access-control vulnerability.
 A large backfill runs in batches. The batch boundary is where the invariant
 breaks. Never sacrifice the invariant to make the operation resumable. A batch
 that leaves rows at a permissive default widens access for that window. Batch
-design, transaction behavior, and the `atomic` setting belong to the
-`django-migration-safety` skill, which is authoritative on migration
-operations. This file owns one thing only: the access rule holds at every
-batch boundary.
+design, transaction behavior, and the `atomic` setting belong to migration
+operations and lock behavior, which this file does not cover. This file owns
+one thing only: the access rule holds at every batch boundary.
 
 Use `schema_editor.connection.alias` with `.using(alias)` for every query. A
 query that ignores the router writes to the wrong database, which defeats

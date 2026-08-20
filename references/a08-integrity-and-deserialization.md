@@ -627,9 +627,9 @@ between the commit and the enqueue, or a broker outage at `.delay`, leaves a
 `RECEIVED` row that no worker claimed. A periodic sweep re-enqueues the
 `RECEIVED` records older than a small threshold, so a lost wake-up delays the
 work instead of dropping it. The lease, the retry, and the dead-letter design
-of that worker belong to the `django-async-jobs` skill, which is authoritative
-on delivery mechanics. This file owns one thing only: the verified event
-survives the acknowledgment.
+of that worker belong to queue delivery and retry mechanics, which this file
+does not cover. This file owns one thing only: the verified event survives the
+acknowledgment.
 
 `csrf_exempt` belongs on this route and nowhere else, and it is only safe
 because the MAC replaces what CSRF was protecting. A CSRF-exempt webhook route
