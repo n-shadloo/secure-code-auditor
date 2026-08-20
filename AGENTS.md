@@ -225,7 +225,8 @@ All three parse with the `ast` module rather than grepping lines, so a hit is a
 structural match rather than a text one, every row names the reference file that
 owns it, a `dangerous_patterns.py` hit additionally carries a stable rule
 identifier, and a file that fails to parse is reported as unparsed rather than
-skipped in silence. The inventory enumerates the declared entry points the sweep
+skipped in silence. Every `--json` stream ends with one `kind: "summary"`
+record, so an empty stream never occurs. The inventory enumerates the declared entry points the sweep
 starts from — routes at their include-resolved prefix, routers and actions,
 Ninja, GraphQL, gRPC, Channels, Celery, commands, signals, admin, middleware —
 marking each HTTP-reachable row as declaring its authorization, inheriting it,
