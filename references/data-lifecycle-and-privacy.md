@@ -407,6 +407,16 @@ Keep the subject reference opaque and separate from the user row
 copy of an email address. The ledger records that erasure happened, not who it
 happened to in identifiable terms.
 
+A restore is a resurrection path. A backup taken before an erasure still holds
+the subject, so a restore undoes the erasure silently. The opaque subject
+reference above is what makes the repair possible: it outlives the erased rows
+and still names what to remove. Make the restore procedure replay every
+completed erasure against the restored data before that data serves traffic,
+and give point-in-time recovery the same replay step. Test it the concrete
+way: erase a fixture subject, restore yesterday's backup, and prove the subject
+stays gone. The backup and point-in-time-recovery mechanism itself is in
+`data-layer-and-database.md`, "Copies of production data".
+
 DRF endpoints that accept an erasure request need the same treatment as any
 destructive endpoint: authorize the subject against the requester, re-
 authenticate for an account-destroying action, throttle it, and log the acting
@@ -766,3 +776,6 @@ pipeline that satisfies it is:
       needs.
 - [ ] Personal fields are marked at the model layer so the inventory can be
       generated from the app registry rather than maintained by hand.
+- [ ] The restore procedure replays completed erasures against the restored
+      data before it serves traffic, and point-in-time recovery carries the
+      same step; a fixture subject proves it.

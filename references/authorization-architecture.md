@@ -340,13 +340,26 @@ Other admin surfaces:
 
 - Custom actions gate on `@admin.action(permissions=[...])`, checked against the
   **model-level** `has_*_permission`. Any per-object rule must be enforced inside
-  the action body against the queryset.
+  the action body against the queryset. An action that declares no
+  `permissions` is filtered by nothing: `_filter_actions_by_permissions()`
+  keeps it for any staff user who reaches the changelist, on the POST path as
+  well as in the dropdown.
 - `readonly_fields` prevents edits in the form. It is not an authorization
   control and does nothing for other write paths.
 - `autocomplete_fields` and `ForeignKeyRawIdWidget` lookups expose related-object
   querysets. Scope them with `get_search_results()` or `limit_choices_to` where
   the related data is sensitive.
 - `is_staff` grants admin login only; `is_superuser` short-circuits every check.
+
+**Custom admin views.** A view that an overridden `get_urls()` returns runs
+with no admin gate unless the code wraps it. On Django 6.0.7 an unwrapped
+custom admin URL answered an anonymous request in full, verified by execution
+on 20 Aug 2026. `self.admin_site.admin_view(view)` adds the check that
+`has_permission()` makes — `is_active` and `is_staff` — plus `never_cache` and
+`csrf_protect`. `cacheable=True` drops the cache decorator only, and never the
+check. Inside the wrapped view, enforce the named model permission with
+`request.user.has_perm(...)`. Scope any object the URL names with the same
+queryset filter the changelist uses.
 
 Admin *exposure* (path, TLS, IP restriction, MFA) is in
 `a01-broken-access-control.md`.
@@ -720,6 +733,9 @@ find is one it will never revoke.
 - [ ] Admin `get_queryset()` scopes the changelist; per-object delete logic is
       verified against the actual Django version or the bulk action is removed;
       custom admin actions enforce per-object rules in the action body.
+- [ ] Every view an overridden `get_urls()` adds is wrapped in
+      `admin_site.admin_view()` and re-checks the named model permission
+      inside; every custom action declares `permissions=[...]`.
 - [ ] `DEFAULT_PERMISSION_CLASSES` is restrictive and a URLconf audit test
       asserts every endpoint has an explicit decision.
 - [ ] Writable fields are allow-listed per role; declared fields use

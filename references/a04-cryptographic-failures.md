@@ -340,6 +340,21 @@ the pair against a real legacy hash before the migration runs rather than
 after — a wrapper that encodes correctly and verifies wrongly looks right in
 review and locks out everyone it just migrated.
 
+### Peppering
+
+A pepper is a site-wide secret that the hasher mixes into the password, and
+that the database never holds. A database-only dump therefore cannot start an
+offline guess at all. Django peppers nothing by default. The supported spelling
+is a wrapping hasher: subclass the Argon2 hasher, and HMAC the password with a
+key from the secret manager before the hash. Use the same wrapper form as the
+migration above, and keep the key in the secret manager rather than in
+`SECRET_KEY`.
+
+Rotation is a new wrap version, not a mass reset. A pepper is defense in depth
+for the database-dump case, and never a substitute for the parameters above.
+Rate a missing pepper as no finding. Name it as available hardening where the
+threat model is a database-only compromise.
+
 ## Password validators
 
 Configure `AUTH_PASSWORD_VALIDATORS` (length, common-password, numeric,

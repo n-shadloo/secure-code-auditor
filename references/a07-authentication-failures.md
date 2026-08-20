@@ -25,8 +25,10 @@ because authentication ends where authorization begins.
 - [Token storage](#token-storage)
 - [Brute force and enumeration](#brute-force-and-enumeration)
 - [Password reset](#password-reset)
+- [Email change and purpose-bound tokens](#email-change-and-purpose-bound-tokens)
 - [MFA](#mfa)
 - [OAuth2, OIDC, and social login](#oauth2-oidc-and-social-login)
+- [REMOTE_USER and header authentication](#remote_user-and-header-authentication)
 - [API keys](#api-keys)
 - [Review checklist](#review-checklist)
 
@@ -614,6 +616,16 @@ monitoring/lockout. Its correctness depends on trusted-proxy and client-IP
 configuration. It does not replace edge limits, business-flow quotas, MFA, or
 compromised-password defenses. `django-defender` does not pass the current gate.
 
+The device-cookie pattern is the answer to the denial-of-service edge above.
+On each successful login, set a signed cookie that names the account. On a
+later attempt, throttle the `(account, device-cookie)` pair separately from an
+attempt that carries no valid cookie. The owner on a known device continues to
+log in, and an unknown device gets the hard limit. Sign the cookie with
+`django.core.signing` under its own salt (`a04-cryptographic-failures.md`,
+"Signing and salt discipline"), and carry the account identifier and a version
+inside it. Increase the version on a credential change, so an old cookie stops
+working.
+
 **Write-time.** When generating a login, signup, reset, invite, or MFA
 endpoint, return the same public response on the account-exists and
 account-absent branches and wire the lockout in the same change rather than
@@ -640,6 +652,37 @@ it.
 - Confirm the new password twice, apply password validators, rotate sessions as
   policy requires, and notify the account through an independent channel without
   including the new credential.
+
+## Email change and purpose-bound tokens
+
+The email address is the account's recovery root, so a change of address is a
+privileged operation.
+
+- Re-authenticate before the change. Require the current password or a fresh
+  session, and the second factor where the account has one.
+- Send a confirmation link to the new address. The change happens on
+  confirmation, never on request.
+- Notify the old address. Give that notice a revert path, and keep the path
+  valid after the change completes.
+- Never carry the new address inside a client-held signed token. Hold the
+  address on the server, keyed by the token.
+
+`default_token_generator` hashes five values into a reset token. They are the
+user's primary key, the password hash, the `last_login` timestamp, the token
+time, and the email address. The list comes from Django 6.0.7 source, checked
+on 20 Aug 2026. The address is one of the five, so a change of address already
+invalidates every outstanding reset token on that account. A custom generator
+or a stored token row does not get that property: invalidate the outstanding
+tokens in the same transaction as the address change.
+
+That design is single-purpose. Reuse it for email confirmation, and the link's
+validity starts to depend on unrelated logins. A reset token also becomes
+exchangeable for a confirmation, because the same user state produces the same
+token. Issue purpose-bound tokens instead. Subclass
+`PasswordResetTokenGenerator` for each purpose, give the subclass its own
+`key_salt`, and override `_make_hash_value()` to append the purpose string and
+the normalized target address. A single-use random token row with an expiry is
+the alternative.
 
 ## MFA
 
@@ -791,6 +834,31 @@ confirm rather than gate entries. Check that the user-verification requirement
 matches the assurance the flow claims, and that registration and
 authentication responses are verified server-side rather than trusted.
 
+## REMOTE_USER and header authentication
+
+`RemoteUserMiddleware` logs in whoever `request.META["REMOTE_USER"]` names.
+Under WSGI that key comes from the server's own authentication module, and not
+from a client header. CGI mapping turns a client-sent `Remote-User` header into
+`HTTP_REMOTE_USER`, which is a different key. The custom-header variants are
+the trap. A subclass with `header = "HTTP_X_REMOTE_USER"` trusts a
+client-settable header. It is safe only where the proxy overwrites that header
+on every request, and strips every inbound copy, error paths and internal hops
+included (`deployment-and-runtime.md`, "Reverse proxy and forwarded headers").
+
+- Set `RemoteUserBackend.create_unknown_user = False`, unless the design
+  deliberately creates a user from the header. The default is `True`, so every
+  name the header carries becomes a database user.
+- `PersistentRemoteUserMiddleware` sets `force_logout_if_no_header = False`, so
+  the session survives after the header disappears. Use it only on a login
+  endpoint that the proxy guards, and never site-wide beside another login
+  path.
+- Normalization at the edge is part of the control. A header that differs only
+  by an underscore, or by a duplicate name, must not reach Django.
+
+**Write-time.** Do not generate a custom-header subclass unless the request
+names the fronting proxy. When you do generate one, write the proxy
+strip-and-set rule into the deployment notes in the same edit.
+
 ## API keys
 
 ### Principle layer
@@ -880,4 +948,10 @@ are in scope.
 - [ ] API keys are high-entropy, one-time-revealed, digest-only, scoped, expiring,
       rotatable, revocable, header-only, safely logged, and followed by authorization;
 - [ ] MFA enrollment/removal/recovery is protected, recovery codes are hashed and
-      single-use, and all factor lifecycle events are audited without secrets.
+      single-use, and all factor lifecycle events are audited without secrets;
+- [ ] an email change re-authenticates, completes on confirmation at the new
+      address, notifies the old one, and any purpose other than password reset
+      uses its own token generator rather than `default_token_generator`;
+- [ ] no header carries an identity into `RemoteUserMiddleware` unless the
+      proxy overwrites it and strips every inbound copy, and
+      `create_unknown_user` is `False` unless the design provisions users.

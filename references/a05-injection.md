@@ -101,6 +101,7 @@ to consult.
 | A program's own option parser | a value that reaches `argv` and begins with `-` | `--` before the positional arguments | "OS command injection" |
 | Python | `eval`, `exec`, `compile` on request-influenced text | none; remove the call | "OS command injection" |
 | HTML | `mark_safe()`, `SafeString`, `\|safe`, `\|safeseq`, `{% autoescape off %}`, misused `format_html`, a string handed to `HttpResponse` | autoescaped template output, or `format_html("{}", value)` | "Template injection and server-side output" |
+| Markdown | a renderer that permits raw HTML, and its rendered result handed on as trusted markup | a renderer with raw HTML off, and `nh3` over the result where rich text is the feature | "Template injection and server-side output" |
 | Template compiler | `Template(...)` or `Engine.from_string(...)` on a string the user supplied | a template file in the repository, with user data in the context | "Template injection and server-side output" |
 | Directory server | an LDAP filter string built by interpolation | `escape_filter_chars` on every assertion value | "Directory and LDAP injection" |
 | Response and mail headers | `response[name] = value`, `EmailMessage` header fields, `send_mail` arguments, and a value a bare `DomainNameValidator` call cleared below 6.0.7 or 5.2.16 | reject CR and LF before construction, and take the cleaning from a form or serializer field rather than from the validator | "Header and email injection" |
@@ -609,6 +610,17 @@ the maintained-package gate as of 9 Aug 2026; centralize its tag/attribute/URL-
 scheme policy, test bypass payloads, and sanitize again when policy changes.
 Plain-text or structured-markup designs remain safer than accepting HTML.
 
+Markdown is an output context too, and a renderer that permits raw HTML turns
+user text into DOM. `markdown-it-py` permits it by default: the `commonmark`
+preset that its constructor selects sets `html` to `True`, and `gfm-like` and
+`gfm-like2` do the same. Construct it as `MarkdownIt("js-default")`, or pass
+`{"html": False}` beside the preset the project needs.
+`mistune.create_markdown()` escapes raw HTML by default, but the module-level
+`mistune.html` renderer carries `escape=False`. Escaping is not sanitization:
+where rich text is the feature, render with raw HTML off and put the sanitizer
+above over the result. Each claim here comes from the project's own source,
+read on 20 Aug 2026.
+
 ### Commonly mistaken for a finding
 
 **`mark_safe` over a string assembled only from constants, and `mark_safe` or
@@ -911,6 +923,8 @@ there.
       interpreters with more privilege and no request to blame.
 - [ ] Autoescaping intact; `mark_safe`/`|safe`/Jinja2 autoescape verified; no
       template built from user input.
+- [ ] Any Markdown renderer over untrusted text has raw HTML off, and rich-text
+      output is sanitized after the render rather than trusted from it.
 - [ ] LDAP filters escape every assertion value with `escape_filter_chars`, DNs
       use `escape_dn_chars`, and `python-ldap` is 3.4.5 or later.
 - [ ] Values bound for a response or mail header are rejected for CR and LF
