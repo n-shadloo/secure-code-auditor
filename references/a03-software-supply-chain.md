@@ -19,6 +19,7 @@ dependency was chosen to implement.
 - [Principle](#principle)
 - [Run a supported Django](#run-a-supported-django)
 - [Pin and verify](#pin-and-verify)
+- [Index resolution and dependency confusion](#index-resolution-and-dependency-confusion)
 - [Scan continuously](#scan-continuously)
 - [Trust and provenance](#trust-and-provenance)
 - [SBOM, scan gate, and provenance](#sbom-scan-gate-and-provenance)
@@ -63,6 +64,23 @@ pip install --require-hashes -r requirements.txt
 ```
 
 - Keep dev/test tooling out of the production dependency set.
+
+## Index resolution and dependency confusion
+
+`pip` treats every configured index as one pool. With `--extra-index-url`, the
+resolver may take the highest version from any index. An attacker who registers
+your internal package name on PyPI with a higher version then supplies the
+install. Apply these rules:
+
+- Use one `--index-url` and no `--extra-index-url` in any project with private
+  packages. Point it at a proxy index that hosts the internal packages and
+  mirrors PyPI. Let the proxy decide precedence by name.
+- Reserve the internal package names on PyPI, or use a namespace prefix that
+  PyPI cannot serve.
+- Hash-pin the lockfile (`--require-hashes`). A squatted substitute fails the
+  hash even when the resolution goes wrong.
+- In CI, alert when the resolver downloads an internal name from the public
+  index.
 
 ## Scan continuously
 
@@ -720,6 +738,8 @@ line later does not remove it from the repository's history.
       from the lockfile, and provenance verified against a pinned signer
       identity; platform-side artifacts are recorded as operator questions.
 - [ ] Dependencies come from trusted indexes; no stray VCS/wheel installs.
+- [ ] One `--index-url` serves any project with private packages, and no
+      `--extra-index-url` lets a public index win the version race.
 - [ ] Components discovered and loaded at runtime are pinned or provenance-
       checked at call time; tool descriptions are treated as untrusted input.
 - [ ] every security dependency has a recorded need, maintenance/advisory check,

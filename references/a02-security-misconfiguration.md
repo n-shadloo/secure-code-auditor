@@ -22,10 +22,13 @@ what a `DEBUG` error view discloses when a request fails.
 - [Cookie prefixes and the subdomain boundary](#cookie-prefixes-and-the-subdomain-boundary)
 - [Signed cookies and the legacy salt fallback](#signed-cookies-and-the-legacy-salt-fallback)
 - [CSRF settings and trusted origins](#csrf-settings-and-trusted-origins)
+- [Fetch Metadata as a second wall](#fetch-metadata-as-a-second-wall)
 - [CORS](#cors)
+- [Compression and BREACH](#compression-and-breach)
 - [Content Security Policy](#content-security-policy)
 - [Mail authentication: SPF, DKIM, and DMARC](#mail-authentication-spf-dkim-and-dmarc)
 - [Certificate issuance and dangling DNS](#certificate-issuance-and-dangling-dns)
+- [security.txt](#securitytxt)
 - [check --deploy](#check---deploy)
 - [Writing a deployment guardrail check](#writing-a-deployment-guardrail-check)
 - [Configuration drift and the expiring exception](#configuration-drift-and-the-expiring-exception)
@@ -99,6 +102,7 @@ SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")  # only behind a t
 SECURE_CONTENT_TYPE_NOSNIFF = True  # default True in modern Django; keep it
 X_FRAME_OPTIONS = "DENY"            # clickjacking; needs XFrameOptionsMiddleware
 SECURE_REFERRER_POLICY = "same-origin"
+SECURE_CROSS_ORIGIN_OPENER_POLICY = "same-origin"   # default since Django 4.0; keep it
 
 # Session cookie
 SESSION_COOKIE_SECURE = True
@@ -120,6 +124,12 @@ Notes and gotchas:
 - Do **not** recommend `SECURE_BROWSER_XSS_FILTER` / `X-XSS-Protection`; the
   header is deprecated and ignored by modern browsers.
 - `XFrameOptionsMiddleware` must be enabled for `X_FRAME_OPTIONS` to take effect.
+- `SecurityMiddleware` serves `Cross-Origin-Opener-Policy` since Django 4.0.
+  The default `"same-origin"` denies a cross-origin window a scriptable handle
+  to this one. `None` and `"unsafe-none"` are the weakened values. OAuth and
+  payment popup flows that call `window.opener.postMessage` break under
+  `same-origin`. The correct relaxation is `"same-origin-allow-popups"`, not
+  `None` and not `"unsafe-none"`.
 
 **Write-time.** When generating or extending a settings module, read every
 secret and per-environment value from the environment and fail at startup when
@@ -308,6 +318,24 @@ every cookie the project signs.
   is genuinely token-authenticated and not cookie-authenticated. See the DRF file
   for how CSRF interacts with `SessionAuthentication`.
 
+## Fetch Metadata as a second wall
+
+A modern browser attaches `Sec-Fetch-Site`, `Sec-Fetch-Mode`, and
+`Sec-Fetch-Dest` to a request. Every major browser has this support since March
+2023. A resource-isolation policy in one small middleware rejects a request
+whose `Sec-Fetch-Site` is `cross-site`, unless the request is a top-level
+navigation GET. The policy blocks cross-site request forgery, cross-site
+inclusion, and some XS-Leaks probes before view code runs.
+
+- This sits beside Django's CSRF protection, never instead of it. A non-browser
+  client sends no `Sec-Fetch-*` header, so treat an absent header as allowed.
+- Exempt the documented cross-site entry points by path: OAuth callbacks,
+  webhook receivers, embedded widgets.
+
+**Write-time.** Add the middleware only when the project asks for
+defense-in-depth hardening. Log each rejection with the three header values, so
+one grep finds a broken integration.
+
 ## CORS
 
 Use `django-cors-headers` with an explicit allowlist. The origin below is a
@@ -348,6 +376,27 @@ deliberately widened surface rather than a data leak. The deciding question is
 whether `CORS_ALLOW_CREDENTIALS` is set anywhere in the module in force, and
 conflating the two answers is how a Medium gets reported as a High.
 
+## Compression and BREACH
+
+HTTP compression leaks a secret by size. When a compressed response reflects
+attacker-controlled input beside a secret, the compressed length measures how
+much of a guess matches the secret. That is BREACH. Django masks the CSRF token
+it renders, and the mask changes on each call, which breaks the classic target.
+`GZipMiddleware` adds up to 100 random bytes to each compressed response since
+Django 4.2, which is the Heal The Breach mitigation. The mitigation narrows the
+channel; it does not remove it.
+
+- `GZipMiddleware` on a response that carries a bearer token, a session
+  identifier, or another reflected secret beside user input is a finding. Rate
+  it by what the response carries. A JSON API that echoes a search string
+  beside an API key is the serious case.
+- Compress static assets at the proxy instead. A static file carries no
+  per-user secret.
+
+**Write-time.** Do not add `GZipMiddleware` by default. Compress static content
+at the proxy. Leave a dynamic response uncompressed unless measurement demands
+compression. Then exclude every response that carries a secret.
+
 ## Content Security Policy
 
 Django **6.0+** has built-in CSP via `SECURE_CSP` / `SECURE_CSP_REPORT_ONLY` and
@@ -369,6 +418,11 @@ header, and `request.csp_nonce` is also supplied by that middleware. On
 pre-6.0 projects the equivalent is the `django-csp` package. CSP is mainly an
 XSS mitigation for server-rendered HTML; for pure JSON APIs it matters less, but
 it's cheap defense in depth.
+
+A policy that starts enforced breaks the inline scripts the team forgot. Deploy
+a new policy in report-only mode first. Set `SECURE_CSP_REPORT_ONLY`. Read the
+violation reports against real pages. Then move the policy to `SECURE_CSP`.
+Keep the report-only channel for the next policy change.
 
 **Package decision (9 Aug 2026):** prefer Django 6's built-in CSP support.
 `django-csp==4.0` is a conditional choice only for supported pre-6.0 projects
@@ -516,6 +570,18 @@ of Data Authenticity); A02:2025. Severity: high for any public-facing domain,
 because the reachable consequence is credential phishing and business email
 compromise carried by your own brand.
 
+SPF, DKIM, and DMARC authenticate the message. Transport is a separate gap.
+SMTP sends in cleartext when STARTTLS fails, and an attacker on the network can
+force that failure. MTA-STS (RFC 8461) closes that gap. Publish a policy at
+`https://mta-sts.<domain>/.well-known/mta-sts.txt` with `mode: enforce` and the
+domain's MX hosts. Publish a `_mta-sts.<domain>` TXT record whose `id` changes
+on every policy change.
+
+TLS-RPT (RFC 8460) adds a `_smtp._tls.<domain>` TXT record with `rua=`, so a
+receiver reports each TLS delivery failure to you. Start in `mode: testing`
+with TLS-RPT enabled. Then change the mode to `enforce`. For a domain that
+sends password-reset mail, rate an absent MTA-STS policy LOW.
+
 ## Certificate issuance and dangling DNS
 
 Two further DNS-published controls sit inside the backend's configuration
@@ -566,6 +632,14 @@ the closest mappable weakness — the record operates on a resource that was
 released — and A02:2025 carries the classification either way. Severity: high
 where the subdomain shares cookies, an OAuth redirect allowlist, or a CSP or
 CORS entry with the application.
+
+## security.txt
+
+RFC 9116 defines `/.well-known/security.txt`. The file tells a security
+reporter where to send a vulnerability report. Serve it over HTTPS with a
+`Contact:` field and an `Expires:` field. An expired file is the common
+failure, so generate the `Expires:` date automatically. This is disclosure
+support, not a control. Rate an absent file INFO.
 
 ## check --deploy
 
@@ -877,6 +951,9 @@ assertion is the only part of it that can still object.
       validated at startup, rather than carrying a default in the settings
       module.
 - [ ] HSTS, SSL redirect, nosniff, `X-Frame-Options`, secure session/CSRF cookies set.
+- [ ] `SECURE_CROSS_ORIGIN_OPENER_POLICY` is left at `"same-origin"`, or
+      relaxed to `"same-origin-allow-popups"` for a documented popup flow,
+      rather than to `None` or `"unsafe-none"`.
 - [ ] `SECURE_PROXY_SSL_HEADER` matches the actual proxy and isn't client-spoofable.
 - [ ] Session and CSRF cookie names carry the `__Host-` prefix with domain
       `None`, path `/`, and `Secure` set to agree with it — or a
@@ -892,11 +969,15 @@ assertion is the only part of it that can still object.
       6.0 default it to `True` and 6.1 defaults it to `False`.
 - [ ] `CSRF_TRUSTED_ORIGINS` set with scheme; no stray `@csrf_exempt`.
 - [ ] CORS uses an allowlist; no `CORS_ALLOW_ALL_ORIGINS = True` with credentials.
+- [ ] `GZipMiddleware` is absent from any response that reflects user input
+      beside a bearer token, a session identifier, or another secret.
 - [ ] DMARC is at `p=quarantine` or `p=reject` rather than parked at `p=none`,
       with `sp` and `np` set and any rollout ramped via `t=y` rather than the
       removed `pct` tag.
 - [ ] SPF stays within 10 DNS-querying mechanisms, and every third-party sender
       signs with custom DKIM under your own domain at 2048-bit RSA.
+- [ ] An MTA-STS policy is published at `mode: enforce` with a matching
+      `_mta-sts` TXT record, and TLS-RPT reports delivery-TLS failures.
 - [ ] A restrictive CAA record is published, with an `iodef` contact.
 - [ ] Every CNAME resolves to a resource you still own, and decommissioning
       removes the DNS record before the resource.

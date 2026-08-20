@@ -23,3 +23,5 @@ env/
 .vscode/
 .idea/
 .DS_Store
+__MACOSX/
+._*

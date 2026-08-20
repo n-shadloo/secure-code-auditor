@@ -139,6 +139,12 @@ This is the subtle one. Behind Nginx/Cloudflare:
   be reachable except through it. The application side is in
   `service-identity-and-secrets.md`, "Client-certificate identity behind a
   proxy".
+- `USE_X_FORWARDED_HOST = True` moves host trust to the proxy. It is safe only
+  when the proxy sets `X-Forwarded-Host` on every request and strips the
+  client's copy. Every absolute URL Django builds from `get_host()` trusts that
+  value. Without `django.contrib.sites`, a password-reset link is one of them.
+  `ALLOWED_HOSTS` still validates the forwarded host. The trust rule is the
+  same as `SECURE_PROXY_SSL_HEADER` above.
 
 Example Nginx snippet:
 
@@ -591,11 +597,23 @@ as, and what stays readable in a layer after a later layer deleted it.
   front of private objects must either not cache them or include the signing
   parameters in its cache key; the same file carries that rule and the
   internal-redirect pattern that pairs with it.
-- Serve static via Nginx or WhiteNoise. Put a hard request-body limit at Nginx
-  (`client_max_body_size`) or the gateway, then apply endpoint-specific file,
-  count, processing, and quota limits in the application (A06 and
-  `file-uploads.md`). Django's upload memory settings are not hard file-size
-  caps.
+- Serve static assets from the proxy or from WhiteNoise, never through Django
+  in production. When Nginx serves them, end both the `location` prefix and the
+  `alias` value with `/`: `location /static/ { alias /srv/app/static/; }`. A
+  prefix with no trailing slash (`location /static`) also matches `/static../`.
+  Nginx joins the remainder onto the `alias` path, so
+  `GET /static../config/settings.py` reads one directory above the static root.
+  `root` inside a prefix `location` does not have this trap. Prefer `root`
+  where the URL prefix mirrors the directory name.
+- Put a hard request-body limit at Nginx (`client_max_body_size`) or the
+  gateway, so an oversized upload stops before Django buffers it. Then apply
+  endpoint-specific file, count, processing, and quota limits in the
+  application (A06 and `file-uploads.md`). Django's upload memory settings are
+  not hard file-size caps.
+
+**Write-time.** When you generate an Nginx static block, write the trailing
+slash on both sides in the same edit. The pair is the control, and a `location`
+prefix that is correct alone still exposes the parent directory.
 
 ## Database and secrets
 

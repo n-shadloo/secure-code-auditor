@@ -533,6 +533,12 @@ a checklist you finish; treat this as a strong, current baseline, not a guarante
 The skill version is recorded in SKILL.md frontmatter (`metadata.version`);
 releases are tagged in git.
 
+GitHub builds each tag download with `git archive`, so a release archive holds
+no editor, OS, or bytecode file. Never zip the working directory, because that
+is how `__pycache__/`, `.DS_Store`, and `__MACOSX/` entries reach a reviewer.
+When you attach an archive by hand, build it the same way:
+`git archive --format=zip -o secure-code-auditor.zip HEAD`.
+
 ## Layout
 
 ```text

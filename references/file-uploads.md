@@ -784,7 +784,7 @@ height, total pixels, frames, and metadata, and re-encode to an approved format.
 Keep Pillow's decompression-bomb protection enabled; treat its warning as a
 rejection for untrusted uploads rather than disabling `MAX_IMAGE_PIXELS`.
 
-For ZIP and similar archives:
+For ZIP, tar, and similar archives:
 
 - inspect the central directory before extraction;
 - cap entry count, per-entry size, total uncompressed size, compression ratio,
@@ -797,6 +797,25 @@ For ZIP and similar archives:
 The Python `zipfile` module does not make an untrusted archive safe merely
 because it normalizes some names. Validate the policy explicitly and do not use
 `extractall()` as the policy boundary.
+
+The same boundary exists for tar, and tar has a supported answer.
+`TarFile.extractall()` without a filter obeys the archive's own metadata:
+absolute names, `..` components, symlinks, hardlinks, device nodes, and setuid
+modes. Python 3.12 adds extraction filters. Call
+`extractall(path, filter="data")` for a data archive. The `"data"` filter
+rejects absolute names, parent-directory escapes, links that point outside the
+destination, device nodes, and dangerous modes.
+
+The filter API is backported to Python 3.9.17, 3.10.12, and 3.11.4. Python 3.12
+warns when the caller gives no filter. Python 3.14 makes `"data"` the default.
+Pass the filter explicitly, and do not depend on the version default. An older
+micro version has no filter API, so test with `hasattr(tarfile, "data_filter")`
+before you call it. For a user upload, reject a tar member that is a symlink or
+a hardlink.
+
+**Write-time.** When you generate tar extraction code, pass `filter="data"` in
+the same call. When you generate ZIP extraction code, write the member checks
+before the extraction call. The library enforces no policy of its own.
 
 ## Size, count, and quota limits
 

@@ -28,6 +28,7 @@ This file is about principals that are processes.
 - [Downstream calls: exchange, do not forward](#downstream-calls-exchange-do-not-forward)
 - [Where secrets live and how they reach the process](#where-secrets-live-and-how-they-reach-the-process)
 - [Rotating Django's SECRET_KEY](#rotating-djangos-secret_key)
+- [Stopping the commit](#stopping-the-commit)
 - [Responding to a leaked secret](#responding-to-a-leaked-secret)
 - [Out of backend scope](#out-of-backend-scope)
 - [Review checklist](#review-checklist)
@@ -611,6 +612,22 @@ Review notes:
   in the example above, or whether adding it is itself a code change under
   incident pressure.
 
+## Stopping the commit
+
+The cheapest response to a leak is the commit that never reaches the
+repository. Three layers stop it:
+
+- A pre-commit secret scan on the developer machine catches the accident at
+  write time.
+- Push protection at the host blocks a push that contains a recognized
+  credential. Enable it on private repositories too, not only on public ones.
+- A scheduled history scan re-checks yesterday's commits with the same rules,
+  because a rule added today proves nothing about last year.
+
+A hit in history is a leak, not a lint. Rotate the secret under "Responding to
+a leaked secret" below, even when nobody pushed the commit to a public remote.
+A deleted commit does not make the value secret again.
+
 ## Responding to a leaked secret
 
 **Principle: rotation is what renders the exposed secret worthless; everything
@@ -685,6 +702,8 @@ backend code for these, and do not report their absence as a backend finding:
       nothing secret is committed or baked into an image.
 - [ ] A rotation path exists for every credential, with an overlap window sized
       to the longest-lived artifact signed under the old value.
+- [ ] A pre-commit secret scan, host push protection, and a scheduled history
+      scan are all in place, and a hit in history starts a rotation.
 - [ ] The leak response is ordered rotate, revoke, assess, review logs, scrub —
       and credential use is logged by identifier so step four is possible.
 
