@@ -1,0 +1,67 @@
+name: Feature or coverage request
+description: The skill misses an attack, a control, or a surface it should reach.
+title: "feat: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The scope is the backend: server-side code, data handling, configuration, and the deployment and runtime the backend owns. The browser and the frontend are out of scope, except where the server controls the output.
+
+        The ownership table in `SKILL.md` gives each contested topic exactly one owning file. Name the file that should own this.
+  - type: textarea
+    id: gap
+    attributes:
+      label: What the skill misses
+      description: Describe the attack, the failure, or the review question the skill cannot answer today.
+    validations:
+      required: true
+  - type: input
+    id: location
+    attributes:
+      label: File and section that should own it
+      description: The reference file, and the heading it belongs under or beside.
+      placeholder: references/a01-broken-access-control.md, "SSRF and egress control"
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Skill version
+      description: The value of metadata.version in SKILL.md.
+      placeholder: 1.49.0
+    validations:
+      required: true
+  - type: textarea
+    id: example
+    attributes:
+      label: Code that shows the gap
+      description: The smallest Django or DRF code that a reviewer would pass today and should not.
+      render: python
+    validations:
+      required: true
+  - type: textarea
+    id: source
+    attributes:
+      label: Supporting source
+      description: A link to the documentation, advisory, OWASP entry, or research that establishes the risk. Leave this empty if the gap is a judgment call.
+  - type: dropdown
+    id: agent
+    attributes:
+      label: Agent that surfaced this
+      options:
+        - Claude Code
+        - Codex CLI
+        - Cursor
+        - Gemini CLI
+        - Other
+        - Not an agent, I read the file
+    validations:
+      required: true
+  - type: checkboxes
+    id: policy
+    attributes:
+      label: Policy
+      options:
+        - label: I understand that this repository does not accept a pull request, and that the maintainer implements the change.
+          required: true

@@ -1,0 +1,82 @@
+name: Package verdict or version claim
+description: The library index records the wrong verdict, the wrong version, or a claim that has gone stale.
+title: "fix(libraries): "
+labels: ["documentation"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        `references/security-hardening-libraries.md` carries one governing index date, and every verdict, version pin, and classifier claim under it is read on that date. A package moves on its own schedule, so this file goes stale without anything in the repository changing.
+
+        Report a vulnerability in the package itself to the upstream project, not here. `SECURITY.md` states that boundary.
+  - type: input
+    id: package
+    attributes:
+      label: Package
+      description: The distribution name as PyPI spells it.
+      placeholder: nh3
+    validations:
+      required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What is wrong
+      options:
+        - The pinned version is behind the current release
+        - The verdict is wrong (recommend, conditional, existing-install-only, rejected)
+        - The stated minimum-safe version is below the real fix
+        - A classifier, licence, or Python support claim no longer holds
+        - The package is now unmaintained or archived
+    validations:
+      required: true
+  - type: textarea
+    id: quote
+    attributes:
+      label: The row as it stands
+      description: Quote the table row exactly.
+    validations:
+      required: true
+  - type: input
+    id: observed
+    attributes:
+      label: What PyPI says today
+      description: The current version and its release date, or the classifier you observed.
+      placeholder: 0.3.7, released 2 Sep 2026
+    validations:
+      required: true
+  - type: input
+    id: index_date
+    attributes:
+      label: Index date on the file you read
+      description: The date in the line that reads "current as of ...".
+      placeholder: 9 Aug 2026
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Skill version
+      description: The value of metadata.version in SKILL.md.
+      placeholder: 1.49.0
+    validations:
+      required: true
+  - type: dropdown
+    id: agent
+    attributes:
+      label: Agent that surfaced this
+      options:
+        - Claude Code
+        - Codex CLI
+        - Cursor
+        - Gemini CLI
+        - Other
+        - Not an agent, I read the file
+    validations:
+      required: true
+  - type: checkboxes
+    id: policy
+    attributes:
+      label: Policy
+      options:
+        - label: I understand that this repository does not accept a pull request, and that the maintainer implements the change.
+          required: true

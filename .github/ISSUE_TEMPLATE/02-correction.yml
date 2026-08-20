@@ -1,0 +1,76 @@
+name: Correction
+description: Guidance in the skill is incorrect, or it went stale against its source.
+title: "fix: "
+labels: ["documentation"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Every factual claim here is checked against a primary source before it lands, so a correction needs the same evidence. Name the source and the date it carries.
+  - type: input
+    id: location
+    attributes:
+      label: File and section
+      description: The file, and the exact heading the text sits under.
+      placeholder: references/a04-cryptographic-failures.md, "Password hashing"
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Skill version
+      description: The value of metadata.version in SKILL.md.
+      placeholder: 1.49.0
+    validations:
+      required: true
+  - type: textarea
+    id: quote
+    attributes:
+      label: The text as it stands
+      description: Quote it exactly, so the wrong line can be found without a search.
+    validations:
+      required: true
+  - type: textarea
+    id: correct
+    attributes:
+      label: What is correct instead
+    validations:
+      required: true
+  - type: textarea
+    id: source
+    attributes:
+      label: Primary source
+      description: A link to the documentation, release note, RFC, CVE record, or tagged source. Give the version or the date the source carries.
+    validations:
+      required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Kind of correction
+      options:
+        - The claim was always wrong
+        - The claim was right and a later release changed it
+        - The claim is right but is scoped to the wrong version
+        - The claim contradicts another file in this repository
+    validations:
+      required: true
+  - type: dropdown
+    id: agent
+    attributes:
+      label: Agent that surfaced this
+      options:
+        - Claude Code
+        - Codex CLI
+        - Cursor
+        - Gemini CLI
+        - Other
+        - Not an agent, I read the file
+    validations:
+      required: true
+  - type: checkboxes
+    id: policy
+    attributes:
+      label: Policy
+      options:
+        - label: I understand that this repository does not accept a pull request, and that the maintainer implements the correction.
+          required: true

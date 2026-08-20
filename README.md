@@ -588,6 +588,14 @@ secure-code-auditor/
 └── .gitignore
 ```
 
+## Contributing
+
+Issues yes, pull requests no. Pull request creation is restricted to
+collaborators, so open an issue and I implement the change myself. See
+[CONTRIBUTING.md](CONTRIBUTING.md) for what a good report contains,
+[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) for conduct, and
+[SECURITY.md](SECURITY.md) for reporting a vulnerability in the scanners.
+
 ## License
 
 MIT. See `LICENSE`.

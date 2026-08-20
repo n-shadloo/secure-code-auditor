@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question about the skill
+    url: https://github.com/n-shadloo/secure-code-auditor/discussions
+    about: Ask how the skill works, or how to wire it into an agent. A defect, a correction, or a coverage gap belongs in an issue.

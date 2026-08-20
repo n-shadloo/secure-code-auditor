@@ -1,0 +1,75 @@
+name: Bug
+description: A scanner behaves incorrectly, or a code example in the skill does not work.
+title: "bug: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This repository does not take a pull request. Describe the bug here and I will fix it.
+
+        A scanner that exits 0 on a tree with findings is correct. `SECURITY.md` states the exit-code contract.
+  - type: input
+    id: location
+    attributes:
+      label: File and section
+      description: The file, and the heading or the rule identifier inside it.
+      placeholder: scripts/dangerous_patterns.py, rule NET003
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Skill version
+      description: The value of metadata.version in SKILL.md.
+      placeholder: 1.49.0
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How to reproduce
+      description: The command you ran, and the smallest input that produces the behavior.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened
+      description: The output you got. Paste it rather than describing it.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+      description: The output you expected, and why.
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Python and Django versions
+      description: Leave this empty for a bug in the prose rather than in a scanner.
+      placeholder: Python 3.12.10, Django 6.1
+  - type: dropdown
+    id: agent
+    attributes:
+      label: Agent that surfaced this
+      options:
+        - Claude Code
+        - Codex CLI
+        - Cursor
+        - Gemini CLI
+        - Other
+        - Not an agent, I read the file
+    validations:
+      required: true
+  - type: checkboxes
+    id: policy
+    attributes:
+      label: Policy
+      options:
+        - label: I understand that this repository does not accept a pull request, and that the maintainer implements the fix.
+          required: true
