@@ -52,7 +52,8 @@ fetch takes its URL from input, and for path traversal wherever `open()`,
 and `authorization-architecture.md` for
 the model behind them, `privileged-access-and-impersonation.md` for operator
 privilege, A07 for auth/API keys and whenever `AUTH_PASSWORD_VALIDATORS`, a
-password validator, or a passkey/WebAuthn setting is in view, A02 whenever
+password validator, a passkey/WebAuthn setting, an email-change flow, or
+`RemoteUserMiddleware` and the header it reads is in view, A02 whenever
 `set_signed_cookie` or `get_signed_cookie` is in view, A03 for the dependency
 gate and whenever a
 requirements file, extras group, Dockerfile install layer, or a CI workflow
@@ -67,7 +68,8 @@ Level 2,
 context on pooled connections, encrypted columns, raw SQL, NoSQL queries, read
 replicas, a raised transaction isolation level, or connection pooling are in
 view, `data-lifecycle-and-privacy.md` whenever deletion, soft delete,
-retention, anonymization, personal-data exports,
+retention, anonymization, personal-data exports, a restore or point-in-time
+recovery of production data,
 or copies of a record in indexes, caches, files, or lower environments are in
 view, `service-identity-and-secrets.md` whenever service-to-service calls,
 machine tokens, JWKS, client credentials, mutual TLS, workload identity,
@@ -113,7 +115,8 @@ Gunicorn or systemd unit, or a debug, profiling, metrics, or health endpoint is
 in view, `a05-injection.md` whenever raw SQL, a user-supplied column or sort
 key, a GeoDjango spatial or raster lookup, a `subprocess` or `os.system` call,
 `mark_safe` or a template built from a
-string, an LDAP filter, or a response or mail header built from input is in
+string, a Markdown renderer over untrusted text, an LDAP filter, or a response
+or mail header built from input is in
 view — it carries the inventory of every sink and the reference that owns each
 one — and the security-hardening library index for dated package
 dispositions.
