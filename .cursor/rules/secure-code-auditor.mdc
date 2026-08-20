@@ -106,8 +106,8 @@ migration, a generated token or random value, a secret comparison, a
 `generate_data_key` or KMS wrap/unwrap call, or an encrypted field's key
 material is in view,
 `a02-security-misconfiguration.md` whenever a settings module, a CORS or CSP
-policy, or a DNS record carrying SPF, DKIM, DMARC, MTA-STS, TLS-RPT, or CAA
-is in view,
+policy, a `MAILERS` or email backend configuration, or a DNS record carrying
+SPF, DKIM, DMARC, MTA-STS, TLS-RPT, or CAA is in view,
 `deployment-and-runtime.md` whenever a Dockerfile, a `.dockerignore`, a proxy
 or ingress configuration, a TLS group or cipher list such as `ssl_ecdh_curve`,
 an `X-Forwarded-*` header, a client-IP lookup, a
