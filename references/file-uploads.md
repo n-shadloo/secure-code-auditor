@@ -835,6 +835,17 @@ Django settings have narrower meanings than their names suggest:
 - `DATA_UPLOAD_MAX_NUMBER_FIELDS` and `DATA_UPLOAD_MAX_NUMBER_FILES` (the
   latter defaulting to 100) constrain multipart complexity and should not be
   raised casually.
+- From Django 6.1 `HttpRequest.multipart_parser_class` selects the parser that
+  reads the request body. A replacement parser owns every bound above, because
+  the settings are read by the parser rather than applied around it. Review a
+  custom value as request-handling code, not as configuration.
+- Django 6.1 validates Base64 strictly where it decodes request and stored
+  data. `django.http.multipartparser.MultiPartParser` raises
+  `MultiPartParserError` on invalid Base64, where earlier versions could ignore
+  it or produce an empty value. `django.db.models.BinaryField` raises
+  `ValidationError`, and `django.core.cache.backends.db.DatabaseCache` raises
+  on a corrupt entry rather than skipping it. Each is a fail-closed change:
+  confirm the handler around these paths returns a 400 rather than a 500.
 - A custom upload handler can stop a stream early, but an edge limit is still
   required. Under ASGI, request data may already have been received or spooled
   before application-level handling rejects it — and CVE-2026-5766, fixed in

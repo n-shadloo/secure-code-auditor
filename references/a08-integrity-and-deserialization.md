@@ -180,7 +180,8 @@ that exists in the safe JSON format, with no deserialization bug required.
   a YAML fixture is not the `yaml.load` finding above. Its risk is the same
   unvalidated bulk write and the same authorization question as every other
   format. Keep fixtures on `json` or `xml`, because the extra dependency buys
-  nothing here.
+  nothing here. Django 6.1 hardens the XML path, where the deserializer now
+  raises `SuspiciousOperation` on an unexpected nested tag.
 - `dumpdata` output is a concentrated copy of model data and needs the handling
   a database backup gets. Review-time check: is it written under a web-served
   path, committed to version control, or baked into a container image? Retention
@@ -444,6 +445,18 @@ rejecting a nested function, a bound method, and a builtin; and it raises
 backend whose capability flags do not declare support, and for a `queue_name`
 missing from the backend's configured `QUEUES`. Neither is an authorization
 control.
+
+Django 6.1 makes `Task` and `TaskResult` picklable, which moves them into
+stores this file already rules on. A `TaskResult` holds the arguments and the
+traceback verbatim, so a pickle-serialized cache or session now carries that
+payload too. `Task.__reduce__` records `module_path`, and Django calls
+`import_string` on that value when it rebuilds the object. That is the
+import-driven path `TaskError.exception_class` takes above.
+
+Neither fact is a new risk in a pickle store an attacker can already write,
+because pickle runs code by design. The rule is unchanged and now reaches
+further: unpickle only from a store no lower-trust party can write. Verified
+against the 6.1 source of `django/tasks/base.py` on 20 Aug 2026.
 
 **Write-time.** When generating a `@task` function, resolve the authorization
 decision in the caller before the enqueue and pass the outcome as an argument,

@@ -419,6 +419,17 @@ pre-6.0 projects the equivalent is the `django-csp` package. CSP is mainly an
 XSS mitigation for server-rendered HTML; for pure JSON APIs it matters less, but
 it's cheap defense in depth.
 
+A nonce needs a second piece of configuration, and Django 6.1 adds a check for
+it. `CSP.NONCE` in the policy emits the source expression, but the template
+reaches the value through the `django.template.context_processors.csp` context
+processor. Without that processor the header promises a nonce that no element
+carries, so every inline script the policy was written for is blocked. That is
+a second way a policy goes inert, after the missing middleware above, and the
+new `security.W027` check reports it. Django 6.1 also adds the
+`csp_nonce_attr` template tag for external `<script src>` and
+`<link rel="stylesheet">` elements. The same tag applies the nonce to a
+`Media` object's assets.
+
 A policy that starts enforced breaks the inline scripts the team forgot. Deploy
 a new policy in report-only mode first. Set `SECURE_CSP_REPORT_ONLY`. Read the
 violation reports against real pages. Then move the policy to `SECURE_CSP`.
@@ -582,6 +593,22 @@ receiver reports each TLS delivery failure to you. Start in `mode: testing`
 with TLS-RPT enabled. Then change the mode to `enforce`. For a domain that
 sends password-reset mail, rate an absent MTA-STS policy LOW.
 
+Django 6.1 moves the sending configuration into one setting. `MAILERS` maps an
+alias to a `BACKEND` and an `OPTIONS` dictionary, in the shape `DATABASES`,
+`CACHES`, `STORAGES`, and `TASKS` already use. The `EMAIL_BACKEND`,
+`EMAIL_HOST`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`, `EMAIL_PORT`,
+`EMAIL_USE_TLS`, `EMAIL_USE_SSL`, `EMAIL_SSL_CERTFILE`, `EMAIL_SSL_KEYFILE`,
+`EMAIL_FILE_PATH`, and `EMAIL_TIMEOUT` settings are deprecated, and Django 7.0
+removes them. Review each alias on its own, because `use_tls` and the
+credentials are per-alias now. One mailer can hold TLS while a second sends in
+cleartext, and neither setting contradicts the other.
+
+Two system checks arrive with it. `mail.E001` runs only under `--deploy` and
+rejects a development-only backend in the `default` alias. `mail.W001` reports
+a `MAILERS` value that declares no `default` alias, which Django says will make
+sending fail. An empty `MAILERS` dictionary disables sending outright and
+raises `MailerDoesNotExist`.
+
 ## Certificate issuance and dangling DNS
 
 Two further DNS-published controls sit inside the backend's configuration
@@ -675,6 +702,15 @@ is routinely read as coverage it never provided:
   permanently, and without `--fail-level` the command exits zero regardless.
   Read that list as part of the review; an entry in it is a decision somebody
   made once and nobody has revisited.
+
+One thing about the command itself changed. Django 6.1 passes every configured
+database alias to `run_checks()` when `--database` names none, where Django 6.0
+passed `None`. Checks tagged `database` stay skipped without an explicit alias,
+so Django's own deploy checks still read settings alone. A custom or
+third-party check that accepts `databases` now receives every alias and can
+open a connection. Confirm the pipeline step has a database it may reach, and
+that the alias it reaches is not production. Verified against the 6.1 and 6.0
+`django/core/checks/registry.py` on 20 Aug 2026.
 
 Treat the check as the floor in CI, then audit what it cannot introspect
 separately. The portable form: a configuration linter cannot see infrastructure,

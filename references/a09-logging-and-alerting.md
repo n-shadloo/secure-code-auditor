@@ -126,7 +126,13 @@ Know which Django paths run which hooks:
   save signals.
 - `QuerySet.delete()` **does send** `pre_delete` and `post_delete` for deleted
   objects, including cascades, but it does not call each model instance's
-  `delete()` method.
+  `delete()` method. From Django 6.1 a `ForeignKey` declared with `DB_CASCADE`
+  is the exception. The database performs that delete, so no signal is sent for
+  the rows it removes, and `DB_SET_NULL` and `DB_SET_DEFAULT` skip collection
+  the same way. An audit hook on a delete signal therefore records nothing for
+  the far side of that relation. The diff that causes it is one keyword long,
+  and `data-lifecycle-and-privacy.md`, "Delete paths and what each one runs"
+  owns the full path list.
 - raw SQL bypasses model methods and ORM signals.
 - many-to-many changes have their own `m2m_changed` signal and are not model
   save events.
@@ -242,7 +248,8 @@ emits the required event or make the path unavailable for that model.
 #### Django & DRF
 
 - [ ] Security does not rely solely on `save()`, `delete()`, `post_save`, or
-      `pre_delete` where bulk/queryset/raw paths can behave differently.
+      `pre_delete` where bulk/queryset/raw paths can behave differently,
+      database-level cascades on Django 6.1 included.
 - [ ] Reviews distinguish correctly between `QuerySet.delete()` signals and
       overridden `Model.delete()` behavior.
 - [ ] Critical transitions use explicit transactional services and, for

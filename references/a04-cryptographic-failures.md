@@ -104,12 +104,12 @@ plaintext.
 
 Django hard-codes its own parameters on each hasher class rather than
 inheriting the library's, so verify against the Django version in front of you.
-As of Django 6.0 and 5.2 LTS:
+As of Django 6.1, 6.0, and 5.2 LTS:
 
 | Hasher | Shipped defaults |
 |---|---|
 | `Argon2PasswordHasher` | Argon2id, `time_cost=2`, `memory_cost=102400` (100 MiB), `parallelism=8` |
-| `PBKDF2PasswordHasher` | 1,200,000 iterations on 6.0; 1,000,000 on 5.2 LTS |
+| `PBKDF2PasswordHasher` | 1,500,000 iterations on 6.1; 1,200,000 on 6.0; 1,000,000 on 5.2 LTS |
 | `ScryptPasswordHasher` | `work_factor=2**14`, `block_size=8`, `parallelism=5` |
 
 Seven things follow from that table, and the first is the one that actually
@@ -610,10 +610,14 @@ user_pk = TimestampSigner(salt="accounts.password-reset").unsign(
 
 Review notes:
 
-- `salted_hmac()` defaults to `algorithm="sha1"` on Django 6.0 and 5.2, with a
+- `salted_hmac()` defaults to `algorithm="sha1"` on 6.1, 6.0, and 5.2, with a
   documented transition to `"sha256"` in Django 7.0. It is still an HMAC and
   not a broken construction, but pass `algorithm="sha256"` explicitly in new
-  code so the value does not change under you at the upgrade.
+  code so the value does not change under you at the upgrade. From Django 6.1
+  the implicit default is deprecated. `salted_hmac()` and
+  `django.core.signing.base64_hmac()` warn until the caller names the
+  algorithm. Treat that warning as the migration notice, because the digest
+  changes at 7.0 and every value derived from it stops verifying.
 - `signing.dumps()` produces signed, base64-encoded, **readable** output. Do not
   put anything confidential in it.
 - Which subsystems `SECRET_KEY_FALLBACKS` covers during a rotation, and the

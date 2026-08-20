@@ -334,7 +334,10 @@ front of you, and note the gaps that remain real:
 If per-object delete logic is security-relevant and you cannot verify the whole
 path, remove the action with `get_actions()` or
 `admin.site.disable_action("delete_selected")` and allow deletes only through
-the change form.
+the change form. On Django 6.1 that override takes a new `action_location`
+parameter, and Django deprecates an override without it. The values it returns
+are `Action` objects now, so read their attributes rather than unpacking or
+indexing them.
 
 Other admin surfaces:
 
@@ -343,7 +346,12 @@ Other admin surfaces:
   the action body against the queryset. An action that declares no
   `permissions` is filtered by nothing: `_filter_actions_by_permissions()`
   keeps it for any staff user who reaches the changelist, on the POST path as
-  well as in the dropdown.
+  well as in the dropdown. From Django 6.1 the `location` argument of
+  `@admin.action` widens where that reaches.
+  `ActionLocation.CHANGE_FORM` puts the action on the change form, and the
+  default stays `ActionLocation.CHANGE_LIST`. An action with no `permissions`
+  therefore gains a second unguarded entry point the moment somebody sets
+  `location`.
 - `readonly_fields` prevents edits in the form. It is not an authorization
   control and does nothing for other write paths.
 - `autocomplete_fields` and `ForeignKeyRawIdWidget` lookups expose related-object
@@ -598,6 +606,14 @@ possible:
 - object-permission rows that can be enumerated and reconciled against current
   ownership;
 - an audit test that fails when an undeclared permission or role appears.
+
+Two Django 6.1 changes help here. A migration that renames a model now renames
+the matching `Permission.name` and `Permission.codename`, where earlier
+versions left the old rows behind. Check the grant tables after any model
+rename on an older line. A stale codename denies silently, and a hand-made
+replacement row can grant twice. The new `Permission.user_perm_str` property
+returns the string `User.has_perm()` expects, so a script that lists effective
+permissions no longer builds `"app_label.codename"` by hand.
 
 Absence of all of these is a finding in its own right for a system with
 meaningful privilege tiers: it means no one can answer who holds what.

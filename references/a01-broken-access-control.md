@@ -919,6 +919,26 @@ return redirect("home")
 Never `redirect(request.GET["next"])` unchecked — it enables phishing and can
 bootstrap OAuth token theft.
 
+A redirect can also carry the request method and the body forward.
+`preserve_request=True` makes `HttpResponseRedirect` and `redirect()` answer
+with 307 or 308 rather than 302 or 301. Django added that argument in 5.2.
+Django 6.1 adds the same control to the class-based view as
+`RedirectView.preserve_request`, which defaults to `False`. Rate an enabled one
+above a plain open redirect, because the POST body reaches the target host as
+well as the visit. Validate the target with `url_has_allowed_host_and_scheme`
+before the response is built, exactly as above.
+
+Django also bounds the redirect URL at 16384 characters and raises
+`DisallowedRedirect` above it. Django 6.0 hard-codes that bound. Django 6.1
+adds a `max_length` argument that overrides it, and `max_length=None` removes
+the check. Read `max_length=None` on a caller-supplied target as a finding,
+because it deletes a bound the framework enforced for every project. Verified
+against the 6.1 and 6.0 source on 20 Aug 2026.
+
+**Write-time.** Do not generate `preserve_request=True` or `max_length=None`
+for a redirect whose target comes from the request. Validate the target first,
+then choose the status code the flow needs.
+
 ## Locale redirects and language negotiation
 
 ### Principle layer
@@ -1065,4 +1085,6 @@ break-glass elevation are in `privileged-access-and-impersonation.md`.
       `pathlib` join for a read; file names come from a server-side identifier
       and resolve through the storage API, whose rejection is handled rather
       than left to become a 500.
-- [ ] Redirect targets validated with `url_has_allowed_host_and_scheme`.
+- [ ] Redirect targets validated with `url_has_allowed_host_and_scheme`; a
+      307/308 `preserve_request` redirect and a `max_length=None` override are
+      each read as findings on a caller-supplied target.

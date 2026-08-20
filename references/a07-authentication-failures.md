@@ -845,6 +845,33 @@ client-settable header. It is safe only where the proxy overwrites that header
 on every request, and strips every inbound copy, error paths and internal hops
 included (`deployment-and-runtime.md`, "Reverse proxy and forwarded headers").
 
+Under ASGI the picture is different, and Django's own documentation says the
+spoofing warning applies there in all configurations. An ASGI server cannot put
+a trusted value in the environ, so no key is out of the client's reach. The
+default `header = "REMOTE_USER"` therefore reads `HTTP_REMOTE_USER` under ASGI,
+which is the client-sent header.
+
+From Django 6.1 a custom `header` is read exactly as written under ASGI. Django
+5.2 and 6.0 added an `HTTP_` prefix to it on the async path only. One subclass
+therefore resolved two different keys under WSGI and ASGI. Write the full key
+yourself now. `header = "HTTP_AUTHUSER"` receives an `AuthUser:` request
+header. Verified against the 6.1, 6.0, and 5.2 source on 20 Aug 2026.
+
+That change is silent on upgrade. A 6.0 ASGI subclass with
+`header = "X_REMOTE_USER"` reads a key nothing populates on 6.1, so the lookup
+raises `KeyError` on every request. `RemoteUserMiddleware` fails closed there,
+because `force_logout_if_no_header` defaults to `True`.
+`PersistentRemoteUserMiddleware` sets it to `False`, so it returns without
+reading the header at all. The session then outlives any revocation at the
+proxy.
+
+Django 6.1 also removed the shim for a subclass that overrides
+`process_request()` and not `aprocess_request()`. Django 6.0 warned and still
+ran the sync override through `sync_to_async`. Django 6.1 calls
+`aprocess_request()` directly, so the override is skipped under ASGI while the
+base class still authenticates. Any check the subclass added there stops
+running. Override both methods, or move the check into `RemoteUserBackend`.
+
 - Set `RemoteUserBackend.create_unknown_user = False`, unless the design
   deliberately creates a user from the header. The default is `True`, so every
   name the header carries becomes a database user.
@@ -857,7 +884,8 @@ included (`deployment-and-runtime.md`, "Reverse proxy and forwarded headers").
 
 **Write-time.** Do not generate a custom-header subclass unless the request
 names the fronting proxy. When you do generate one, write the proxy
-strip-and-set rule into the deployment notes in the same edit.
+strip-and-set rule into the deployment notes in the same edit. Write the
+`HTTP_` prefix into the `header` value yourself when the target is Django 6.1.
 
 ## API keys
 
