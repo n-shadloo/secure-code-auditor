@@ -744,6 +744,9 @@ class Command(BaseCommand):
             self.stdout.write(f"completed through pk={last}")
 ```
 
+The batch read and `bulk_update` overwrite a row the application changed in
+between; use `select_for_update()` or a write-quiet window, and re-run.
+
 **Package decision (7 Aug 2026):** `cryptography==50.0.0` is the recommended
 base and `django-fernet-encrypted-fields==0.4.0` is **conditional**, with the
 condition being its key derivation — it derives the Fernet key from

@@ -466,12 +466,16 @@ own failure modes around pooled connections. See `data-layer-and-database.md`.
 unscoped queryset under a `pk` route is the highest-yield pattern in this
 file, which is why it is also the one most often reported where the scoping is
 real but sits somewhere else. Two places carry it invisibly: a viewset
-registered on a nested router under a tenant-scoped parent, where the parent
-lookup constrains the child before this method runs, and a model whose default
-manager already filters, so `Model.objects` is not the whole table. The
-deciding question is what the router registration and the model's `Meta` and
-manager say — read both before concluding, and where they do scope, the
-finding that remains is the legibility of it rather than a broken control.
+registered on a nested router under a tenant-scoped parent, and a model whose
+default manager already filters, so `Model.objects` is not the whole table.
+Read the nested case precisely: the registration alone adds no predicate, and
+what constrains the child is a parent-filter mixin in the class's bases, the
+`NestedViewSetMixin` shape. Look for that mixin, and check that the parent
+object itself is authorized for the caller, because a parent filter scopes the
+child to a parent the caller may still not own. The deciding question is what
+the class bases, the router registration, and the model's `Meta` and manager
+say — read them before concluding, and where they do scope, the finding that
+remains is the legibility of it rather than a broken control.
 
 **Write-time.** When generating a view that leans on scoping it does not
 perform — a nested router's parent lookup, a filtering default manager — name
@@ -793,7 +797,11 @@ Three answers, because they are routinely assumed to be one:
   lives: `django.utils._os`, an underscore-prefixed private module that no
   public documentation covers. Using it is reasonable; depending on it directly
   is depending on something Django has not promised to keep, which is a further
-  argument for reaching it through the storage API that calls it for you.
+  argument for reaching it through the storage API that calls it for you. The
+  containment is lexical, so a storage tree that an untrusted process can
+  write links into defeats it between the check and the open; prefer object
+  storage for untrusted content, and reject link members at ingestion as the
+  upload rules already require.
 - **`FileSystemStorage` inherits that protection, so the storage API is the
   supported route.** `path()` returns `safe_join(self.location, name)`, and
   `open()`, `exists()`, and `size()` all resolve through `path()`. On the write

@@ -311,7 +311,9 @@ claims = jwt.decode(
     audience=settings.MCP_RESOURCE_URI,   # this server, per RFC 8707
     issuer=settings.OIDC_ISSUER,          # iss and exp are verified as well
 )
-downstream = exchange_token(claims, resource=settings.BILLING_RESOURCE_URI)
+downstream = exchange_token(
+    subject_token=token, resource=settings.BILLING_RESOURCE_URI
+)
 billing.get("/invoices", headers={"Authorization": f"Bearer {downstream}"})
 ```
 

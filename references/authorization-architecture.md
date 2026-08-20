@@ -279,7 +279,26 @@ the model add/change/delete permissions; it does not require `view` for GET, and
 users are rejected outright. It grants no object-level control.
 
 `DjangoObjectPermissions` extends it per object and needs an object-permission
-backend. Its response codes are deliberate and frequently "corrected" by mistake:
+backend. Read its `perms_map` before you rely on it. The stock map holds an
+empty permission list for `GET`, `HEAD`, and `OPTIONS`, so a safe request
+checks no object permission at all. Read access is view-level only until you
+subclass the map:
+
+```python
+from rest_framework.permissions import DjangoObjectPermissions
+
+
+class ViewDjangoObjectPermissions(DjangoObjectPermissions):
+    perms_map = {
+        **DjangoObjectPermissions.perms_map,
+        "GET": ["%(app_label)s.view_%(model_name)s"],
+        "HEAD": ["%(app_label)s.view_%(model_name)s"],
+        "OPTIONS": ["%(app_label)s.view_%(model_name)s"],
+    }
+```
+
+With a map that requires a view permission, the response codes are deliberate
+and frequently "corrected" by mistake:
 
 - safe method, permission missing → **404**;
 - unsafe method, permission missing but read permission held → **403**;

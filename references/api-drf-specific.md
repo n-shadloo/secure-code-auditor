@@ -198,13 +198,29 @@ class UserSerializer(serializers.ModelSerializer):
 ```
 
 ```python
-# Correct: explicit allowlist; server-controlled fields read-only; secrets write-only
+# Correct: explicit allowlist; server-controlled fields read-only; the secret
+# accepted write-only and validated before it is hashed
+from django.contrib.auth.password_validation import validate_password
+
+
 class UserSerializer(serializers.ModelSerializer):
+    password = serializers.CharField(write_only=True, trim_whitespace=False)
+
     class Meta:
         model = User
-        fields = ["id", "email", "display_name", "is_staff", "date_joined"]
+        fields = [
+            "id", "email", "display_name", "is_staff",
+            "date_joined", "password",
+        ]
         read_only_fields = ["id", "is_staff", "date_joined"]
-        extra_kwargs = {"password": {"write_only": True}}
+
+    def create(self, validated_data):
+        password = validated_data.pop("password")
+        user = User(**validated_data)
+        validate_password(password, user=user)
+        user.set_password(password)
+        user.save()
+        return user
 ```
 
 - Prefer an explicit `fields` allowlist over `exclude` (with `exclude`, a new
@@ -261,6 +277,49 @@ edit, because `"__all__"` and `exclude` both admit whatever the model gains
 next and the field added six months from now is the one nobody re-reviews.
 Where the field is declared on the serializer rather than only named in `Meta`,
 put `read_only=True` on the field, since `read_only_fields` does not reach it.
+
+A writable relation is a second mass-assignment surface. `ModelSerializer`
+builds each writable `PrimaryKeyRelatedField` with the related model's default
+queryset. The client can then name any row in that table, and another tenant's
+row is one of them. Declare the relation with a scoped queryset, or scope it
+per request in `get_fields()` or in `validate_<field>()` from
+`self.context["request"]`. The same rule reaches `SlugRelatedField` and nested
+writes. `UniqueValidator` and `UniqueTogetherValidator` run their own
+querysets too, and an unscoped validator queryset answers whether a value
+exists in another tenant, which is an existence oracle.
+
+**Write-time.** When a serializer gains a writable relation, write the scoped
+queryset in the same edit. State in one line which principal scope that
+queryset encodes.
+
+The same rule with the same spelling exists outside DRF, and a Django codebase
+usually has both. `ModelForm` with `Meta.fields = "__all__"` is the same
+serializer failure in a Django form. Every model field becomes writable from
+POST data, including the `is_staff`, `owner`, or `balance` column added two
+migrations later. `exclude = [...]` fails open the same way an excluded
+serializer field does: the next added field is writable by default. Require an
+explicit `fields` allowlist on every `ModelForm` bound to request data.
+
+Treat a server-owned field rendered as a form input as the same finding: a
+missing `disabled=True`, or a value round-tripped through a hidden input and
+trusted on POST. A hidden field is client input and not server state. The
+bundled scanner's `CFG001` fires on the `Meta` line in either container.
+
+Formsets add one multiplier: the management form's counts (`TOTAL_FORMS`) are
+client input. Django bounds instantiation at `absolute_max`, which defaults to
+`max_num + 1000`, and `DATA_UPLOAD_MAX_NUMBER_FIELDS` bounds the request
+itself. So the review question is not whether a bound exists. It is whether
+the project raised one or removed one. A formset factory that takes a large
+`absolute_max`, a `validate_max=False` on data that feeds bulk model writes,
+or a raised `DATA_UPLOAD_MAX_NUMBER_FIELDS` is a caller-controlled work
+multiplier, and it belongs in the table in `a06-insecure-design.md`,
+"Algorithmic resource exhaustion", with every other one.
+
+**Write-time.** When generating a `ModelForm`, write the explicit `fields`
+list in the same edit that creates the class. Mark a server-owned rendered
+field `disabled=True` rather than re-validating it by hand. Leave the formset
+bounds at their defaults unless the request names a number, and then say what
+the raised bound multiplies.
 
 Where the writable set differs *by role*, allow-list writable fields per role
 rather than deny-listing them, and test `PATCH` separately from `PUT`; see

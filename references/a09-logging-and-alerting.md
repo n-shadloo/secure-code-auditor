@@ -62,6 +62,11 @@ def checkout(request):
     ...
 ```
 
+The two decorators reach Django's own error reports and nothing else. The
+`LOGGING` configuration, an APM agent, and an error SDK each need their own
+scrub. Prove each one with a canary value that you look for in the rendered
+output.
+
 Configure `LOGGING` so handlers don't persist sensitive fields, and ensure
 `DEBUG = False` in production (A10) so tracebacks aren't served to users.
 
@@ -240,8 +245,10 @@ emits the required event or make the path unavailable for that model.
       `pre_delete` where bulk/queryset/raw paths can behave differently.
 - [ ] Reviews distinguish correctly between `QuerySet.delete()` signals and
       overridden `Model.delete()` behavior.
-- [ ] Critical transitions use explicit transactional services and
-      `transaction.on_commit()` or a transactional outbox for external work.
+- [ ] Critical transitions use explicit transactional services and, for
+      external work, `transaction.on_commit()` where ordering is enough or a
+      transactional outbox where the record is a guarantee — `on_commit`
+      orders, the outbox survives.
 - [ ] Signal registration is single, durable, `raw`/database-aware, small, and
       idempotent; actor attribution does not depend on ambient request state.
 
@@ -314,7 +321,9 @@ logger.info("login failed for %s", safe_username)
 structured fields through `extra=` rather than interpolating them into the
 message, because that hands escaping to the encoder once instead of to every
 call site forever, and the call site that gets missed is the one in an
-exception handler. Decide at that same call what may appear in the record —
+exception handler. `extra=` populates the `LogRecord`, and the configured
+formatter decides what renders, so name the JSON formatter the pipeline uses
+and test its output. Decide at that same call what may appear in the record —
 identifiers rather than objects, and no password, token, `Authorization`
 header, or personal data — because a redaction filter added afterwards covers
 only the shipper somebody remembered to configure. Where the project's lines

@@ -513,7 +513,8 @@ include that file, because the default outcome of a single undifferentiated
 requirements list is that every development convenience ships. Where the
 package is only wanted on an existing install for one command, add nothing:
 the equivalent recursion over `get_resolver().url_patterns` is a few lines
-with no dependency, and Django 6.2's built-in `listurls` supersedes both.
+with no dependency, and from Django 6.2 the built-in `listurls` supersedes
+both.
 
 CWE-1104 (Use of Unmaintained Third Party Components) where the tier reflects
 maintenance, and CWE-489 (Active Debug Code) where the shipped tooling exposes

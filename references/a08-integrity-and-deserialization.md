@@ -60,8 +60,10 @@ controls on that store.
 - **`pickle.loads` / `pickle.load`** on anything that crossed a trust boundary.
   Construction runs `__reduce__` on the attacker's terms; there is no safe
   subset and no safe loader option.
-- **`yaml.load` with the default loader, `FullLoader`, or `UnsafeLoader`**, plus
-  `yaml.unsafe_load` and `yaml.full_load`. Only `yaml.safe_load` (equivalently,
+- **`yaml.load` with no `Loader` argument or with `UnsafeLoader`**, plus
+  `yaml.unsafe_load`: each constructs arbitrary Python objects. `FullLoader`
+  and `yaml.full_load` construct a wider object set than `safe_load`, and they
+  are the lower-severity sibling. Only `yaml.safe_load` (equivalently,
   `SafeLoader`) is data-only.
 - **`marshal`, `dill`, `jsonpickle`** reconstruct arbitrary objects and belong
   in the same class as `pickle`, including where they arrive as a machine
@@ -172,10 +174,13 @@ that exists in the safe JSON format, with no deserialization bug required.
   attacker can influence is a trust boundary: a user-facing "import" feature, a
   backup-restore endpoint, or fixtures read from a writable location. Validate
   and authorize the contents as request input, or do not accept them.
-- Django's built-in formats are `json`, `jsonl`, `xml`, and `yaml`; the YAML
-  serializer exists only when PyYAML is installed. Keep fixtures on `json` or
-  `xml` and treat a YAML fixture path fed by anything untrusted as the
-  `yaml.load` finding above.
+- Django's built-in formats are `json`, `jsonl`, `xml`, and `yaml`. The YAML
+  serializer exists only when PyYAML is installed, and it loads with
+  `SafeLoader` (`django/core/serializers/pyyaml.py`, read on Django 6.0.7). So
+  a YAML fixture is not the `yaml.load` finding above. Its risk is the same
+  unvalidated bulk write and the same authorization question as every other
+  format. Keep fixtures on `json` or `xml`, because the extra dependency buys
+  nothing here.
 - `dumpdata` output is a concentrated copy of model data and needs the handling
   a database backup gets. Review-time check: is it written under a web-served
   path, committed to version control, or baked into a container image? Retention
@@ -251,6 +256,11 @@ CELERY_ACCEPT_CONTENT = ["json"]
 `accept_content` is the one that decides what a worker will execute; the other
 two only decide what it emits. A single `"pickle"` entry there re-opens the hole
 regardless of what the producers are configured to send.
+
+`result_accept_content` is the separate allowlist for the result-reading side.
+It defaults to `None`, which means it follows `accept_content`. So a project
+that widens that one setting alone re-opens the hole on the result backend
+while `accept_content` still reads as narrow.
 
 **Write-time.** When generating Celery configuration, write those three
 settings explicitly even though the defaults already match them, because the
@@ -543,6 +553,7 @@ import hmac
 import json
 import time
 
+from django.db import transaction
 from django.http import HttpResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
@@ -581,14 +592,31 @@ def stripe_webhook(request):
     event = json.loads(payload)   # parse only after the bytes are trusted
     # The unique constraint arbitrates, so a duplicate loses the insert rather
     # than being screened out by a prior read. An already-seen event is
-    # acknowledged, not re-processed: the provider needs a 2xx to stop.
-    _, created = ProcessedEvent.objects.get_or_create(event_id=event["id"])
+    # acknowledged, not re-processed: the provider needs a 2xx to stop. The
+    # row records that the event was RECEIVED; the worker transitions it.
+    _, created = ReceivedEvent.objects.get_or_create(
+        event_id=event["id"],
+        defaults={"payload": event, "status": ReceivedEvent.RECEIVED},
+    )
     if not created:
         return HttpResponse(status=200)
 
-    process_event.delay(event["id"])   # fast ack, work off the request path
+    # The committed row is the durable fact and the enqueue is only a wake-up,
+    # so it runs after the commit. Enqueuing before the commit races the
+    # worker against a row it cannot read yet; enqueuing outside on_commit
+    # loses the work when the process dies here.
+    transaction.on_commit(lambda: process_event.delay(event["id"]))
     return HttpResponse(status=200)
 ```
+
+The record is the durable fact and the enqueue is only a wake-up. A crash
+between the commit and the enqueue, or a broker outage at `.delay`, leaves a
+`RECEIVED` row that no worker claimed. A periodic sweep re-enqueues the
+`RECEIVED` records older than a small threshold, so a lost wake-up delays the
+work instead of dropping it. The lease, the retry, and the dead-letter design
+of that worker belong to the `django-async-jobs` skill, which is authoritative
+on delivery mechanics. This file owns one thing only: the verified event
+survives the acknowledgment.
 
 `csrf_exempt` belongs on this route and nowhere else, and it is only safe
 because the MAC replaces what CSRF was protecting. A CSRF-exempt webhook route

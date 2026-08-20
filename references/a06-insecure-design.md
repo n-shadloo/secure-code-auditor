@@ -356,6 +356,12 @@ class OrderItemSerializer(serializers.ModelSerializer):
 # CheckConstraint on the model holds them on the paths that are not this one.
 class OrderItemSerializer(serializers.ModelSerializer):
     quantity = serializers.IntegerField(min_value=1, max_value=100)
+    # A writable relation defaults to every row of the related table. See
+    # api-drf-specific.md, "Serializer exposure and mass assignment (API3)",
+    # for the tenant scope this queryset also has to carry.
+    product = serializers.PrimaryKeyRelatedField(
+        queryset=Product.objects.filter(is_active=True)
+    )
 
     class Meta:
         model = OrderItem

@@ -111,14 +111,21 @@ def transfer_membership(*, actor_id, membership_id, new_tenant_id):
             .select_related("tenant")
             .get(pk=membership_id)
         )
+        destination = Tenant.objects.get(pk=new_tenant_id)
+        # Both sides, inside the same transaction. The source check alone
+        # lets an admin move a member into any tenant by identifier.
         if not membership.tenant.admins.filter(pk=actor_id).exists():
             raise PermissionDenied
-        membership.tenant_id = new_tenant_id
+        if not destination.admins.filter(pk=actor_id).exists():
+            raise PermissionDenied
+        membership.tenant_id = destination.pk
         membership.save(update_fields=["tenant_id"])
 ```
 
 Do not perform the permission query, await unrelated work, and then update in a
-separate call; authorization state can change between those operations.
+separate call; authorization state can change between those operations. The
+destination check is the half that a transfer bug drops, because the source
+check alone lets an admin move a member into any tenant by identifier.
 
 ## Request and tenant context
 

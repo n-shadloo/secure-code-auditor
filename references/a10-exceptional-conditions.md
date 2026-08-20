@@ -334,10 +334,16 @@ with transaction.atomic():
 - Callbacks run after the **outermost** `atomic()` commits, in registration
   order. One registered inside a nested block does not run if a rollback to
   that savepoint or to an earlier one happened during the transaction.
-- Delivery is at-least-once. A worker that finishes the work and dies before
-  acknowledging causes a redelivery, so every task must be safe to run twice:
-  re-check state before acting rather than assuming the first run did not
-  happen. That is the same design as the next section, applied to a worker.
+- Delivery is at-least-once, and that guarantee begins at the broker. The
+  enqueue itself is lost when the process dies between the commit and the
+  callback, so `on_commit` orders the work without making it durable. Where
+  the record must not be lost, use the transactional outbox in
+  `a09-logging-and-alerting.md`, "Lifecycle hooks and audit guarantees", and
+  let `django-async-jobs` own the dispatcher that drains it. Past the broker,
+  a worker that finishes the work and dies before acknowledging causes a
+  redelivery, so every task must be safe to run twice: re-check state before
+  acting rather than assuming the first run did not happen. That is the same
+  design as the next section, applied to a worker.
 - Two tasks enqueued in order are not guaranteed to execute in order or on the
   same worker. Never let task B assume it can see task A's effect; have it
   check.
@@ -492,6 +498,10 @@ def handle(actor, key, body):
         record.save(update_fields=["response_status", "response_body"])
     return Response(result, status=200)
 ```
+
+The fingerprint above digests the body alone; canonicalize the method and the
+route into it as well, so one key sent to two endpoints cannot replay the
+wrong response.
 
 The record, the effect, and the stored response commit together, and that is
 what makes the replay branch safe: a record exists only if its effect

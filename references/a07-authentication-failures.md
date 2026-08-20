@@ -186,6 +186,9 @@ class User(AbstractBaseUser):
         ]
 ```
 
+This manager is an identity example. The password-policy rule above still
+applies to any path that gives it a human-chosen password.
+
 **`is_active` reaches further than a login form and stops short of a token.**
 `AbstractBaseUser` sets a class attribute `is_active = True` and
 `ModelBackend.user_can_authenticate()` reads `getattr(user, "is_active",
@@ -283,6 +286,15 @@ requirements above locates the one gap that matters:
   for the user's own attributes.
 - `NumericPasswordValidator` rejects an all-numeric password.
 
+The validators run where `validate_password()` runs, and nowhere else. The
+built-in auth forms and views call it. `set_password()`, the model
+constructor, and a manager `create_user()` path do not call it, so a password
+set through one of them meets no policy at all. Call
+`validate_password(password, user=user)` in every custom signup, invitation,
+reset, change, admin, import, and API path that takes a human-chosen
+password. For an account that must hold no password, call
+`set_unusable_password()`.
+
 Django imposes no maximum length, no composition rules, and no periodic
 expiry. The last two are the correct default rather than gaps, because the
 requirement is to *not* impose them — a project that added a character-class
@@ -336,7 +348,9 @@ class BreachedPasswordValidator:
         )
         try:
             with urllib.request.urlopen(lookup, timeout=2) as response:
-                body = response.read().decode("utf-8")
+                # Cap the read: a third party controls this response body,
+                # and an unbounded read hands it a memory exhaustion.
+                body = response.read(2_000_000).decode("utf-8")
         except (urllib.error.URLError, TimeoutError):
             # Fail open, deliberately and visibly. Failing closed denies every
             # password change during someone else's outage; whichever way the
@@ -375,8 +389,9 @@ State the cost of that check rather than absorbing it. It is an outbound call
 to a third party on every password set and change, so password changes now
 depend on that service's availability and latency, the endpoint joins the
 hosts the egress policy has to allow, and a five-character hash prefix is
-disclosed to it. The `Add-Padding` header makes every response a uniform size
-so a prefix's popularity cannot be inferred from response length. The
+disclosed to it. The `Add-Padding` header adds decoy entries so that the
+entry count varies inside a band, and the response length stops identifying
+the queried prefix; the responses are not the same size. The
 fail-open branch is a decision and not a default: failing closed is the
 stronger posture and the right one for a high-assurance product, but it
 denies every password change during an outage nobody in the project controls.
@@ -515,6 +530,9 @@ class ChangePasswordView(APIView):
         update_session_auth_hash(request, request.user)
         return Response(status=204)
 ```
+
+The endpoint also verifies the current password, and it carries the
+login-flow limits from "Brute force and enumeration".
 
 Treat log-out-everywhere as a stated requirement rather than a side effect of
 this behavior. A password change already delivers it; a product that needs

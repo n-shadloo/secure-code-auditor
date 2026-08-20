@@ -176,13 +176,20 @@ uses. And policies live in the database catalog, not in `migrations/`, so they
 **drift** from the schema unless they are created and altered inside migrations
 like any other object.
 
-A `WITH CHECK` clause is what stops a write from inserting or updating a row
-into another tenant; a `USING`-only policy filters reads and lets writes
-through. Both are needed.
+A `WITH CHECK` clause stops a write from inserting or updating a row into
+another tenant. For an `ALL` or an `UPDATE` policy with no `WITH CHECK`
+clause, PostgreSQL uses the `USING` expression as the check as well. The trap
+is a `FOR SELECT` policy next to a separate permissive write policy: the read
+predicate never applies to the write, and permissive policies combine with
+`OR`. Write both clauses explicitly on every policy that permits a write, so
+the reviewer reads the write rule directly.
 
-Note for operations: `pg_dump` respects row-level security, so a dump taken by
-a non-bypassing role can be silently **incomplete**. Backups must be taken by a
-role that bypasses policies.
+Note for operations: `pg_dump` sets `row_security` to `off` by default, so it
+dumps all the rows. A role that policies restrict, and that cannot bypass
+them, gets an error instead of a partial dump. The `--enable-row-security`
+flag is the opt-in that makes the output policy-filtered, and that is the
+silently **incomplete** dump. Give backups a dedicated role that reads every
+row it must read. A restore test that compares the row counts proves it.
 
 ## Tenant context on a pooled connection
 
@@ -463,12 +470,17 @@ committed data, which is also what makes a `select_for_update()` re-read
 correct in `a10-exceptional-conditions.md`, "Races, TOCTOU, and adversarial
 sequencing".
 
-`SERIALIZABLE`, and PostgreSQL's `REPEATABLE READ` snapshot isolation
-underneath it, buy the invariants a row lock cannot express: an aggregate over
-many rows, or a predicate over rows that do not exist yet and so cannot be
-locked. They buy them by aborting transactions rather than by blocking them.
-PostgreSQL raises a serialization failure — SQLSTATE `40001` — at commit on
-any transaction whose outcome no serial ordering could have produced. So a
+`SERIALIZABLE` buys the invariants a row lock cannot express: an aggregate
+over many rows, or a predicate over rows that do not exist yet and so cannot
+be locked. PostgreSQL's `REPEATABLE READ` is snapshot isolation, and it stops
+short of that. It aborts a transaction that modifies a row another transaction
+already changed. It permits write skew across different rows, so an invariant
+over two rows still needs `SERIALIZABLE`. Both levels hold the guarantee by
+aborting transactions rather than by blocking them.
+
+Under `SERIALIZABLE`, PostgreSQL raises a serialization failure — SQLSTATE
+`40001` — at commit on any transaction whose outcome no serial ordering could
+have produced. `REPEATABLE READ` aborts the update conflict it detects. So a
 raised isolation level with no retry loop is not a stronger guarantee. It is
 the same guarantee plus a new class of runtime error, and it surfaces as a
 500 under exactly the concurrency it was introduced to survive.
@@ -530,6 +542,10 @@ def rebalance(*, account_id):
     for attempt in range(MAX_ATTEMPTS):
         try:
             with transaction.atomic(using="serializable"):
+                # The alias on atomic() does not route the ORM. Every queryset,
+                # save, lock, and on_commit inside post_entries must name
+                # using="serializable", or that work runs on the default
+                # connection, outside this transaction.
                 return post_entries(account_id=account_id)
         except DatabaseError as exc:
             if not is_retryable(exc) or attempt == MAX_ATTEMPTS - 1:
