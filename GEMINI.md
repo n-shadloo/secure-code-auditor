@@ -132,8 +132,9 @@ the old derivation on 5.2 and 6.0, defaults to off on 6.1, and is removed in
 down to a KMS data key wrapped under an encryption context bound to its own
 row, and post-quantum posture), the configuration published in
 DNS rather than in code (SPF lookup limits and alignment, DKIM signing through
-third-party senders, DMARC rollout under the 2026 specification, CAA, and
-dangling-DNS subdomain takeover), deployment and runtime hardening (hybrid
+third-party senders, DMARC rollout under the 2026 specification, MTA-STS and
+TLS-RPT for the transport the message rides on, CAA, and dangling-DNS
+subdomain takeover), deployment and runtime hardening (hybrid
 post-quantum key exchange at the edge, where OpenSSL 3.5 already offers and
 prefers X25519MLKEM768 and the finding is a pinned group list that excludes it
 rather than a feature nobody enabled, forwarded-header trust and reading the

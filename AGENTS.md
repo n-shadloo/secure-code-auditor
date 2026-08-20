@@ -145,8 +145,9 @@ key lifecycle and envelope encryption with versioned rotation and a data key
 wrapped by a KMS under an encryption context bound to its row, and post-quantum
 posture), the DNS-published configuration that decides whether the domain
 itself can be forged (SPF lookup limits and alignment, DKIM signing through a
-third-party sender, DMARC rollout under the 2026 specification, CAA, and
-dangling-DNS subdomain takeover), deployment/runtime hardening including
+third-party sender, DMARC rollout under the 2026 specification, MTA-STS and
+TLS-RPT for the transport the message rides on, CAA, and dangling-DNS
+subdomain takeover), deployment/runtime hardening including
 hybrid post-quantum key exchange at the TLS edge, where a current OpenSSL
 already negotiates the group and the finding is a pinned list that excludes it,
 forwarded-header trust and reading the client IP behind proxies, development
