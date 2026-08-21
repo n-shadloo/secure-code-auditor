@@ -1,24 +1,27 @@
 # The Audit Workflow
 
-This file owns **how a codebase is swept**: the phase order, what each phase
-hands the next and the coverage property that closes it, the entry-point
-inventory, the principal and trust-boundary model, hypothesis generation and
-the order the work runs in, the budget rule for a tree too large to read
-closely, the coverage ledger, the attack-chain reasoning that turns several
-confirmed links into one finding, and the regression harness that holds a
-finding closed once the report is written. It owns no vulnerability and no
-control belonging to one — every phase names the reference that owns the rules
-for whatever it turns up.
+This file owns **how a codebase is swept**. It owns the phase order, what each
+phase hands the next, and the coverage property that closes each phase. It
+owns the entry-point inventory, the principal model, and the trust-boundary
+model. It owns the hypotheses, their order, and the budget rule for a tree too
+large to read closely. It owns the coverage ledger and the attack-chain
+reasoning that turns several confirmed links into one finding. It also owns
+the regression harness that holds a finding closed after the report.
 
-`00-methodology-and-severity.md` owns the other half: how a finding is scored
-and written, which is the severity rubric, the confidence scale, the finding
-schema, the ASVS mapping, the report structure, and the standing write-time
-contract. The split is procedural against evaluative. This file decides what
-gets opened and in what order; that one decides what an opened file is worth
-once something turns up in it. Neither works alone — a sweep with no scoring
-model produces a list nobody can prioritize, and a scoring model with no sweep
-scores only what someone happened to look at. `SKILL.md` owns the router that
-sends you to the topic files both of them point at.
+This file owns no vulnerability and no control that belongs to one. Every
+phase names the reference that owns the rules for what the phase finds.
+
+`00-methodology-and-severity.md` owns the other half, which is how a finding
+is scored and written. That half is the severity rubric, the confidence scale,
+the finding schema, the ASVS mapping, the report structure, and the standing
+write-time contract. The split is procedural against evaluative. This file
+decides which code a reviewer opens and in which order. That file decides what
+an opened file is worth.
+
+Neither file works alone. A sweep with no scoring model produces a list that
+nobody can put in order. A scoring model with no sweep scores only the code
+that someone opened. `SKILL.md` owns the router that sends you to the topic
+files that both of these files point at.
 
 ## Contents
 - [Principle](#principle)
@@ -37,84 +40,87 @@ sends you to the topic files both of them point at.
 
 ## Principle
 
-A review is bounded by what the reviewer thought to open. Depth of analysis,
-quality of fix, and accuracy of severity are all properties of code that was
-read, and none of them says anything about the route nobody enumerated. So the
-sweep is built inventory-first: establish the complete set of places where
-execution begins on input the application did not author, and derive the work
-from that set rather than from the files that looked interesting.
+The code that the reviewer opens bounds the review. Depth of analysis, quality
+of fix, and accuracy of severity are properties of the code that the reviewer
+read. None of them says anything about the route that nobody enumerated. The
+sweep is therefore inventory-first. Establish the complete set of places where
+execution begins on input that the application did not author. Then derive the
+work from that set, and not from the files that look interesting.
 
 Three consequences make this a procedure rather than advice.
 
 - **Coverage has to be recorded, not felt.** An unexamined surface and a clean
-  one read identically in a report that does not separate them, and the reader
-  will assume the second. The ledger in phase 6 exists to keep the difference
+  surface read the same in a report that does not separate them, and the
+  reader assumes the second one. The ledger in phase 6 keeps the difference
   visible.
-- **Order is a decision with a cost.** Time spent on a low-yield class is time
-  not spent on the authorization surface. The default order in phase 4 is the
-  one that finds the most per file read in a Django codebase, and departing
-  from it should follow from something specific that was seen rather than from
-  a keyword that matched.
-- **A phase ends on a property of its coverage, not on a quantity of reading.**
-  Each phase below hands the next one a written artifact — the scope statement
-  and the environment questions, the inventory, the principals and boundaries,
-  the source-to-sink pairs, the ordered hypotheses, the dispositions — and is
-  finished when that artifact is complete over the surface the previous phase
-  named, rather than when some number of files have been read. A phase that
-  hands forward an impression instead of an artifact makes the next one
-  re-derive it by re-reading, and re-derivation is how a sweep narrows onto
-  whatever was re-read.
+- **Order is a decision with a cost.** Time on a low-yield class is time that
+  the authorization surface does not get. The default order in phase 4 finds
+  the most defects per file read in a Django codebase. A departure from that
+  order should follow from something specific that you saw, and not from a
+  keyword that matched.
+- **A phase ends on a property of its coverage, not on a quantity of
+  reading.** Each phase below hands the next phase a written artifact. That
+  artifact is the scope statement and the environment questions, the
+  inventory, the principals and boundaries, the source-to-sink pairs, the
+  ordered hypotheses, or the dispositions. A phase is finished when its
+  artifact is complete over the surface that the previous phase named. It is
+  not finished at some number of files read. A phase that hands forward an
+  impression makes the next phase derive that artifact again by a second read.
+  That second read is how a sweep narrows onto the same code.
 
 ## Phase 0 — scope, mode, and what the repository cannot tell you
 
-Settle three things before reading application code: which mode is running,
-what the tree contains, and where the tree stops.
+Settle three things before you read application code. Settle which mode runs.
+Settle what the tree contains. Settle where the tree stops.
 
 Mode decides the output rather than the sweep. Review-time runs the phases
-below over code that exists and ends in a findings report; write-time runs the
-same inventory questions forward over code that does not exist yet. Both are
-defined in `00-methodology-and-severity.md`, "Choosing the mode", and the
+below over code that exists, and ends in a findings report. Write-time runs
+the same inventory questions forward over code that does not exist yet.
+`00-methodology-and-severity.md`, "Choosing the mode" defines both modes. The
 forward form is at the end of this file.
 
-Scope is the set of directories, apps, and services in front of you, stated
-before the sweep rather than inferred from it afterwards. Where a service the
-application depends on is outside it, that is a scope decision and belongs in
-the ledger — not a gap discovered at write-up time.
+Scope is the set of directories, apps, and services in front of you. State the
+scope before the sweep. Do not infer it from the sweep afterwards. Where a
+service that the application depends on sits outside the scope, that is a
+scope decision, and it belongs in the ledger. It is not a gap to discover at
+write-up time.
 
 The phase hands forward the scope statement and the list of
-confirm-with-operator questions below, and it is finished when every dependency
-a finding might rest on has been placed on one side of the repository boundary
-or the other. Not when the settings module has been read: the settings module
-is where this phase looks, and the question is about what is not in it.
+confirm-with-operator questions below. The phase is finished when every
+dependency that a finding might rest on sits on one declared side of the
+repository boundary. The phase is not finished when you have read the settings
+module. The settings module is where this phase looks, and the question is
+about what is absent from it.
 
 ### Principle layer
 
-The third question is the one that produces wrong findings, and it fails in
-both directions:
+The third question produces wrong findings, and it fails in both directions:
 
 - **Absence in the repository is not evidence of absence in production.** No
-  rate limit in the code does not mean no rate limit runs; the gateway in
-  front of the application may enforce one. Reporting the absence as a finding
-  asserts something about a system that was never read.
+  rate limit in the code does not mean that no rate limit runs. The gateway in
+  front of the application can enforce one. A finding that reports the absence
+  asserts something about a system that nobody read.
 - **An assertion in the repository is not evidence of presence.** A comment
-  saying the proxy strips the header, a README describing a WAF rule, a
-  setting named `ENFORCE_TENANT_ISOLATION` — none of these is the control.
-  Each is a claim about a control, made by someone who may have been right on
-  the day they wrote it.
+  can say that the proxy strips the header. A README can describe a WAF rule.
+  A setting can carry the name `ENFORCE_TENANT_ISOLATION`. None of these is
+  the control. Each one is a claim about a control, from a person who was
+  possibly correct on the day they wrote it.
 
-Both errors have one fix. Name the thing, say which side of the boundary it
-sits on, and record it as a question addressed to whoever operates that side,
-written together with the answer that would settle it. A question is an honest
-output. A finding resting on an assumption is not, and neither is silence,
-because silence is read as a pass.
+Both errors have one fix. Name the item. Say which side of the boundary it
+sits on.
+
+Record it as a question to the person who operates that side, and write the
+answer that settles it beside the question. A question is an honest output. A
+finding that rests on an assumption is not honest. Silence is not honest
+either, because the reader interprets silence as a pass.
 
 ### Django & DRF implementation layer
 
 `a03-software-supply-chain.md`, "The artifact boundary" already draws this
-line for the build pipeline and states the form the output takes. The rows
-below extend the same rule to the rest of the environment rather than
-restating it. Each row that matters to a finding is carried as
-confirm-with-operator; none of them is assumed in either direction.
+line for the build pipeline. That section also states the form of the output.
+The rows below extend the same rule to the rest of the environment. They do
+not restate it. Carry each row that matters to a finding as
+confirm-with-operator. Assume no row in either direction.
 
 | Not in the tree | The question that settles it |
 |---|---|
@@ -125,13 +131,12 @@ confirm-with-operator; none of them is assumed in either direction.
 | Secret-manager contents and the values actually injected | Does the running process receive the values the settings module reads, and was any of them ever committed to this history? `service-identity-and-secrets.md`, "Where secrets live and how they reach the process" |
 | Registry and CI runner state | Is the signature or attestation present beside the image, and does anything block a rollout without one? `a03-software-supply-chain.md`, "The artifact boundary" |
 
-**Write-time.** When generating code whose correctness depends on something
-outside the repository — a header the proxy is trusted to set, a bucket the
-policy is trusted to keep private, an environment variable that has to exist —
-write the dependency as a startup check or a comment at the site in the same
-edit, and carry it into the security-decisions note as caller-owned, because
-an assumption held only in the author's head is indistinguishable at review
-time from an oversight.
+**Write-time.** Some generated code is correct only because of something
+outside the repository. Examples are a header that the proxy sets, a bucket
+that the policy keeps private, and an environment variable that must exist.
+Write that dependency as a startup check or as a comment at the site, in the
+same edit. Then carry it into the security-decisions note as caller-owned. A
+reviewer cannot tell an unwritten assumption from an oversight.
 
 ## Phase 1 — entry-point inventory
 
@@ -140,29 +145,31 @@ it, and everything before it is preparation for it.
 
 ### Principle layer
 
-An entry point is any place where execution begins on input the application
-did not author: a request, a message, a schedule, a signal, a console
-invocation. Enumerate by construct rather than by convention, because the
-families that get missed are the ones that do not look like a view — a task
-consuming a queue, a command an operator runs, a receiver firing on a save.
+An entry point is any place where execution begins on input that the
+application did not author. An entry point can be a request, a message, a
+schedule, a signal, or a console invocation. Enumerate by construct, and not
+by convention. The families that a reviewer misses are the ones that do not
+look like a view. Three examples are a task that consumes a queue, a command
+that an operator runs, and a receiver that fires on a save.
 
 Three rules keep the inventory honest.
 
 - **Enumerate from the declaration, not from the documentation.** A generated
   schema, an API reference, and a README each describe what someone pointed
-  them at. The declaration is what runs.
-- **Resolve to the full path, not the leaf pattern.** A route is the
-  concatenation of every prefix an `include()` chain contributed, and the leaf
-  module is the one file that does not contain that information.
+  them at. The declaration is the code that runs.
+- **Resolve to the full path, not the leaf pattern.** A route is every prefix
+  that an `include()` chain contributed, joined together. The leaf module is
+  the one file that does not hold that information.
 - **A family with no members is a recorded result.** "No Channels routing in
-  this project" belongs in the ledger. "Channels not mentioned" does not,
-  because the next reader cannot tell it apart from an oversight.
+  this project" belongs in the ledger. "Channels not mentioned" does not
+  belong there, because the next reader cannot tell it from an oversight.
 
 ### Django & DRF implementation layer
 
-Each row is a family, where a Django project declares it, what finds it, and
-the reference that owns its rules. The rules are not repeated here; the point
-of the row is that the family was looked for at all.
+Each row names a family, the place where a Django project declares it, the
+search that finds it, and the reference that owns its rules. This file does
+not repeat those rules. The row exists to record that you looked for the
+family.
 
 | Family | Declared in | Find it with | Rules |
 |---|---|---|---|
@@ -182,15 +189,15 @@ of the row is that the family was looked for at all.
 | MCP tools published over the application | the tool-registration module, and any viewset it republishes | the integration package's registration decorator or `ModelAdmin`-style class, plus every viewset it names | `agent-and-llm-interfaces.md`, "What survives when a DRF view is republished as a tool" |
 | Middleware | `MIDDLEWARE`, in order | `MIDDLEWARE`, `__call__`, `process_view`, `process_exception` | `authorization-architecture.md`, "Default-deny architecture" |
 
-Middleware is the family most often left out of an inventory, and it is the
-one that is an entry point for every request at once. Read it in declared
-order: a component above the authentication middleware runs for anonymous
-traffic, one that returns a response short-circuits everything below it, and
-one that writes to `request` establishes a value every view underneath it
-treats as trustworthy.
+Middleware is the family that an inventory most often omits. It is also the
+family that is an entry point for every request at the same time. Read
+`MIDDLEWARE` in declared order. A component above the authentication
+middleware runs for anonymous traffic. A component that returns a response
+stops every component below it. A component that writes to `request`
+establishes a value that every view below it treats as trustworthy.
 
-The include chain is the other recurring miss, because the grep that finds the
-route is not the file that defines it:
+The include chain is the other frequent miss. The grep that finds the route
+does not land in the file that defines the route:
 
 ```python
 # The chain, in three files. Only the third holds a `path(` that a grep will
@@ -214,61 +221,68 @@ urlpatterns = [path("reports/<int:pk>/", ReportView.as_view())]
 ```
 
 `scripts/entrypoint_inventory.py` is the instrument for this phase. It parses
-every module in the tree and reports the families above as declarations:
-routes resolved through the include chain to their full prefix, router
-registrations at the prefix they are actually mounted on, actions with whatever
-the decorator declares, and, given `--settings`, `MIDDLEWARE` in declared
-order. Every HTTP-reachable row says whether authorization is declared at the
-site, inherited from a base class or a framework default and therefore not
-visible there, or absent — the second and third are different facts and the run
-keeps them apart. Its closing line names the families found and the families
-looked for and not found, which is what phase 6 records. Confirm what it
-surfaces by reading the code; the run is a starting set for the phase, not the
-phase's output.
+every module in the tree and reports the families above as declarations. It
+resolves each route through the include chain to its full prefix. It reports
+each router registration at the prefix where the project mounts it. It reports
+each action with what the decorator declares. With `--settings`, it also
+reports `MIDDLEWARE` in declared order.
 
-It finds declarations, and only declarations. A route registered at runtime — a
-URLconf assembled in a loop, a viewset built by a factory, a tool registered
-from a table when the app loads — is written nowhere a parser can see it, so it
-appears in no run and in no diff of two runs. That is the residual gap this
-phase closes by reading, and it is the reason the first rule above is to
-enumerate from the declaration: a tool that reads declarations tells you what
-was declared, and the question of what else runs is still yours.
+Every HTTP-reachable row states one of three facts about authorization. The
+site declares it. A base class or a framework default supplies it, and it is
+therefore not visible at the site. Alternatively it is absent. The second fact
+and the third fact are different, and the run keeps them apart.
+
+The closing line names the families found, and the families looked for and not
+found. Phase 6 records that line. Read the code to confirm what the run
+surfaces. The run is a starting set for the phase, not the output of the
+phase.
+
+The script finds declarations, and only declarations. Some routes register at
+runtime. Three examples are a URLconf assembled in a loop, a viewset from a
+factory, and a tool registered from a table at app load.
+
+No parser can see these, so they appear in no run and in no diff of two runs.
+Your reading closes that residual gap. This is the reason for the first rule
+above. A tool that reads declarations reports what the project declared, and
+the question of what else runs stays yours.
 
 The served OpenAPI schema is not the inventory. `api-drf-specific.md`,
-"Endpoint inventory (API9)" owns that point together with the three techniques
-behind it and the diff that makes a schema useful at all — anything in the URL
-map that is not in the schema is a shadow-endpoint candidate. Take it from
-there rather than re-deriving it here.
+"Endpoint inventory (API9)" owns that point. It also owns the three techniques
+behind the point, and the diff that makes a schema useful. Anything in the URL
+map that is absent from the schema is a shadow-endpoint candidate. Take the
+method from there, and do not derive it again here.
 
-The phase hands every later phase its list, and it is finished when every
-family in the table has a recorded result — members enumerated at their
-resolved paths, or the family recorded absent. It is not finished when the
-routes look complete. Routes are the family a reviewer finds without trying,
-and a sweep that stops at them has enumerated the surface it was already going
-to read.
+The phase hands its list to every later phase. It is finished when every
+family in the table has a recorded result. That result is either the members
+enumerated at their resolved paths, or the family recorded absent. The phase
+is not finished when the routes look complete. Routes are the family that a
+reviewer finds without effort. A sweep that stops there enumerates only the
+surface it was already going to read.
 
-**Write-time.** When adding a route, a task, a consumer, a command, a
-receiver, or a tool, name which family it joins before writing the body, and
-write that family's access rule in the same edit that makes it reachable,
-because a family is chosen at the moment the decorator is typed and every
-control that applies to the new code follows from which one it was.
+**Write-time.** You can add a route, a task, a consumer, a command, a
+receiver, or a tool. Name the family it joins before you write the body. Then
+write the access rule of that family in the same edit that makes the code
+reachable. The decorator selects the family, and every control that applies to
+the new code follows from that family.
 
 ## Phase 2 — principals and trust boundaries
 
 An entry point is only half of the question. The other half is who arrives at
-it, and the useful form of that question is not "is this authenticated" but
-"what proves the caller is this principal, and what does being it reach".
+the entry point. The useful form of that question is not "is this
+authenticated". The useful form is "what proves that the caller is this
+principal, and what does this principal reach".
 
 ### Principle layer
 
-Enumerate the principals the application actually distinguishes, not the ones
-its documentation names. A principal the code cannot tell apart from another
-is not a principal; it is a comment. Then enumerate the boundaries, which are
-the places where something crosses from one trust domain into another and the
-crossing is where a check either exists or does not.
+Enumerate the principals that the application actually distinguishes, and not
+the principals that its documentation names. A principal that the code cannot
+tell from another principal is not a principal. It is a comment. Then
+enumerate the boundaries. A boundary is a place where something crosses from
+one trust domain into another. The check at that crossing either exists or
+does not exist.
 
-`authorization-architecture.md` owns the privilege model these principals are
-expressed in, including which of RBAC, ABAC, and ReBAC fits, and
+`authorization-architecture.md` owns the privilege model that expresses these
+principals, and it owns the choice between RBAC, ABAC, and ReBAC.
 `privileged-access-and-impersonation.md` owns operator identity.
 
 ### Django & DRF implementation layer
@@ -296,27 +310,27 @@ expressed in, including which of RBAC, ABAC, and ReBAC fits, and
 | Application to a third party | the outbound destination is allowlisted after DNS resolution, and the response is untrusted input on the way back — `a01-broken-access-control.md`, "SSRF" |
 | Proxy to application | the number of trusted hops is known, and the client IP is read from the position that survives a forged header — `deployment-and-runtime.md`, "Reading the client IP" |
 
-The phase hands phase 4 a principal set and the boundaries each entry point
-crosses, and it is finished when every entry point from phase 1 has at least
-one principal named against it — including the ones whose answer is anonymous,
-since that is both the answer nobody writes down and the one that most often
-turns out to be wrong.
+The phase hands phase 4 a principal set, and the boundaries that each entry
+point crosses. It is finished when every entry point from phase 1 carries at
+least one principal. That includes every entry point whose principal is
+anonymous. Anonymous is the answer that nobody writes down, and it is the
+answer that most often proves wrong.
 
-**Write-time.** When generating an endpoint, a task, or a tool, write down
-which principals can reach it before writing its body, and derive tenant,
-owner, and role from the authenticated identity in that same edit, because a
-principal that is not distinguished at the moment the handler is written
-cannot be distinguished by any check added later without changing the handler.
+**Write-time.** When you generate an endpoint, a task, or a tool, write down
+which principals reach it before you write the body. Derive tenant, owner, and
+role from the authenticated identity in that same edit. A handler that does
+not distinguish a principal at generation time cannot distinguish it later,
+unless you change the handler.
 
 ## Phase 3 — sources to sinks
 
-`a05-injection.md`, "Tracing input to a sink" owns the method, and the
-inventory in that section is the sink map for the whole sweep, not for the
-injection topic alone. It is complete by design so that nothing needs a
-partial copy; read it there and walk it once per entry point.
+`a05-injection.md`, "Tracing input to a sink" owns the method. The inventory
+in that section is the sink map for the whole sweep, not for the injection
+topic alone. It is complete by design, so no file needs a partial copy of it.
+Read it there, and walk it one time for each entry point.
 
-What belongs to the sweep rather than to that file is the pairing rule, which
-decides how much of the result is worth carrying forward:
+The pairing rule belongs to the sweep rather than to that file. It decides how
+much of the result is worth carrying forward:
 
 - **A sink with no source reaching it is not a finding.** A `subprocess` call
   with a constant argument vector is a grep hit, and reporting it teaches the
@@ -325,264 +339,280 @@ decides how much of the result is worth carrying forward:
   belongs to the bound that the flow needs, not to this phase — see
   `a06-insecure-design.md`, "Algorithmic resource exhaustion".
 - **The second-order path is found as two unrelated hits unless the stored
-  field is tracked on purpose.** The writer contains no sink and the reader
-  contains no request, so each half reviews clean. Carry the field name
-  forward from phase 1 as a source in its own right; that is the only thing
-  the two halves have in common.
+  field is tracked on purpose.** The writer holds no sink, and the reader
+  holds no request, so each half reviews clean. Carry the field name forward
+  from phase 1 as a source in its own right. That name is the only property
+  the two halves share.
 - **The middle of the path is retrieved, not inferred from the two ends.** A
-  view that calls a service that calls a helper is three files, and the
-  construction that decides the question is in whichever of them nobody opened.
-  Open each function between the entry point and the sink and read the call it
-  makes, because the defect that survives a review is the one whose two ends
-  each look correct in isolation — the parameter is validated where it arrives
-  and the sink is called with a variable that looks local, and the layer that
-  joined the two is where it stopped being data.
+  view that calls a service that calls a helper is three files. The
+  construction that decides the question sits in whichever file nobody opened.
+  Open each function between the entry point and the sink, and read the call
+  it makes. The defect that survives a review is the one whose two ends each
+  look correct alone. The parameter is validated where it arrives, and the
+  sink is called with a variable that looks local. The layer that joined the
+  two is where the value stopped being data.
 
-The phase hands phase 4 the source-to-sink pairs, and it is finished when every
-entry point from phase 1 has been walked once against that inventory —
-walked, and recorded as reaching no sink where it reaches none. An entry point
-that paired with nothing and an entry point nobody walked are the same blank
-line in any record that does not distinguish them.
+The phase hands phase 4 the source-to-sink pairs. It is finished when you have
+walked every entry point from phase 1 one time against that inventory. Where
+an entry point reaches no sink, walk it and record that result. An entry point
+that paired with nothing leaves the same blank line as one that nobody walked.
+Only a record that separates the two shows the difference.
 
-**Write-time.** When generating code that writes a value to a model field
-another process will later hand to an interpreter, constrain the field where
-it is written and keep the value as data where it is read, in the same change,
-because the writer and the reader are edited on different days and by then
-neither side shows the other.
+**Write-time.** Some generated code writes a value to a model field that
+another process later hands to an interpreter. Constrain the field where the
+code writes it. Keep the value as data where the code reads it. Make both
+changes together. A developer edits the writer and the reader on different
+days, and neither side then shows the other.
 
 ## Phase 4 — hypothesis generation and ordering
 
-Generate candidates per entry point rather than per keyword. For each route,
-task, consumer, or tool from phase 1, ask what it would take for this specific
-one to fail: which principal from phase 2 is missing a check, which sink from
-phase 3 it reaches, which of its parameters the server should own. A keyword
-sweep produces leads that are already sorted by how common the keyword is; an
-entry-point sweep produces leads sorted by nothing, which is why they then
-need ordering.
+Generate candidates for each entry point, and not for each keyword. Take each
+route, task, consumer, or tool from phase 1. Ask what makes this specific one
+fail. Ask which principal from phase 2 has no check. Ask which sink from phase
+3 it reaches. Ask which of its parameters the server must own.
+
+A keyword sweep produces leads already sorted by the frequency of the keyword.
+An entry-point sweep produces leads in no order, and they therefore need an
+order.
 
 Order by expected impact against effort to confirm. The default:
 
-1. **Object- and function-level authorization.** First because it is the
-   highest-yield class in Django codebases and among the cheapest to settle —
-   the queryset and the permission list are usually two files, and the answer
-   is either in them or absent from them.
-2. **Authentication and session handling.** Second because a failure here
-   invalidates the authorization work above it, but confirming it usually
-   means reading a settings module and a backend rather than a data path.
-3. **Injection at the sinks phase 3 paired.** Third because the pairing has
-   already been done, so what remains is reading the construction at each
-   site.
-4. **Flows that move money, entitlements, or state.** Fourth because the
-   impact is unambiguous but confirmation costs the most: it means reasoning
-   about ordering, concurrency, and retries rather than reading a declaration.
-5. **Configuration and deployment posture.** Last because much of it is
-   confirm-with-operator from phase 0, and because a settings finding is worth
-   less than an authorization finding on the same application.
+1. **Object- and function-level authorization.** This class is first because
+   it has the highest yield in a Django codebase, and it is among the cheapest
+   to settle. The queryset and the permission list are usually two files, and
+   the answer is either in them or absent from them.
+2. **Authentication and session handling.** This class is second because a
+   failure here invalidates the authorization work above it. Confirmation
+   usually needs a settings module and a backend, and not a data path.
+3. **Injection at the sinks phase 3 paired.** This class is third because
+   phase 3 already did the pairing. Only the construction at each site is left
+   to read.
+4. **Flows that move money, entitlements, or state.** This class is fourth
+   because the impact is unambiguous and the confirmation costs the most.
+   Confirmation needs reasoning about order, concurrency, and retries, and not
+   a declaration to read.
+5. **Configuration and deployment posture.** This class is last because much
+   of it is confirm-with-operator from phase 0. A settings finding is also
+   worth less than an authorization finding on the same application.
 
-The order is a default, not a gate. A surface carrying a known-weak pattern
-jumps the queue on sight: a viewset with `queryset = Model.objects.all()` and
-a `pk` in its route, a `@shared_task` that takes a tenant id as an argument,
-a `.proto` served with no interceptor, a signed cookie read with no salt. Note
-the jump in the ledger so the phases that were deferred are visibly deferred
-rather than quietly skipped.
+The order is a default, not a gate. A surface with a known-weak pattern moves
+to the front of the queue immediately. Two examples are a viewset with
+`queryset = Model.objects.all()` and a `pk` in its route, and a `@shared_task`
+that takes a tenant id as an argument. Two more are a `.proto` served with no
+interceptor, and a signed cookie read with no salt. Record the change of order
+in the ledger, so that the deferred phases are visibly deferred and not
+quietly skipped.
 
-The phase hands phase 5 an ordered list of hypotheses, each attached to an
-entry point rather than to a keyword, and it is finished when every entry point
-from phase 1 has been triaged: a hypothesis was generated against it, or it was
-recorded as generating none. Triaged is not investigated. Investigation is
-phase 5, it is the expensive half, and on a large tree it is the half that runs
-out.
+The phase hands phase 5 an ordered list of hypotheses. Each hypothesis
+attaches to an entry point, and not to a keyword. The phase is finished when
+every entry point from phase 1 is triaged. Triage means that you generated a
+hypothesis against the entry point, or recorded that it generates none. Triage
+is not investigation. Phase 5 is the investigation, it is the expensive half,
+and on a large tree it is the half that runs out of budget.
 
 ### Budget on a large tree
 
-A tree with more entry points than can be read closely forces a choice about
-where the reading goes. The failure is not choosing badly, it is choosing
-silently — a partial audit delivered in the shape of a complete one, with
-nothing on the page that lets the reader tell. Two rules keep the choice
-visible.
+A tree can hold more entry points than you can read closely. That tree forces
+a choice about where the reading goes. The failure is not a bad choice. The
+failure is a silent choice. A silent choice delivers a partial audit in the
+shape of a complete one, and puts nothing on the page that shows the
+difference. Two rules keep the choice visible.
 
-**Enumerate exhaustively, read selectively.** Phase 1 is cheap because it reads
-declarations rather than logic, so it is completed over the whole tree whatever
-the size — at that size through `scripts/entrypoint_inventory.py --json`, whose
-JSON Lines output is taken a record at a time rather than read as a page — and
-it is the one thing never sampled: a family nobody enumerated cannot be sampled
-from, only missed. What gets rationed is the close reading in phases 3 and 5,
-and the ration is per area — a bounded pass over each area the inventory named,
-before an unbounded one over any single area. The reason is in this phase's own
-premise. An entry-point sweep produces leads sorted by nothing, so the first
-interesting one is not the most valuable one, and a budget spent confirming it
-is spent before anything else has been priced. Treat that as a preference with
-a reason rather than as a gate — a lead already most of the way to confirmed is
-worth finishing — but the default runs breadth first, because depth first on
-the first lead is the shape a review takes when nobody decided.
+**Enumerate exhaustively, read selectively.** Phase 1 is cheap, because it
+reads declarations and not logic. Complete phase 1 over the whole tree at any
+size. At a large size, use `scripts/entrypoint_inventory.py --json`, and take
+its JSON Lines output one record at a time.
 
-**A sample is recorded as a sample.** Where a family is large and repetitive —
-forty viewsets over one base class, a hundred tasks in one module — read the
-base class, the shared defaults, and a named subset of members, then write into
-the ledger which members were read and on what basis they were chosen. The
-ledger does not prevent a sample being substituted for a sweep and is not meant
-to; what it does is make the substitution legible, so that the reader sees
-twelve of eighty-three viewsets read as the ones carrying a `pk` in the route,
-rather than a findings list that reads as though all eighty-three were opened.
+Never sample phase 1. You cannot sample a family that nobody enumerated. You
+can only miss it.
+
+The close reading in phases 3 and 5 is what you ration, and you ration it per
+area. Make a bounded pass over each area that the inventory named, before an
+unbounded pass over any single area. The reason is the premise of this phase.
+An entry-point sweep produces leads in no order, so the first interesting lead
+is not the most valuable one. A budget spent on that lead is spent before you
+price anything else.
+
+Treat this as a preference with a reason, and not as a gate. A lead that is
+already close to confirmed is worth the finish. The default is still breadth
+first, because depth first on the first lead is the shape of a review that
+nobody decided.
+
+**A sample is recorded as a sample.** Some families are large and repetitive,
+such as forty viewsets over one base class, or a hundred tasks in one module.
+Read the base class, the shared defaults, and a named subset of the members.
+Then write into the ledger which members you read, and the basis on which you
+chose them.
+
+The ledger does not prevent a sample in place of a sweep, and it is not meant
+to. The ledger makes the substitution visible. The reader then sees twelve of
+eighty-three viewsets read as the ones with a `pk` in the route. The
+alternative is a findings list that reads as eighty-three files opened.
 
 ## Phase 5 — verification
 
-This phase is written as a gate rather than as advice, because pattern
-matching is the cheap operation and restraint is the expensive one. A report
-carrying four real findings and eleven confident wrong ones is worse than no
-report: the reader cannot tell which four, so they stop trusting all fifteen
-and the four that mattered are lost with the rest.
+This phase is a gate rather than advice, because a pattern match is the cheap
+operation and restraint is the expensive one. A report with four real findings
+and eleven confident wrong ones is worse than no report. The reader cannot
+tell which four are real. The reader therefore stops trusting all fifteen, and
+the four real findings go down with the rest.
 
 ### The discharge gate
 
-A hypothesis is promoted to a finding only after each of the six below has been
-**discharged and recorded** — what was read and what it showed — rather than
-assumed. The record is what a later reader needs in order to disagree with the
-finding, and a discharge nobody wrote down is indistinguishable from one that
+Promote a hypothesis to a finding only after you **discharge and record** each
+of the six items below. The record states what you read and what it showed.
+Never assume an item. A later reader needs the record to disagree with the
+finding. A reader cannot tell an unwritten discharge from a discharge that
 never happened.
 
-Recorded means the retrieved text, not remembered behavior. Name the file the
-discharge rests on and quote the line it turns on, because a claim about what a
-decorator, a base class, or a library function does, made without opening it,
-is how a report comes to describe code the project does not contain. That
-failure costs more than the finding was worth. One citation a reader checks and
-cannot find turns every other line in the report into something they now have
-to confirm by hand, and the findings that were real go down with the one that
-was not.
+Recorded means the retrieved text, not remembered behavior. Name the file that
+the discharge rests on. Quote the line that it turns on. A claim about a
+decorator, a base class, or a library function can be made without a read of
+the source. Such a claim is how a report describes code that the project does
+not have.
 
-- **Attacker control.** Name the principal that supplies the value, the
-  parameter it arrives in, and the route it arrives on. All three, by name. A
-  value that only a deploy-time configuration sets is not attacker-controlled,
-  and a hypothesis that cannot name the three is not yet describing an attack.
-- **Reachability.** The route resolves through its `include()` chain, the
-  permission classes in force admit the principal, and no earlier guard —
-  a middleware, a `dispatch` override, a scoped `get_queryset` — returns
-  first. A view that no URLconf reaches is dead code, and dead code is a
-  hygiene note rather than a finding.
-- **Protections examined.** Identify the framework behavior that should have
-  stopped this, and show it absent, disabled, or insufficient. ORM
-  parameterization, template autoescaping, `ALLOWED_HOSTS`, the CSRF
-  middleware, `safe_join`, the storage API, DRF permission and throttle
-  classes, and a serializer's declared field set all exist by default, so a
-  finding that does not say why the default failed here is not finished.
+That failure costs more than the finding was worth. One citation that a reader
+checks and cannot find makes every other line in the report a line they must
+now confirm by hand. The real findings then go down with the wrong one.
+
+- **Attacker control.** Name the principal that supplies the value. Name the
+  parameter that carries it. Name the route it arrives on. Name all three. A
+  value that only a deploy-time configuration sets is not attacker-controlled.
+  A hypothesis that cannot name the three does not yet describe an attack.
+- **Reachability.** The route resolves through its `include()` chain. The
+  permission classes in force admit the principal. No earlier guard returns
+  first, such as a middleware, a `dispatch` override, or a scoped
+  `get_queryset`. A view that no URLconf reaches is dead code, and dead code
+  is a hygiene note rather than a finding.
+- **Protections examined.** Identify the framework behavior that had to stop
+  this defect. Then show that behavior absent, disabled, or insufficient.
+  Several protections exist by default: ORM parameterization, template
+  autoescaping, `ALLOWED_HOSTS`, the CSRF middleware, `safe_join`, and the
+  storage API. So do the DRF permission and throttle classes, and the declared
+  field set of a serializer. A finding that does not say why the default
+  failed here is not finished.
 - **Sanitization insufficiency.** Where validation or scoping is present, show
-  the specific input it does not cover or the path that skips it. That the
-  validation looks thin is an impression, not a discharge.
-- **Concrete impact.** Which data, whose privilege, which money, which
-  account. A sentence that could be pasted into any finding is not an impact
-  statement.
-- **Benign patterns ruled out.** The catalog below, and the one carried by
-  the topic reference that owns this control, were both consulted and the case
-  in hand is not one of them.
+  the specific input it does not cover, or the path that skips it. A statement
+  that the validation looks thin is an impression, not a discharge.
+- **Concrete impact.** Name which data, whose privilege, which money, and
+  which account. A sentence that fits any finding is not an impact statement.
+- **Benign patterns ruled out.** You consulted the catalog below, and the
+  catalog in the topic reference that owns this control. The case in hand is
+  not one of them.
 
-Then dispose of the hypothesis, and the three outcomes are not
-interchangeable:
+Then dispose of the hypothesis. The three outcomes are not interchangeable:
 
-- **Discharges all six — a finding.** Write it up against the schema in
+- **Discharges all six — a finding.** Write it against the schema in
   `00-methodology-and-severity.md`, "Finding schema".
-- **Discharges everything but reachability — a "worth checking" item**, naming
-  the exact thing that would settle it: the settings value, the URLconf, the
-  permission default the deployment actually runs. Not a finding written with
-  a hedge in it.
-- **Fails attacker control, or matches a benign pattern — dropped**, and not
-  mentioned anywhere. A dropped hypothesis is not a caveat: a list of things
-  that turned out to be fine is padding, and it pushes the findings that
-  survived down the page.
+- **Discharges everything but reachability — a "worth checking" item.** Name
+  the exact item that settles it: the settings value, the URLconf, or the
+  permission default that the deployment runs. Do not write it as a finding
+  with a hedge in it.
+- **Fails attacker control, or matches a benign pattern — dropped.** Do not
+  mention it anywhere. A dropped hypothesis is not a caveat. A list of items
+  that turned out to be correct is padding, and it pushes the surviving
+  findings down the page.
 
-The phase hands the write-up those dispositions, and it is finished when every
-hypothesis phase 4 ordered carries one of the three. One left in none of them
-is the hypothesis that reaches the report as a hedge, which is the form this
-gate exists to keep out.
+The phase hands those dispositions to the write-up. It is finished when every
+hypothesis that phase 4 ordered carries one of the three. A hypothesis with
+none of the three reaches the report as a hedge, and this gate exists to stop
+that.
 
-Every finding carries the shortest source-to-sink path it was actually
-confirmed on and the specific protection that failed. Two lines, not a
-narrative — the path is the parameter, the call that carries it, and the sink;
-the protection is the one named above together with the reason it did not
-apply here. `00-methodology-and-severity.md`, "Finding schema" owns where that
-goes in the write-up, and the baseline table beside it owns what the confirmed
-class is worth.
+Every finding carries the shortest confirmed source-to-sink path, and the
+specific protection that failed. Write two lines, not a narrative. The path is
+the parameter, the call that carries the parameter, and the sink. The
+protection is the one named above, together with the reason it did not apply
+here. `00-methodology-and-severity.md`, "Finding schema" owns the position of
+those lines in the write-up. The baseline table beside it owns what the
+confirmed class is worth.
 
 ### Commonly mistaken for a finding
 
-The general rule first, because it generates the cases rather than following
-from them: **a pattern is judged by the property that makes it dangerous, not
-by the identifier that names it.** `raw`, `pickle`, `mark_safe`, `shell=True`,
-and `random` each name a mechanism. The danger is a specific property of the
-use — a statement built by interpolation, bytes a second principal can write,
-markup assembled from a request, an argument that varies, a value that has to
-be unguessable. Where the property is absent, the identifier is just an
-identifier.
+The general rule comes first, because it generates the cases. **A pattern is
+judged by the property that makes it dangerous, not by the identifier that
+names it.** `raw`, `pickle`, `mark_safe`, `shell=True`, and `random` each name
+a mechanism. The danger is a specific property of the use. Two such properties
+are a statement built by interpolation, and bytes that a second principal can
+write. Three more are markup assembled from a request, an argument that
+varies, and a value that has to be unguessable.
+
+Where the property is absent, the identifier is only an identifier.
 
 Four cases are cross-cutting and belong to no single topic file:
 
-- **Dead code.** A view, task, or handler nothing reaches looks exactly like a
-  reachable one, and it is where an unreachable defect is easiest to write up
-  with confidence. What decides it is whether a URLconf, a router
-  registration, a beat schedule, or a caller reaches it; where nothing does,
-  it is a hygiene note saying so.
-- **A control enforced in a layer you did not open.** A view with no
-  `permission_classes` under a restrictive project default, a queryset that
-  reads unscoped over a manager that scopes, a header set at the proxy rather
-  than in Django. What decides it is reading the settings module, the manager,
-  and the middleware list before concluding the control is missing — the
-  per-file catalogs named at the end of this section carry the specific
-  pairs.
-- **Test, fixture, and factory code.** A hardcoded credential, `AllowAny`,
-  `DEBUG = True`, or a disabled certificate check inside `tests/`,
-  `conftest.py`, or a factory. What decides it is whether the production
-  import chain or a production route reaches that module, which is a question
-  about imports rather than about the line.
-- **A defense-in-depth gap written up as an exploit.** A missing header, a
-  short-lived token that does not rotate, a permissive default no route
-  actually inherits. What decides it is whether there is an attacker action
-  the gap enables today. Where there is not, it is a Low that says so, and
-  inventing the chain that would make it a High is the failure this phase
-  exists to stop.
+- **Dead code.** A view, task, or handler that nothing reaches looks the same
+  as a reachable one. It is also the easiest place to write an unreachable
+  defect with confidence. The decision is whether a URLconf, a router
+  registration, a beat schedule, or a caller reaches it. Where nothing reaches
+  it, write a hygiene note that says so.
+- **A control enforced in a layer you did not open.** Two examples are a view
+  with no `permission_classes` under a restrictive project default, and a
+  queryset that reads unscoped over a manager that scopes. A third is a header
+  that the proxy sets instead of Django. The decision needs the settings
+  module, the manager, and the middleware list. Read all three before you
+  conclude that the control is absent. The per-file catalogs at the end of
+  this section carry the specific pairs.
+- **Test, fixture, and factory code.** Examples are a hardcoded credential,
+  `AllowAny`, `DEBUG = True`, or a disabled certificate check inside `tests/`,
+  `conftest.py`, or a factory. The decision is whether the production import
+  chain or a production route reaches that module. That is a question about
+  imports, and not about the line.
+- **A defense-in-depth gap written up as an exploit.** Examples are a missing
+  header, a short-lived token that does not rotate, and a permissive default
+  that no route inherits. The decision is whether the gap enables an attacker
+  action today. Where it enables none, rate it Low and say so. Never invent
+  the chain that would make it a High. That invention is the failure this
+  phase exists to stop.
 
-The rest sit beside the controls they qualify, under this same heading, in the
-references that own them: `a05-injection.md` for the SQL, shell, template, and
-dictionary-expansion cases, `a01-broken-access-control.md` for scoping, SSRF,
-and path joins, `a02-security-misconfiguration.md` for the settings modules a
-production entry point never imports, `a08-integrity-and-deserialization.md`
-for who can write the bytes a deserializer reads, `api-drf-specific.md` for
-permission defaults, CSRF, and serializer field sets, and
-`a04-cryptographic-failures.md` for the uses of `random` that need no
-unguessability at all.
+The other cases sit beside the controls they qualify, under this same heading,
+in the references that own them. `a05-injection.md` owns the SQL, shell,
+template, and dictionary-expansion cases. `a01-broken-access-control.md` owns
+scoping, SSRF, and path joins. `a02-security-misconfiguration.md` owns the
+settings modules that no production entry point imports.
+
+`a08-integrity-and-deserialization.md` owns who can write the bytes that a
+deserializer reads. `api-drf-specific.md` owns permission defaults, CSRF, and
+serializer field sets. `a04-cryptographic-failures.md` owns the uses of
+`random` that need no unguessability.
 
 ## Phase 6 — the coverage ledger
 
-The ledger is working state the sweep populates as it goes and reports at the
-end. Its one job is to keep *examined and clean* distinguishable from *not
-examined*, because a report that conflates them is a report that says nothing:
-the reader takes silence for coverage, and the surface nobody opened is the
-one the next incident comes from.
+The ledger is working state. The sweep fills it in as the sweep runs, and
+reports it at the end. Its one job is to keep *examined and clean* separate
+from *not examined*. A report that joins the two says nothing. The reader
+takes silence for coverage, and the next incident comes from the surface that
+nobody opened.
 
-Write it down as the sweep goes and read it back at each phase boundary rather
-than carrying it in your head. Attention over a long input is a budget rather
-than a constant: material in the middle of a long context is used measurably
-less reliably than the same material near either end, and reliability falls
-further as the input grows whatever position the material holds — which is the
-condition a sweep of a real codebase has produced by the time it reaches phase
-5. So phase 4's ordering is re-derived from what the ledger records rather than
-from whatever the last few files made salient, and a family it still lists as
-unexamined stays on the list even when nothing has referred to it for a long
-while. A review that narrows late narrows towards what it read most recently,
-and the written ledger is the only thing still holding what it did not read.
+Write the ledger down as the sweep runs. Read it back at each phase boundary.
+Do not hold it in your memory.
 
-Five dimensions, each recorded as a count or a list rather than as a
+Attention over a long input is a budget rather than a constant. A model uses
+material in the middle of a long context measurably less reliably than the
+same material near either end. Reliability falls further as the input grows,
+at every position. A sweep of a real codebase has produced that condition by
+phase 5.
+
+Therefore derive the order in phase 4 again from the ledger record, and not
+from the last few files you read. A family that the ledger still lists as
+unexamined stays on the list, even when nothing has referred to it for a long
+time. A review that narrows late narrows toward the most recent files it read.
+The written ledger is the only record that still holds what the review did not
+read.
+
+Record five dimensions. Record each one as a count or a list, and not as a
 judgment:
 
-- **Entry-point families** examined against families found, from phase 1,
-  including the families found to be absent.
-- **Authorization surfaces exercised** — object, function, field, and tenant,
-  each separately, because a sweep that checked object-level scoping on every
-  route has still said nothing about field-level exposure.
-- **Data-lifecycle paths walked** — delete, erasure fan-out, retention,
-  export — since these are the paths a route-driven sweep does not reach.
-- **Reference files loaded**, which is the honest record of which rule sets
-  were actually applied rather than recalled.
-- **Explicit non-goals** for this pass, stated as decisions rather than as
-  omissions.
+- **Entry-point families** examined against families found, from phase 1.
+  Include the families that you found to be absent.
+- **Authorization surfaces exercised** — object, function, field, and tenant.
+  Record each one separately. A sweep that checked object-level scoping on
+  every route has still said nothing about field-level exposure.
+- **Data-lifecycle paths walked** — delete, erasure fan-out, retention, and
+  export. A route-driven sweep does not reach these paths.
+- **Reference files loaded.** This is the honest record of which rule sets you
+  applied, rather than recalled.
+- **Explicit non-goals** for this pass. State each one as a decision, and not
+  as an omission.
 
 ```
 Coverage ledger
@@ -601,32 +631,32 @@ Coverage ledger
 ```
 
 The ledger is working state, not report structure. At write-up it collapses
-into the fourth section of the report, whose shape
-`00-methodology-and-severity.md`, "Report structure" owns. Every line that
-reads *not examined* becomes a line there; every line that reads *examined and
-clean* stays out of it, because a limitations section that lists what was read
-buries the two lines that matter.
+into the fourth section of the report. `00-methodology-and-severity.md`,
+"Report structure" owns the shape of that section. Every line that reads *not
+examined* becomes a line there. Every line that reads *examined and clean*
+stays out of it. A limitations section that lists what you read hides the two
+lines that matter.
 
-**Write-time.** When generating a feature that adds an entry point, record the
-family it joined and the principals that reach it in the security-decisions
-note whose shape `00-methodology-and-severity.md`, "The security-decisions
-note" owns, because the next review starts from an inventory and a surface
-introduced without one is the surface that inventory will be missing.
+**Write-time.** When you generate a feature that adds an entry point, record
+the family it joined and the principals that reach it. Put that record in the
+security-decisions note, whose shape `00-methodology-and-severity.md`, "The
+security-decisions note" owns. The next review starts from an inventory, and a
+surface introduced without one is the surface that inventory will omit.
 
 ## Attack-chain reasoning
 
-When an issue is confirmed, the question before writing it up is what it
-enables next. Most real compromises are three cheap defects in sequence, and
-each of the three, rated alone, is a Medium nobody schedules.
+After you confirm an issue, ask what it enables next. Most real compromises
+are three cheap defects in sequence. Rated alone, each of the three is a
+Medium that nobody schedules.
 
-Rate the chain, not the link. A chain is reported as **one finding at the
-severity of its outcome**, with the links named in order inside it, rather
-than as several low-severity findings that read as unrelated and get closed
-one at a time. Where a link is confirmed and the next one is only plausible,
-say so at that link rather than downgrading the whole chain — the reader needs
-to know which hop is the assumption.
+Rate the chain, not the link. Report a chain as **one finding at the severity
+of its outcome**, and name the links in order inside it. Do not report it as
+several low-severity findings, which read as unrelated and close one at a
+time. Where you confirm a link and the next one is only plausible, say so at
+that link. Do not downgrade the whole chain. The reader needs to know which
+hop is the assumption.
 
-The chains worth searching for, with the file that owns each hop:
+These are the chains worth a search, with the file that owns each hop:
 
 | Chain | The links, in order | Files that own the hops |
 |---|---|---|
@@ -640,40 +670,43 @@ The chains worth searching for, with the file that owns each hop:
 | A version left behind | an old API version still routed; a permission class or queryset scoping that never received the fix the current version did | `api-drf-specific.md`, "Versioning and deprecation lifecycle"; `a01-broken-access-control.md`, "Function-level authorization" |
 | Impersonation with half an audit trail | an operator acting as a user; a record naming the operator but not the subject, or the subject but not the operator | `privileged-access-and-impersonation.md`, "Impersonation: design requirements"; `a09-logging-and-alerting.md`, "Log the right security events" |
 
-**Write-time.** When generating the second step of a flow — the handler that
-consumes a token another endpoint issued, the worker that acts on a row a
-request created, the callback that completes a purchase — state what that step
-re-verifies rather than inherits, in the same edit, because a chain is built
-out of steps each of which was correct on the assumption that the previous one
-had already checked.
+**Write-time.** Sometimes you generate the second step of a flow. Two examples
+are the handler that consumes a token from another endpoint, and the worker
+that acts on a row that a request created. A third is the callback that
+completes a purchase. State in that same edit what the step verifies again,
+rather than inherits. A chain is built from steps, and each step was correct
+on the assumption that the previous step had already checked.
 
 ## Mapping to the OWASP Testing Guide
 
-The Web Security Testing Guide answers a third question, and the three do not
-substitute for one another. The Top 10 ranks what goes wrong most often, and is
-the spine the topic references are arranged on. ASVS enumerates what has to be
-demonstrably true before someone signs the application off, which
-`00-methodology-and-severity.md` maps at chapter level because that is an
-output-side question. The WSTG says **how to go and look**, which is the
-input-side question this file owns, and that is why the mapping is here: the
-guide is the closest published counterpart to the phases above, written for
-someone exercising a running target rather than reading a repository. The
-difference between those two positions is what most of this section is about.
+The Web Security Testing Guide answers a third question, and the three
+standards do not substitute for one another. The Top 10 ranks the most
+frequent defects, and it is the spine of the topic references. ASVS lists what
+must be demonstrably true before a person approves the application.
+`00-methodology-and-severity.md` maps ASVS at chapter level, because that is
+an output-side question.
 
-**Map at section level, and cite nothing finer.** The guide's own referencing
-guidance states that its test identifiers may change between versions, and
-tells anyone citing one to carry the version inside the identifier — the
-`WSTG-v42-INFO-02` form rather than a bare `WSTG-INFO-02`, because a bare
-identifier is read as naming the current content, which is not the content it
-named on the day it was written. That is the same defect the ASVS mapping
-avoids by citing chapters instead of requirement numbers, and it has the same
-answer: a section name stays correct for as long as the section exists. The
-current stable release is v4.2 and v5.0 is in development as of 10 August 2026;
-shipping v5.0 renumbers identifiers and is the event that requires this table to
-be redone.
+The WSTG says **how to go and look**. That is the input-side question that
+this file owns, and it is the reason the mapping is here. The guide is the
+closest published counterpart to the phases above. It is written for a person
+who exercises a running target, and not for a person who reads a repository.
+Most of this section is about the difference between those two positions.
 
-Chapter 4, "Web Application Security Testing", is the only chapter carrying
-material a source reviewer can act on. Its twelve sections:
+**Map at section level, and cite nothing finer.** The referencing guidance of
+the guide states that its test identifiers can change between versions. It
+tells a person who cites one to carry the version inside the identifier. Use
+the `WSTG-v42-INFO-02` form, and not a bare `WSTG-INFO-02`. A reader takes a
+bare identifier to name the current content, which is not the content it named
+on the day of writing.
+
+The ASVS mapping avoids the same defect when it cites chapters instead of
+requirement numbers, and the answer here is the same. A section name stays
+correct for as long as the section exists. The current stable release is v4.2,
+and v5.0 is in development as of 10 August 2026. The release of v5.0 renumbers
+identifiers, and that event requires a new version of this table.
+
+Chapter 4, "Web Application Security Testing", is the only chapter that
+carries material a source reviewer can act on. These are its twelve sections:
 
 | WSTG v4.2 section | Where this skill covers it |
 |---|---|
@@ -693,102 +726,112 @@ material a source reviewer can act on. Its twelve sections:
 ### Where the two do not line up
 
 Say this rather than stretching a mapping to hide it. The non-goals below are
-declared, not missing, and a reader who knows what this skill deliberately does
-not do can trust what it says it does.
+declared, not missing. A reader who knows what this skill deliberately omits
+can trust what it says it covers.
 
 - **4.11 Client-side Testing is a permanent non-goal**, on the same reasoning
   as ASVS V3. DOM XSS, clickjacking, browser storage, web messaging, and
-  cross-site script inclusion are properties of a document a browser executes,
-  not of Django code. Only the half a server controls appears here, as headers
-  and cookie flags in `a02-security-misconfiguration.md`.
+  cross-site script inclusion are properties of a document that a browser
+  executes. They are not properties of Django code. Only the half that a
+  server controls appears here, as headers and cookie flags in
+  `a02-security-misconfiguration.md`.
 - **Anything requiring a proxy, intercepted traffic, or a live deployment is a
-  non-goal as a procedure**, because this skill reads source and does not
-  exercise a deployment: padding-oracle testing in 4.9, request splitting and
-  smuggling in 4.7, and the timing-dependent tests in 4.10. Where the
-  underlying weakness is still worth naming, it is named as a recommendation to
-  whoever operates that layer — `deployment-and-runtime.md`, "Request smuggling
-  and the parser chain" is the worked case.
+  non-goal as a procedure.** This skill reads source, and does not exercise a
+  deployment. The non-goals include padding-oracle testing in 4.9, request
+  splitting and smuggling in 4.7, and the timing-dependent tests in 4.10.
+  Where the weakness underneath is still worth a name, name it as a
+  recommendation to the person who operates that layer.
+  `deployment-and-runtime.md`, "Request smuggling and the parser chain" is the
+  worked case.
 - **Within 4.1, the reconnaissance tests are non-goals.** Search-engine
-  discovery, server fingerprinting, and mapping an application's architecture
-  from the outside all need a running target. The two tests with a source
-  analog are covered elsewhere and by a different means: identifying entry
-  points is phase 1 of this file, read from the declarations rather than from
-  the traffic, and what the application publishes about itself is the settings
-  and operational-endpoint material the table above names.
-- **Within 4.2, the split is by where the configuration lives**, not by whether
-  the topic is interesting. What a settings module or a DNS zone declares is
-  read directly; what the network infrastructure does with a request, and how
-  the server chain answers an unusual HTTP method, is a deployment property and
-  belongs to whoever operates it. `SKILL.md`, "Ownership and boundaries" draws
-  the same line for the whole skill.
+  discovery, server fingerprinting, and an external map of the architecture
+  all need a running target. Two tests have a source analog, and this skill
+  covers each by a different means. Phase 1 of this file identifies the entry
+  points, read from the declarations rather than from the traffic. The
+  settings and operational-endpoint material in the table above covers what
+  the application publishes about itself.
+- **Within 4.2, the split is by where the configuration lives**, and not by
+  the interest of the topic. Read directly what a settings module or a DNS
+  zone declares. What the network infrastructure does with a request is a
+  deployment property. The answer of the server chain to an unusual HTTP
+  method is also one. Both belong to the person who operates that layer.
+  `SKILL.md`, "Ownership and boundaries" draws the same line for the whole
+  skill.
 - **This skill also sweeps surfaces the WSTG has no section for**, so a
   guide-complete test is not a complete review. The guide is written for a web
-  application reached over HTTP; phase 1 enumerates Celery tasks and beat
+  application reached over HTTP. Phase 1 enumerates Celery tasks and beat
   schedules, management commands, signal receivers, admin actions, and MCP
-  tools, none of which a tester with a proxy ever sees.
+  tools. A tester with a proxy sees none of these.
 
 Carry a WSTG identifier in a finding **only where the project is genuinely
-being tested against the guide** — a penetration test scoped in WSTG terms, a
-report that has to reconcile with one. Everywhere else it is a third identifier
-for a reader with no use for it, and the optional position it would occupy is
-already described in `00-methodology-and-severity.md`, "Mapping to ASVS 5.0".
-CWE and the OWASP mapping are not optional. Where one is carried, name the
-section rather than a test, and where a test identifier is unavoidable, write
-it version-tagged for the reason given above.
+tested against the guide**. That means a penetration test scoped in WSTG
+terms, or a report that must reconcile with one. Everywhere else the
+identifier is a third token that the reader has no use for.
+`00-methodology-and-severity.md`, "Mapping to ASVS 5.0" already describes the
+optional position it would hold.
+
+CWE and the OWASP mapping are not optional. Where a finding carries a WSTG
+identifier, name the section rather than a test. Where a test identifier is
+unavoidable, write it with the version tag, for the reason above.
 
 ## Holding the fix: the security regression harness
 
-The phases above end at a report, and the report is not what decides whether
-the same defect is back in eighteen months. That is decided by whether each
-closed finding acquired a test, and whether the test runs on every commit. A
-fix with no test has a shelf life measured in refactors.
+The phases above end at a report. The report does not decide whether the same
+defect returns in eighteen months. Two other facts decide that. The first is
+whether each closed finding got a test. The second is whether that test runs
+on every commit. The next refactor removes a fix that has no test.
 
 ### Principle layer
 
 **One test per closed finding, and the test states the attack.** Write the
-request an attacker would send, and assert the outcome that must not happen.
-A test asserting that the patch is still there — the filter call is in the
-queryset, the permission class is in the list, the value is escaped — is
-coupled to the shape of the fix rather than to the property the fix
-established. It fails on the next refactor that preserves the property, and
-it passes on the next change that removes it. Both directions are wrong; the
-second is the one that matters.
+request that an attacker sends. Then assert the outcome that must not happen.
+Some tests assert only that the patch is still present. Such a test checks
+that the filter call is in the queryset. It can instead check that the
+permission class is in the list, or that the code escapes the value.
 
-**Assert the deny path, and the state behind it.** A status code says the
-request was refused; the row says nothing was written. A test reading only
-the code passes against a handler that returns 403 after committing the side
-effect. The matrix these tests belong in — principals against actions
-against expected allow or deny, with the false-confidence patterns that make
-a suite worth nothing — is `authorization-architecture.md`, "Authorization
-test suites". What the harness adds to it is when it runs: on every commit
-rather than on the day of the audit.
+Such a test couples to the shape of the fix, and not to the property that the
+fix established.
 
-**A test is proven by failing, not by passing.** Reintroduce the defect
-deliberately — revert the fix on a scratch branch — and run the suite. A
-suite that stays green does not hold that fix, whatever it asserts. Do it
-while the reverting patch is still one command away, which is the day the
-fix lands rather than the next audit.
+It fails on the next refactor that keeps the property, and it passes on the
+next change that removes the property. Both directions are wrong, and the
+second direction is the one that matters.
 
-**Fixture and factory data carries no real secret and no real personal
-data.** Fixtures are committed, cloned to every machine that checks the
-repository out, and retained in build artifacts long after the branch is
-gone, which makes a fixture built from a production row a copy of production
-in a place with none of production's controls.
-`data-lifecycle-and-privacy.md` owns the copies an erasure has to reach, and
-this is one of them.
+**Assert the deny path, and the state behind it.** A status code says that the
+handler refused the request. The row says that the handler wrote nothing. A
+test that reads only the status code passes against a handler that returns 403
+after it commits the side effect.
 
-**A tool that reports without failing gates nothing**, which is the property
-to check about every step in the pipeline rather than whether the step
-exists. What the step does with the result is the control, and the two
-shapes it takes — a tool whose exit code is the verdict, and a tool that has
-no verdict to give — are the difference between reading `$?` and reading the
-output.
+`authorization-architecture.md`, "Authorization test suites" owns the matrix
+that these tests belong in. That matrix sets principals against actions
+against expected allow or deny, and it names the false-confidence patterns
+that make a suite worthless. The harness adds the run time: every commit,
+rather than the day of the audit.
 
-**Record which closed findings have a test** in the same grammar the sweep
-uses for coverage. A finding with a regression test and a finding nobody got
-to are different states, and a list that does not separate them reads as the
-first; "Phase 6 — the coverage ledger" above owns that distinction and this
-is one more dimension of it.
+**A test is proven by failing, not by passing.** Introduce the defect again on
+purpose. Revert the fix on a scratch branch, and run the suite. A suite that
+stays green does not hold that fix, whatever it asserts. Do this while the
+revert is still one command away, which is the day the fix lands and not the
+next audit.
+
+**Fixture and factory data carries no real secret and no real personal data.**
+A developer commits fixtures, and every machine that checks the repository out
+copies them. Build artifacts also keep them long after the branch is gone. A
+fixture built from a production row is therefore a copy of production in a
+place that has none of the controls of production.
+`data-lifecycle-and-privacy.md` owns the copies that an erasure must reach,
+and this is one of them.
+
+**A tool that reports without failing gates nothing.** Check that property for
+every step in the pipeline, rather than the presence of the step. The control
+is what the step does with the result. That takes two shapes: a tool whose
+exit code is the verdict, and a tool that gives no verdict. The difference is
+between a read of `$?` and a read of the output.
+
+**Record which closed findings have a test** in the same grammar that the
+sweep uses for coverage. A finding with a regression test and a finding that
+nobody reached are different states. A list that does not separate them reads
+as the first state. "Phase 6 — the coverage ledger" above owns that
+distinction, and this is one more dimension of it.
 
 ### Django & DRF implementation layer
 
@@ -809,14 +852,14 @@ def test_other_tenants_invoice_is_not_readable(self):
     self.assertEqual(self.tenant_a_invoice.status, "open")
 ```
 
-The pipeline carries the rest, and both of its traps are about what a step's
-exit code means.
+The pipeline carries the rest. Both of its traps are about the meaning of the
+exit code of a step.
 
-`manage.py check --deploy --fail-level WARNING` is the configuration gate.
-The level is load-bearing and the default is not it:
-`a02-security-misconfiguration.md`, "check --deploy" owns why, and "Writing
-a deployment guardrail check" in the same file owns the project assertions
-that make the gate worth more than Django's baseline.
+`manage.py check --deploy --fail-level WARNING` is the configuration gate. The
+level is load-bearing, and the default level is not the one to use.
+`a02-security-misconfiguration.md`, "check --deploy" owns the reason. "Writing
+a deployment guardrail check" in that same file owns the project assertions
+that make the gate worth more than the Django baseline.
 
 **The bundled scanners always exit 0, by design.** `dangerous_patterns.py`
 and `settings_scan.py` — and `entrypoint_inventory.py` beside them — return
@@ -835,48 +878,51 @@ python scripts/dangerous_patterns.py . --json --min-severity HIGH \
     | python ci/fail_on_findings.py --baseline ci/known_findings.json
 ```
 
-`--min-severity` filters what is printed, never what is returned to the
-shell. Both scanners put a `severity` on every finding record in their JSON
-Lines output, and a `dangerous_patterns.py` hit carries a stable `rule`
-identifier as well, which is what a baseline file can be keyed on so the
-gate fails on a *new* hit rather than on the backlog. Run `--selftest` in
-the same job and read its output the same way — it too exits 0 whether or
-not the fixtures pass — because a scanner whose rules have quietly stopped
-matching produces a clean run indistinguishable from a clean tree.
+`--min-severity` filters the printed output, and never the value returned to
+the shell. Both scanners put a `severity` on every finding record in their
+JSON Lines output. A `dangerous_patterns.py` hit also carries a stable `rule`
+identifier. A baseline file keys on that identifier, so the gate fails on a
+*new* hit rather than on the backlog.
 
-The dependency scanner is the opposite case and worth keeping straight.
+Run `--selftest` in the same job, and read its output the same way. It also
+exits 0 whether the fixtures pass or fail. A scanner whose rules have quietly
+stopped matching produces a clean run that nobody can tell from a clean tree.
+
+The dependency scanner is the opposite case, and the difference matters.
 `pip-audit` exits 1 when it finds an unfixed vulnerability, verified against
-2.10.1 on 14 August 2026, so there the exit code *is* the control, and the
-ways a workflow throws it away belong to `a03-software-supply-chain.md`,
-"SBOM, scan gate, and provenance".
+2.10.1 on 14 August 2026. There the exit code *is* the control.
+`a03-software-supply-chain.md`, "SBOM, scan gate, and provenance" owns the
+ways a workflow discards that exit code.
 
-`override_settings` proves a code path, not a deployed value. A test pinning
-`SECURE_SSL_REDIRECT` shows what the code does when the setting is true and
-says nothing about whether production sets it, which is the deploy check's
-job. Keep the two apart rather than letting a green test stand in for a
-gate.
+`override_settings` proves a code path, not a deployed value. A test that pins
+`SECURE_SSL_REDIRECT` shows what the code does when the setting is true. It
+says nothing about whether production sets it, which is the job of the deploy
+check. Keep the two apart. Never let a green test take the place of a gate.
 
-**Write-time.** When generating the fix for a defect somebody found — in a
-review, in an incident, in a report — write the test that reproduces the
-attack in the same change and confirm it fails against the code without the
-fix, because a fix and a test written a week apart are a fix whose test was
-written from the patch rather than from the attack.
+**Write-time.** Sometimes you generate the fix for a defect that somebody
+found in a review, in an incident, or in a report. Write the test that
+reproduces the attack in the same change. Then confirm that the test fails
+against the code without the fix. A test written a week after the fix is
+written from the patch, and not from the attack.
 
 ## Write-time: the inventory run forward
 
-The workflow has a forward grammar, and it is the same four questions asked
-before the code exists instead of after. Before generating a feature: which
-entry-point family is being added, which principals reach it, which sinks it
-introduces, and — following from those three — which standing defaults apply
-at this moment.
+The workflow has a forward grammar. It asks the same four questions before the
+code exists, instead of after. Ask these four questions before you generate a
+feature.
 
-The defaults themselves are not restated here. The six standing rules and the
-index of which reference carries the per-task rule for each generation moment
-are in `00-methodology-and-severity.md`, "The write-time contract". What this
-file adds is the trigger: the moment a new entry point is declared is the
-moment to consult that index, because the family determines which row of it
-applies, and a feature written without asking which family it joined gets the
-defaults of whichever file the author happened to have open.
+Name the entry-point family that the feature adds. Name the principals that
+reach it. Name the sinks that it introduces. Then name the standing defaults
+that follow from those three answers.
+
+This file does not restate the defaults. `00-methodology-and-severity.md`,
+"The write-time contract" holds the six standing rules. It also holds the
+index of which reference carries the per-task rule for each generation moment.
+
+This file adds the trigger. Consult that index at the moment a new entry point
+is declared, because the family selects the row that applies. A feature
+written without that question gets the defaults of whichever file the author
+had open.
 
 ## Review checklist
 
@@ -885,49 +931,49 @@ defaults of whichever file the author happened to have open.
 - [ ] Scope and mode were stated before the sweep, and anything outside scope
       was recorded as a decision rather than discovered as a gap at write-up.
 - [ ] Every claim about a control outside the repository is carried as a
-      question to its operator, with the answer that would settle it, rather
-      than assumed present or assumed absent.
+      question to its operator, with the answer that would settle it. No such
+      claim is assumed present or absent.
 - [ ] Entry points were enumerated from declarations, resolved to full paths,
       and families with no members were recorded as examined rather than left
       unmentioned.
 - [ ] Principals were enumerated by what proves each one, and every trust
       boundary the feature crosses was named.
-- [ ] Sources were paired to sinks before anything was called a finding, and
-      the stored-then-used path was tracked across requests rather than left
-      as two unrelated hits.
+- [ ] Sources were paired to sinks before anything became a finding. The
+      stored-then-used path was tracked across requests, and not left as two
+      unrelated hits.
 - [ ] The functions between an entry point and its sink were opened and read,
       rather than the path inferred from its two ends.
 - [ ] Work was ordered by impact against effort to confirm, and any surface
       that jumped the queue is recorded together with what was deferred.
-- [ ] Where the tree was too large to read closely, the inventory was still
-      completed over all of it, the close reading was budgeted per area rather
-      than spent on the first lead, and every family read as a sample is
-      recorded in the ledger as a sample together with the basis it was chosen
-      on.
-- [ ] Each finding discharges all six gate items — attacker control,
-      reachability, the protections that should have stopped it, the
-      insufficiency of whatever sanitization is present, concrete impact, and
-      the benign-pattern catalog — with each discharge recorded rather than
+- [ ] Where the tree was too large to read closely, the inventory still
+      covered all of it. The close reading was budgeted per area, and not
+      spent on the first lead. Every family read as a sample is recorded in
+      the ledger as a sample, together with the basis of the choice.
+- [ ] Each finding discharges all six gate items. Those items are attacker
+      control, reachability, and the protections that had to stop it. They
+      also are the insufficiency of the sanitization present, concrete impact,
+      and the benign-pattern catalog. Each discharge is recorded rather than
       assumed.
-- [ ] Every discharge names the file and quotes the line it rests on, rather
-      than resting on what a decorator, a base class, or a library function is
-      remembered to do.
-- [ ] Every finding carries the shortest source-to-sink path it was confirmed
-      on and the protection that failed, and every hypothesis that failed
-      attacker control or matched a benign pattern was dropped rather than
-      carried into the report as a caveat.
-- [ ] Confirmed issues were escalated one step — what does this enable next —
-      before write-up, and a chain is one finding at the severity of its
-      outcome with its links named.
-- [ ] The ledger distinguishes examined-and-clean from not-examined on every
-      dimension, and its not-examined lines are what the report's limitations
-      section carries.
-- [ ] Each phase closed on the coverage property that ends it rather than on
-      an amount of reading, handed the next phase a written artifact, and the
-      ledger was read back at each boundary rather than recalled.
-- [ ] Every closed finding carries one regression test that states the attack
-      rather than the patch, asserts the deny path together with the state
-      behind it, and was confirmed to fail against the code without the fix.
+- [ ] Every discharge names the file and quotes the line it rests on. No
+      discharge rests on a memory of what a decorator, a base class, or a
+      library function does.
+- [ ] Every finding carries the shortest confirmed source-to-sink path and the
+      protection that failed. Every hypothesis that failed attacker control or
+      matched a benign pattern was dropped, and not carried into the report as
+      a caveat.
+- [ ] Confirmed issues were escalated one step before write-up, which asks
+      what the issue enables next. A chain is one finding at the severity of
+      its outcome, with its links named.
+- [ ] The ledger separates examined-and-clean from not-examined on every
+      dimension. Its not-examined lines are the lines that the limitations
+      section of the report carries.
+- [ ] Each phase closed on the coverage property that ends it, and not on an
+      amount of reading. Each phase handed the next phase a written artifact,
+      and the ledger was read back at each boundary rather than recalled.
+- [ ] Every closed finding carries one regression test. That test states the
+      attack rather than the patch, and asserts the deny path together with
+      the state behind it. It was confirmed to fail against the code without
+      the fix.
 - [ ] Fixture and factory data carries no real secret and no real personal
       data, and which closed findings have a test is recorded rather than
       assumed.
@@ -936,21 +982,22 @@ defaults of whichever file the author happened to have open.
 
 - [ ] The URLconf was walked through every `include()` chain, and each route
       recorded at its resolved prefix rather than at its leaf pattern.
-- [ ] Routers, viewsets, `@action` methods including `detail=False`, and
-      plain `APIView` subclasses were each enumerated, not inferred from the
-      served schema.
+- [ ] Routers, viewsets, `@action` methods including `detail=False`, and plain
+      `APIView` subclasses were each enumerated. None of them was inferred
+      from the served schema.
 - [ ] The non-DRF surfaces were looked for by name — Django Ninja, GraphQL,
       gRPC, Channels — and their absence recorded where they are absent.
-- [ ] The families that are not routes were enumerated: Celery tasks and beat
-      entries, management commands, signal receivers, admin registrations and
-      actions, webhook receivers, and MCP tools.
+- [ ] The families that are not routes were enumerated. Those families are
+      Celery tasks and beat entries, management commands, and signal
+      receivers. They also are admin registrations and actions, webhook
+      receivers, and MCP tools.
 - [ ] `MIDDLEWARE` was read in declared order, including what runs above
       authentication and what writes to `request`.
-- [ ] The worker, the service account, and the impersonating operator were
-      treated as principals in their own right rather than folded into
-      "authenticated user".
+- [ ] The worker, the service account, and the operator who impersonates were
+      each treated as a principal in its own right. None of them was folded
+      into "authenticated user".
 - [ ] Object, function, field, and tenant authorization were each exercised
       separately and recorded separately in the ledger.
-- [ ] The pipeline runs `check --deploy` at a fail level that can actually
-      fail it, and gates the bundled scanners on their records rather than on
-      an exit code that is always 0.
+- [ ] The pipeline runs `check --deploy` at a fail level that can fail the
+      job. It gates the bundled scanners on their records, and not on an exit
+      code that is always 0.

@@ -1,22 +1,25 @@
 # Methodology, Severity, and Report Format
 
-This file owns **how a finding is scored and written** — mode selection, the
-severity rubric and the confidence score beside it, the finding schema and
-report structure, the ASVS 5.0 chapter mapping and when to cite one, the
-standing write-time contract, and the convention that every control in this
-skill is stated in a review form and a write-time form together. It does not
-own how a codebase is swept. The phase order, the entry-point inventory, the
-principal and trust-boundary model, hypothesis generation and its ordering,
-the coverage ledger, and attack-chain reasoning are in `01-audit-workflow.md`,
-which review-time loads first and which hands this file the coverage that
-"Report structure" below turns into a limitations section. The split is
-procedural against evaluative: that file decides what gets opened and in what
-order, this one decides what an opened file is worth once something turns up
-in it. It owns no vulnerability and no control. Each per-task rule lives
-beside the control it governs, in the reference that owns it, and the
-write-time table below is an index to those files rather than a copy of them.
-`SKILL.md` owns the router that chooses between them and the ownership rules
-that settle a topic more than one file could claim.
+This file owns **how a finding is scored and written**. It owns the mode
+selection, the severity rubric, and the confidence score beside it. It owns
+the finding schema, the report structure, and the ASVS 5.0 chapter mapping. It
+owns the standing write-time contract. It also owns the convention that states
+every control in this skill in a review form and a write-time form together.
+This file does not own how a reviewer sweeps a codebase.
+
+`01-audit-workflow.md` owns the phase order and the entry-point inventory. It
+also owns the principal model, the trust-boundary model, the hypotheses and
+their order, the coverage ledger, and attack-chain reasoning. Review-time
+loads that file first. That file hands this file the coverage that "Report
+structure" below turns into a limitations section. The split is procedural
+against evaluative. That file decides which code a reviewer opens and in which
+order, and this file decides what an opened file is worth.
+
+This file owns no vulnerability and no control. Each per-task rule stays
+beside the control it governs, in the reference that owns that control. The
+write-time table below is an index to those files, not a copy of them.
+`SKILL.md` owns the router that chooses between them. `SKILL.md` also owns the
+ownership rules that settle a topic more than one file could claim.
 
 ## Contents
 - [Operating principles](#operating-principles)
@@ -37,30 +40,33 @@ that settle a topic more than one file could claim.
 ## Operating principles
 
 1. **Investigate, don't pattern-match.** A keyword (`raw`, `mark_safe`,
-   `pickle`) is a lead, not a finding. Trace whether attacker-controlled data
-   actually reaches the sink and whether the path is reachable in the deployed
-   configuration. If you can't establish reachability, downgrade confidence or
-   move it to "worth checking".
+   `pickle`) is a lead, not a finding. Trace the attacker-controlled data to
+   the sink. Then confirm that the deployed configuration keeps the path
+   reachable. If you cannot establish reachability, decrease the confidence
+   score. You can also move the item to "worth checking".
 2. **Prefer confirmed over comprehensive.** A short list of real, exploitable
    issues with concrete fixes is worth more than a long list of maybes.
-3. **Read-only by default in review mode.** Don't rewrite the project unless the
-   user asks. Findings describe the fix; they don't silently apply it.
-4. **Every finding is actionable.** Location, why it matters, and code the
-   developer can apply. No vague "consider reviewing your auth".
-5. **State the boundary.** Say what you reviewed and what you didn't. Silence
-   reads as false assurance.
+3. **Read-only by default in review mode.** Do not rewrite the project unless
+   the user asks. A finding describes the fix. It does not apply the fix.
+4. **Every finding is actionable.** Give the location, the reason it matters,
+   and code the developer can apply. Do not write "consider reviewing your
+   auth", because that sentence names no location and no action.
+5. **State the boundary.** Say what you reviewed and what you did not review.
+   The reader interprets silence as assurance.
 
 ## Choosing the mode
 
-- **Review-time** when asked to review/audit/scan, when code is pasted for a
-  security opinion, or right after a feature is built. Load
-  `01-audit-workflow.md` before the topic file — it owns the sweep this report
-  is written from. Output: a findings report.
-- **Write-time** when generating or editing backend code. Output: secure code
-  plus a security-decisions note. The standing defaults, the rule for when one
-  of them conflicts with what was asked for, and the shape of the note are all
-  below.
-- Ambiguous → guardrails while coding, then offer a review.
+- **Review-time** when the user asks for a review, an audit, or a scan. It
+  also applies to code pasted for a security opinion, and to code immediately
+  after the developer builds a feature. Load `01-audit-workflow.md` before the
+  topic file, because that file owns the sweep behind this report. Output: a
+  findings report.
+- **Write-time** when you generate or edit backend code. Output: secure code
+  plus a security-decisions note. The sections below give the standing
+  defaults, the rule for a conflict with the request, and the shape of the
+  note.
+- Ambiguous → apply the guardrails while you write the code, then offer a
+  review.
 
 ## Severity rubric
 
@@ -76,29 +82,31 @@ exploitation** and say which way you leaned. Two inputs to that product are
 misread often enough to name:
 
 - **A race is scored on how reliably its window can be won, not on the fact
-  that it is a race.** "Requires specific conditions" describes an interleaving
-  an attacker has to be lucky to hit; it does not describe one a machine caller
-  opens on demand by firing concurrent requests at an endpoint. Where the
-  window is reliably winnable and the collision moves money, entitlements, or a
-  limit that was supposed to hold, the finding is High or Critical on its
-  impact rather than Medium on its difficulty.
+  that it is a race.** "Requires specific conditions" describes an
+  interleaving that an attacker hits only by luck. It does not describe an
+  interleaving that a machine caller opens on demand with concurrent requests
+  to an endpoint. Some windows are reliably winnable, and the collision moves
+  money, an entitlement, or a limit that had to hold. Rate such a finding High
+  or Critical on its impact, and not Medium on its difficulty.
 - **Impact has a regulatory dimension as well as an attacker-value one.**
-  Personal data that survives the deletion it was promised, or a retention
-  period nothing ever enforces, has little direct attack value and real
-  consequence. Score it on the data and the commitment made about it, not on
-  exploitability alone, and say which dimension carried the rating.
+  Personal data can survive the deletion that the operator promised. A
+  retention period can also exist that nothing enforces. Each has little
+  direct attack value and a real consequence. Score the finding on the data
+  and on the commitment made about that data, not on exploitability alone.
+  Then say which dimension carried the rating.
 
 ### Baseline severity by finding class
 
-The rubric and the table below do different jobs and the table does not
-replace the rubric: the rubric decides the borderline case, and the table
-makes the ordinary one reproducible across runs, which matters for a skill
-whose output is compared between reviews of the same code. Start at the
-baseline for the class, apply at most one step for a factor the row names, and
-say in the finding which factor moved it. A few rows name their landing point
-explicitly, and those are the factors that change which class the finding is
-in rather than its degree. Where the table and the rubric disagree, the rubric
-wins and the finding says so.
+The rubric and the table below do different jobs, and the table does not
+replace the rubric. The rubric decides the borderline case. The table makes
+the ordinary case reproducible across runs. Reproducibility matters here,
+because a reader compares the output of two reviews of the same code. Start at
+the baseline for the class. Apply a maximum of one step for a factor that the
+row names, and name that factor in the finding.
+
+A few rows name their landing point explicitly. Those factors change which
+class the finding is in, not its degree. Where the table and the rubric
+disagree, the rubric wins, and the finding says so.
 
 | Finding class | Baseline | One step up | One step down |
 |---|---|---|---|
@@ -116,14 +124,16 @@ wins and the finding says so.
 | Missing security header | Low | The header is the only control for a behavior this application actually has, and no equivalent is set at the edge → Medium | — |
 | Verbose error output | Medium | The traces reach an unauthenticated response body and disclose settings, queries, or credentials. A production path reaching `DEBUG = True` is the settings finding rather than this one, and `a02-security-misconfiguration.md` rates it Critical | The detail reaches a log or an authenticated internal surface rather than the response body → Low |
 
-Five factors do most of the moving, and a finding that does not settle them
-has not earned its rating: whether authentication is required to reach the
-path, whether the object identifier is guessable, whether the affected data is
-personal or financial, whether the path is reachable pre-authentication, and
-whether a chain was confirmed rather than hypothesized. The last is the one
-that inflates most: a chain rates at the severity of its outcome only where
-every hop was confirmed, and `01-audit-workflow.md`, "Attack-chain reasoning"
-owns saying which hop is still an assumption.
+Five factors do most of the movement, and a finding that does not settle them
+has not earned its rating. Settle whether the path demands authentication.
+Settle whether the object identifier is guessable. Settle whether the affected
+data is personal or financial. Settle whether the path is reachable
+pre-authentication. Settle whether you confirmed a chain or only supposed one.
+
+The last factor inflates a rating more than the others. A chain rates at the
+severity of its outcome only where you confirm every hop.
+`01-audit-workflow.md`, "Attack-chain reasoning" owns the statement of which
+hop is still an assumption.
 
 ## Confidence
 
@@ -152,41 +162,46 @@ Each finding uses this shape:
 - Fix: the specific change, with a minimal code snippet.
 ```
 
-`Evidence` is what the verification gate produces, not a restatement of
-`Problem`: the path names the parameter, the call that carries it, and the
-sink, and the protection names the default that should have stopped this
-together with why it did not apply here. `01-audit-workflow.md`, "Phase 5 —
-verification" owns the gate that has to be discharged before there is anything
-to write on this line.
+`Evidence` is the product of the verification gate. It is not a restatement of
+`Problem`. The path names the parameter, the call that carries the parameter,
+and the sink. The protection names the default that had to stop this defect.
+It also names the reason that default did not apply here.
+
+`01-audit-workflow.md`, "Phase 5 — verification" owns the gate. Discharge that
+gate before you write this line.
 
 ## Mapping to ASVS 5.0
 
-OWASP ASVS 5.0.0, released 30 May 2025 and still the current version as of
-10 August 2026, holds around 350 requirements in 17 chapters at three
-cumulative levels — L1 is roughly a fifth of the standard, L2 about seventy per
-cent of it including all of L1, and L3 the remainder. It answers a different
-question from the Top 10
-spine this skill is organized on. The Top 10 ranks what goes wrong most often;
-ASVS enumerates what has to be demonstrably true before someone signs the
-application off. A finding is discovered against the first and defended against
-the second.
+OWASP released ASVS 5.0.0 on 30 May 2025, and it is still the current version
+as of 10 August 2026. It holds approximately 350 requirements in 17 chapters
+at three cumulative levels. L1 is approximately a fifth of the standard. L2 is
+approximately seventy per cent of it, and L2 includes all of L1. L3 is the
+remainder.
 
-Carry an ASVS identifier only where the project is genuinely being held to the
-standard — a regulated environment, a customer security review, a contracted
-verification level. Everywhere else it is a third identifier for a reader with
-no use for it. CWE and the OWASP mapping are not optional; this one is. An LLM
-Top 10 2026 or Agentic Top 10 entry token is admissible in the same optional
-position on the same only-where-held-to-it terms, mapped section by section in
-`agent-and-llm-interfaces.md`. A WSTG section is admissible there on those same
-terms, where the engagement is scoped in testing-guide language;
-`01-audit-workflow.md`, "Mapping to the OWASP Testing Guide" owns that mapping
-and the version-tag discipline any test identifier has to carry.
+ASVS answers a different question from the Top 10 spine of this skill. The Top
+10 ranks the most frequent defects. ASVS lists what must be demonstrably true
+before a person approves the application. A reviewer discovers a finding
+against the first standard, and defends it against the second.
+
+Carry an ASVS identifier only where the project is genuinely held to the
+standard. That means a regulated environment, a customer security review, or a
+contracted verification level. Everywhere else the identifier is a third token
+that the reader has no use for. CWE and the OWASP mapping are not optional.
+The ASVS identifier is optional.
+
+An LLM Top 10 2026 or Agentic Top 10 entry token is admissible in the same
+optional position, and on the same held-to-it terms.
+`agent-and-llm-interfaces.md` maps that token section by section. A WSTG
+section is admissible in that position on those same terms, where the
+engagement uses testing-guide language. `01-audit-workflow.md`, "Mapping to
+the OWASP Testing Guide" owns that mapping. That file also owns the
+version-tag discipline that every test identifier must carry.
 
 **Cite the chapter, and a section only where one sub-chapter is the whole
 subject** — `V8` for an authorization finding, `V15.4` for a concurrency one.
-Do not cite requirement numbers. ASVS 5.0 renumbered against 4.0.3, and the
-third component is both the part that moves between releases and the most
-expensive thing to keep true across twenty-three files. A chapter token stays
+Do not cite requirement numbers. ASVS 5.0 renumbered against 4.0.3. The third
+component is the part that moves between releases. It is also the most
+expensive part to keep true across twenty-three files. A chapter token stays
 correct for as long as the chapter exists.
 
 | ASVS 5.0 chapter | Where this skill covers it |
@@ -213,64 +228,71 @@ correct for as long as the chapter exists.
 
 Say this rather than stretching a mapping to hide it.
 
-- **V3 and V17 are permanent non-goals**, not gaps. This is a backend skill;
-  DOM handling, subresource integrity, and TURN or DTLS-SRTP signaling are
-  outside its scope by design and adding them would make it worse at its job.
-- **V10 is partial.** The client, relying-party, and resource-server side is
-  covered in depth. The authorization-server and OpenID-provider duties in
-  V10.4 and V10.6 are covered only as far as configuring
-  `django-oauth-toolkit` goes, which is thinner than the chapter, and matters
-  only for the uncommon case where the application is itself the issuer.
+- **V3 and V17 are permanent non-goals**, not gaps. This is a backend skill.
+  The DOM, subresource integrity, and TURN or DTLS-SRTP signaling are outside
+  its scope by design. An addition of them makes this skill worse at its job.
+- **V10 is partial.** This skill covers the client side, the relying-party
+  side, and the resource-server side in depth. It covers the
+  authorization-server and OpenID-provider duties in V10.4 and V10.6 only as
+  far as the configuration of `django-oauth-toolkit`. That coverage is thinner
+  than the chapter. It matters only for the uncommon case where the
+  application is itself the issuer.
 - **This skill also covers ground ASVS scopes out**, so an ASVS-clean
-  application is not a reviewed one: ASVS excludes infrastructure and
-  operational configuration, while `a02-security-misconfiguration.md` owns the
-  DNS records that decide whether the domain can be forged and
+  application is not a reviewed application. ASVS excludes infrastructure and
+  operational configuration. `a02-security-misconfiguration.md` owns the DNS
+  records that decide whether a person can forge the domain, and
   `deployment-and-runtime.md` owns the proxy, the process, and the image.
-- **ASVS 5.0 has no chapter for agent and MCP tool surfaces.** That still
-  holds — the standard predates the surface — so `agent-and-llm-interfaces.md`
-  carries no ASVS mapping and needs none. It now carries a spine of its own
-  instead: the LLM and Agentic Top 10s, mapped in that file.
+- **ASVS 5.0 has no chapter for agent and MCP tool surfaces.** That statement
+  is still true, because the standard is older than the surface. Therefore
+  `agent-and-llm-interfaces.md` carries no ASVS mapping, and it needs none. It
+  carries a spine of its own instead: the LLM and Agentic Top 10s, mapped in
+  that file.
 
 ## Report structure
 
-1. **Summary** — one paragraph: scope (what was reviewed), how it was reviewed
-   (read + which scripts), and counts by severity.
-2. **Findings** — ordered Critical → Low, using the schema above.
-3. **Worth checking** — medium-confidence items with the exact thing to verify.
-4. **Not reviewed / limitations** — files, flows, or layers you didn't cover
-   (e.g., "runtime Nginx/systemd config not provided", "no tests reviewed").
+1. **Summary** — one paragraph. Give the scope, which is the code you
+   reviewed. Give the method, which is what you read and which scripts you
+   ran. Give the counts by severity.
+2. **Findings** — ordered Critical → Low, in the schema above.
+3. **Worth checking** — medium-confidence items, each with the exact item to
+   verify.
+4. **Not reviewed / limitations** — the files, flows, or layers you did not
+   cover (for example, "runtime Nginx/systemd config not provided", "no tests
+   reviewed").
 
 ## What to exclude
 
-Keep the signal high. Don't report:
+Keep the signal high. Do not report:
 
-- Pure denial-of-service theory, resource-exhaustion speculation, or
-  rate-limit-tuning opinions (note anti-automation gaps only where they're a
-  real authz/abuse issue).
-- Secrets that are correctly loaded from the environment (flag secrets only when
-  **hardcoded** or committed).
-- Framework internals you can't see configured, unless the code clearly
-  misconfigures them.
-- Client/browser-only concerns with no server component.
-- Style or performance issues with no security impact.
-- Anything whose only evidence is the identifier that names it. A pattern is
-  judged by the property that makes it dangerous — a statement built by
-  interpolation, bytes a second principal can write, markup assembled from a
-  request, a value that has to be unguessable — not by the presence of `raw`,
-  `pickle`, `mark_safe`, `shell=True`, or `random`. Where the property is
-  absent, the identifier is just an identifier, and the finding is not
-  reported. `01-audit-workflow.md`, "Phase 5 — verification" carries the
-  general rule and the cross-cutting cases; each high-noise reference carries
-  its own beside the control, under "Commonly mistaken for a finding".
+- Pure denial-of-service theory, resource-exhaustion speculation, or opinions
+  on rate-limit values. Record an anti-automation gap only where it is a real
+  authorization or abuse issue.
+- A secret that the code correctly reads from the environment. Report a secret
+  only where it is **hardcoded** or committed.
+- Framework internals whose configuration you cannot see, unless the code
+  clearly misconfigures them.
+- A client or browser concern with no server component.
+- A style or performance issue with no security impact.
+- Anything whose only evidence is the identifier that names it. Judge a
+  pattern by the property that makes it dangerous, and not by the presence of
+  `raw`, `pickle`, `mark_safe`, `shell=True`, or `random`. Two such properties
+  are a statement that interpolation builds, and bytes that a second principal
+  can write. Two more are markup that the code assembles from a request, and a
+  value that has to be unguessable. Where the property is absent, the
+  identifier is only an identifier, and you do not report a finding.
+  `01-audit-workflow.md`, "Phase 5 — verification" carries the general rule
+  and the cross-cutting cases. Each high-noise reference carries its own rule
+  beside the control, under "Commonly mistaken for a finding".
 
 ## Worked examples
 
-Two, because they fail differently. The first is the ordinary shape: a static
-defect, visible in one view, where confidence comes from reading the code. The
-second is the shape the schema handles worst if you have not seen it done — a
-defect that exists only under concurrency, where `Impact` has to argue about a
-timing window and `Confidence` is about reachability rather than about whether
-the code says what it appears to say.
+There are two examples, because the two defects fail in different ways. The
+first example is the ordinary shape. It is a static defect, visible in one
+view, and the code itself gives the confidence. The second example is the
+shape that the schema handles worst for a reader who has not seen it before.
+That defect exists only under concurrency. There `Impact` must argue about a
+timing window, and `Confidence` is about reachability rather than about the
+plain sense of the code.
 
 ```
 ### [High] Object endpoint returns any user's invoice (IDOR)
@@ -344,13 +366,13 @@ the line would end at the OWASP mapping.
 
 ## The write-time contract
 
-Review-time and write-time are the same controls in two grammars. A review rule
-is a predicate over code that already exists — *flag X when Y*. A write-time
-rule is an action taken before the code exists — *when generating Y, write Z*.
-The second does not follow from the first. An agent can agree that views should
-be authorized and still emit a viewset with no permission class, because
-agreeing with a statement and executing an instruction are different
-operations, and nothing in the moment of writing asked for the second.
+Review-time and write-time are the same controls in two grammars. A review
+rule is a predicate over code that already exists — *flag X when Y*. A
+write-time rule is an action before the code exists — *when generating Y,
+write Z*. The second does not follow from the first. An agent can agree that a
+view needs authorization, and still emit a viewset with no permission class.
+Agreement with a statement and execution of an instruction are different
+operations, and nothing in the generation moment asks for the second.
 
 ### Principle layer
 
@@ -358,31 +380,31 @@ The contract is that the secure form is the default form and departing from it
 is the deliberate act. Six standing rules cover most of what a backend agent
 writes:
 
-- **Deny by default.** A new route, task, or tool is unreachable until its
-  access rule is stated, because a permissive framework default silently
-  becomes the policy of every endpoint nobody annotated.
-- **Bind data to the principal.** Ownership, tenant, role, and money are set
-  from the authenticated identity on the server, never accepted from the
-  request body, because a client that can name the owner is the owner.
+- **Deny by default.** A new route, task, or tool stays unreachable until it
+  states its access rule. A permissive framework default otherwise becomes the
+  policy of every endpoint that nobody annotated.
+- **Bind data to the principal.** The server sets ownership, tenant, role, and
+  money from the authenticated identity. The server never accepts them from
+  the request body, because a client that can name the owner is the owner.
 - **Keep input as data.** Every value that reaches an interpreter arrives as a
-  bound parameter, an element of an argument vector, or an escaped term,
-  because the alternative is letting input decide what the operation means.
-- **Constrain before consuming.** Size, type, count, and destination are
-  checked ahead of the expensive or irreversible step, because a limit applied
-  afterwards is a report rather than a control.
-- **Configuration comes from the environment.** Secrets and per-environment
-  values are read at startup and validated there, because a value committed to
-  the repository is published for the life of that history.
-- **State what was decided.** The security-relevant choices go in a short note,
-  because an unstated default is indistinguishable from an oversight and the
-  next reader has to re-derive it either way.
+  bound parameter, an element of an argument vector, or an escaped term. The
+  alternative lets the input decide what the operation means.
+- **Constrain before consuming.** Check size, type, count, and destination
+  before the expensive or irreversible step. A limit applied after that step
+  is a report rather than a control.
+- **Configuration comes from the environment.** The code reads secrets and
+  per-environment values at startup, and validates them there. A value
+  committed to the repository is public for the life of that history.
+- **State what was decided.** Put the security-relevant choices in a short
+  note. The reader cannot tell an unstated default from an oversight, and must
+  otherwise derive it again.
 
 ### Django & DRF implementation layer
 
-The per-task rules are not collected here. Each lives beside the control it
-belongs to, in the reference that owns that control, so that it is already
-loaded at the moment the agent is writing the thing it governs. This table is
-an index to them, not a copy:
+This file does not collect the per-task rules. Each rule stays beside the
+control it belongs to, in the reference that owns that control. The agent
+therefore has the rule in context at the moment it generates the code that the
+rule governs. This table is an index to those rules, not a copy of them:
 
 | Generation moment | Rule lives in |
 |---|---|
@@ -419,38 +441,40 @@ an index to them, not a copy:
 
 ## When a secure default conflicts with the request
 
-Apply the secure default, then say so in one line that names the risk and the
-exact opt-out. If the user confirms they want the other form, write it, and
-leave a short comment at the site recording what was traded away. Never
-silently downgrade, and never silently refuse — an unrequested refusal is as
-much a surprise as a downgrade nobody noticed, and both end with the user
-finding out later.
+Apply the secure default. Then state it in one line that names the risk and
+the exact opt-out. If the user confirms that they want the other form, write
+that form. Leave a short comment at the site that records what the change gave
+up. Never downgrade a default in silence, and never refuse in silence. An
+unrequested refusal surprises the user as much as an unnoticed downgrade, and
+the user learns of each one late.
 
-Three changes are worth a firmer stop, because they are almost never what was
-meant and the blast radius is not local: turning off TLS certificate
-verification, admitting `pickle` on a broker or cache that anything else can
-reach, and writing a production credential into the repository. State the
-consequence and get an explicit confirmation before writing any of them, rather
-than applying the one-line note and moving on.
+Three changes need a firmer stop, because they are almost never the intent and
+their effect is not local. The first is to disable TLS certificate
+verification. The second is to admit `pickle` on a broker or a cache that
+other software can reach. The third is to write a production credential into
+the repository. **Warning: each of these three changes can expose production
+data or permit remote code execution.** State the consequence and get an
+explicit confirmation before you write any of them.
 
 ## The security-decisions note
 
-Write-time does not produce a findings report. A report documents defects in
-code the agent did not write; restating "the viewset I just wrote has a
-permission class" as a finding is theater, and it teaches the reader to skim
-the one paragraph that mattered.
+Write-time does not produce a findings report. A report records defects in
+code that the agent did not write. A finding that says "the viewset I just
+wrote has a permission class" adds no information. It also trains the reader
+to read the important paragraph too quickly.
 
 The output is the code, followed by a few bullets:
 
-- each secure default applied where the frictionless alternative was different,
-  a few words each;
-- anything the request forced that this contract would not have chosen, with
-  the residual risk named;
-- anything the code cannot do for itself and is leaving to the caller — a
-  setting, a migration, a bucket policy, an environment variable.
+- each secure default that you applied where the easier alternative was
+  different, in a few words each;
+- anything the request forced that this contract would not select, with the
+  residual risk named;
+- anything the code cannot do for itself and leaves to the caller — a setting,
+  a migration, a bucket policy, or an environment variable.
 
-Nothing else. No severity ratings, no CWE mapping, no restating controls that
-were never in question. If there is genuinely nothing to report, say nothing.
+Write nothing else. Give no severity rating and no CWE mapping. Do not restate
+a control that was never in question. If there is genuinely nothing to report,
+write nothing.
 
 A worked note, accompanying a new orders endpoint:
 
@@ -471,32 +495,32 @@ Security decisions
 
 ## How write-time rules are written
 
-Every control in this skill is stated in both grammars, and the two sit
-together under the control rather than in separate files. A control carrying
-only a review form is incomplete: it tells a reviewer what to look for and
-tells a writer nothing.
+This skill states every control in both grammars. The two forms sit together
+under the control, and not in separate files. A control with only a review
+form is incomplete. It tells a reviewer what to look for, and tells a writer
+nothing.
 
-The write-time form is a positive imperative in framework vocabulary carrying
-one clause of reason — *when [the generation moment], [the concrete action],
-because [the reason]*. Three properties do the work, and each fails a specific
-way when dropped:
+The write-time form is a positive imperative in framework vocabulary with one
+clause of reason — *when [the generation moment], [the concrete action],
+because [the reason]*. Three properties do the work. Each one fails in a
+specific way when the author drops it:
 
-- **Naming the moment** is what makes the rule fire. A rule with no trigger is
-  a true statement that gets agreed with and not acted on.
-- **Naming the action in framework vocabulary** is what makes it executable.
-  "Authorize the view" is advice; `permission_classes = [IsAuthenticated]` is
-  an edit.
-- **Carrying the reason** is what lets the rule reach the case it did not
-  enumerate. This is why the rules here are not written as bare absolutes: a
-  rule with no stated why is followed to the letter and past the point.
+- **The moment** is the property that makes the rule fire. A rule with no
+  trigger is a true statement that a reader agrees with and does not apply.
+- **The action in framework vocabulary** is the property that makes the rule
+  executable. "Authorize the view" is advice.
+  `permission_classes = [IsAuthenticated]` is an edit.
+- **The reason** is the property that lets the rule reach the case it does not
+  list. Therefore the rules here are not bare absolutes. A reader applies a
+  rule with no stated reason exactly, and then applies it beyond its purpose.
 
 Prefer the positive form. Where a prohibition is genuinely the shorter
-statement, pair it with the alternative in the same sentence rather than
-leaving the reader to infer one.
+statement, give the alternative in the same sentence. Do not leave the reader
+to infer the alternative.
 
-Global rules — the contract, the conflict rule, and this convention — live in
-this file and are indexed above. Per-task rules live beside their control and
-are not copied back here.
+The global rules are the contract, the conflict rule, and this convention.
+They live in this file, and the sections above index them. A per-task rule
+lives beside its control, and this file does not copy it back.
 
 ## Review checklist
 
@@ -506,21 +530,22 @@ are not copied back here.
 - [ ] Every finding names a source, a sink, and the path between them, rather
       than resting on a keyword match.
 - [ ] Every hypothesis discharged the six-item gate in `01-audit-workflow.md`,
-      "Phase 5 — verification" before it was written as a finding, and each
-      finding carries its `Evidence` line — the shortest confirmed
-      source-to-sink path and the protection that failed.
-- [ ] Severity started from the baseline for the finding class and moved at
-      most one step for a factor the table names, with the factor stated;
-      anything the rubric decided against the table says which way it leaned.
-- [ ] Severity and confidence were scored separately, and neither was inflated
-      to cover for the other.
+      "Phase 5 — verification" before it became a finding. Each finding
+      carries its `Evidence` line — the shortest confirmed source-to-sink path
+      and the protection that failed.
+- [ ] Severity started from the baseline for the finding class. It moved a
+      maximum of one step for a factor that the table names, and the finding
+      states that factor. Where the rubric decided against the table, the
+      finding says which way it leaned.
+- [ ] Severity and confidence were scored separately, and neither one was
+      inflated to cover for the other.
 - [ ] A concurrency finding was rated on how reliably its window can be won
-      and what the collision costs, rather than filed as Medium for being a
-      race; a finding about surviving personal data was rated on the
-      commitment made about that data, not on attacker value alone.
+      and on the cost of the collision. It was not filed as Medium only
+      because it is a race. A finding about surviving personal data was rated
+      on the commitment made about that data, not on attacker value alone.
 - [ ] Findings carry CWE and the OWASP mapping. An ASVS chapter appears only
-      where the project is actually held to the standard, and it is a chapter
-      or a section rather than a requirement number.
+      where the project is actually held to the standard. It is a chapter or a
+      section, not a requirement number.
 - [ ] The report states what was not reviewed.
 - [ ] At write-time the secure default was applied first, and anything the
       request forced is named with its residual risk instead of left silent.
