@@ -20,7 +20,7 @@ license: MIT
 allowed-tools: Read, Grep, Glob, Bash
 metadata:
   author: n-shadloo
-  version: 1.49.0
+  version: 1.50.0
 ---
 
 # secure-code-auditor
@@ -30,7 +30,7 @@ Django/DRF as the deep specialty and a general OWASP layer that applies to any
 stack. Scope is the backend: server-side code, data handling, configuration,
 and the deployment/runtime the backend owns. It does not cover browser/frontend
 concerns except where the server controls output (encoding, headers, cookies).
-Its canonical content is reused by other agents (Codex, Cursor, Gemini CLI) via
+Other agents (Codex, Cursor, Gemini CLI) reuse its canonical content through
 `AGENTS.md`, with Claude as the primary integration.
 
 ## How the reference material is organized
@@ -39,23 +39,23 @@ Everything is arranged on the **OWASP Top 10:2025 spine**. Category files and
 cross-cutting topic references have two layers:
 
 1. **Principle** — the vulnerability, why it matters, and the defense, stated
-   stack-agnostically so it's useful in any backend language.
+   stack-agnostically so it is useful in any backend language.
 2. **Django & DRF implementation** — the specific settings, code patterns,
    correct/incorrect examples, gotchas, and hardening steps. This is where the
    depth lives.
 
 The same split names the two halves of a sub-topic checklist,
 `#### Stack-neutral` and `#### Django & DRF`. A file's final
-`## Review checklist` may stay unsplit; about half of them do, and neither form
+`## Review checklist` may stay unsplit. About half of them do, and neither form
 is a defect.
 
-Every control is stated in both grammars — a review form saying what to flag,
-and a write-time form saying what to write — and the second is a paragraph
-opening `**Write-time.**` directly under the control it completes, never
+Every control is stated in both grammars. The review form says what to flag,
+and the write-time form says what to write. The second is a paragraph that
+opens `**Write-time.**` directly under the control it completes, never
 collected into a list of its own. All twenty-two references that own a control
-carry at least one. The two that do not are the methodology file, which indexes
-them by generation moment, and the library index, which owns package
-dispositions rather than controls.
+carry at least one. The two that do not are the methodology file and the
+library index. The methodology file indexes them by generation moment, and the
+library index owns package dispositions rather than controls.
 
 Load only the file(s) relevant to the concern in front of you. The tables below
 group on that spine, so the choice is two steps rather than one: pick the group,
@@ -86,8 +86,8 @@ decide which file is authoritative.
 
 ### Cross-cutting surfaces
 
-These span several categories, so they are grouped by the surface in front of
-you rather than by OWASP number.
+These span several categories, so this file groups them by the surface in front
+of you rather than by OWASP number.
 
 | Concern | Reference file |
 |---|---|
@@ -112,10 +112,10 @@ you rather than by OWASP number.
 ## Ownership and boundaries
 
 Overlap between these files is designed. Each contested topic below has exactly
-one owner; every other file names the topic and points at the owner instead of
-restating its rules. Each reference file also repeats its own half of the rule
-in its opening paragraph, which is why a row can carry the decision here: the
-reader who needs it is usually already in one of the two files, and the table
+one owner. Every other file names the topic and points at the owner, rather
+than restates its rules. Each reference file also repeats its own half of the
+rule in its opening paragraph, which is why a row can carry the decision here.
+The reader who needs it is usually already in one of the two files. The table
 only has to send them to the right one. The three splits below the table turn
 on an axis a row would misstate, so they keep their sentence.
 
@@ -153,87 +153,91 @@ on an axis a row would misstate, so they keep their sentence.
 
 **Path traversal.** The split between A01 and `references/file-uploads.md` is
 by direction rather than by file type, and it is not the read-against-write
-line it resembles. A01 owns the read whose path the request named — the report
-download, the export, the artifact or log viewer, flows with no upload in them
-at all — along with what Django does and does not protect there.
-`references/file-uploads.md` owns the name an upload brought and the key it
-landed under, and also the private download of a file the application stored,
-which is a read that stays there because the application chose the path rather
+line it resembles. A01 owns the read whose path the request named, along with
+what Django does and does not protect there. Those flows are the report
+download, the export, and the artifact or log viewer, with no upload in them at
+all. `references/file-uploads.md` owns the name an upload brought and the key
+it landed under. It also owns the private download of a file the application
+stored. That read stays there because the application chose the path rather
 than the caller. A05's inventory row for the filesystem path points at A01 and
 names `references/file-uploads.md` for the storage-key half.
 
-**Configuration versus runtime.** Split by where the setting lives rather than
-by topic, so looking the topic up will misroute: A02 owns what a settings
-module or a DNS zone declares, and `references/deployment-and-runtime.md` owns
-what the proxy, the process, and the image do with a request once it arrives,
-including forwarded-header trust and the client IP that every rate limit and
-audit record depends on. A cached response splits on the same line — A01 owns
-whether a cached representation may be reused across principals, and
-`references/deployment-and-runtime.md` the edge rule that decides what is
+**Configuration versus runtime.** The split is by where the setting lives
+rather than by topic, so a search by topic misroutes. A02 owns what a settings
+module or a DNS zone declares. `references/deployment-and-runtime.md` owns what
+the proxy, the process, and the image do with a request once it arrives. That
+includes forwarded-header trust, and the client IP that every rate limit and
+audit record depends on.
+
+A cached response splits on the same line. A01 owns whether a cached
+representation may be reused across principals.
+`references/deployment-and-runtime.md` owns the edge rule that decides what is
 cached at all, which is the half a deception attack turns on. Mail
 authentication is A02, whether your domain can be forged, while whether your
 mailer can be driven is A06.
 
 **Human versus machine identity.** The axis holds except at the two places a
 reader actually arrives at it. A07 owns the human principal and every
-credential issued to one, including the API-key discipline a static service key
-still has to meet — a machine credential governed from the human file.
-`references/service-identity-and-secrets.md` owns the machine principal:
+credential issued to one. That includes the API-key discipline a static service
+key still has to meet, which is a machine credential governed from the human
+file. `references/service-identity-and-secrets.md` owns the machine principal:
 mechanism choice, inbound machine-token validation, JWKS caching and rotation,
-proxy-set certificate identity, and obtaining a downstream credential by
-exchange. The prohibition on forwarding an inbound token to that downstream
-service belongs to neither, but to
-`references/agent-and-llm-interfaces.md` alongside the tool-call threat model,
-and A04 owns the primitives all three are built on.
+proxy-set certificate identity, and a downstream credential obtained by
+exchange.
+
+The prohibition on a passthrough of an inbound token to that downstream service
+belongs to neither. It belongs to `references/agent-and-llm-interfaces.md`,
+alongside the tool-call threat model. A04 owns the primitives all three are
+built on.
 
 ## Mode selection
 
-**Review-time.** Trigger when the user asks to review, audit, scan, or "check"
-existing code; pastes code and asks whether it's safe; or has just finished a
-feature and wants it looked at. Behavior:
+**Review-time.** Trigger on three requests. The user asks to review, audit,
+scan, or "check" existing code. The user pastes code and asks whether it is
+safe. The user has just finished a feature and wants a look at it. Behavior:
 
 - Load `references/01-audit-workflow.md` first, before any topic file. It owns
-  the sweep — the phase order, the entry-point inventory, the principals and
-  boundaries, the coverage ledger — and the topic files answer the questions
-  that sweep generates. Opening a topic file first means reviewing whatever
-  the codebase made obvious.
+  the sweep: the phase order, the entry-point inventory, the principals and
+  boundaries, and the coverage ledger. The topic files answer the questions
+  that sweep generates. If you open a topic file first, you review whatever the
+  codebase made obvious.
 - Treat the codebase as **read-only**. Do not edit, refactor, or "fix in place"
   unless the user explicitly asks you to apply fixes afterward.
 - Optionally run the bundled scripts for fast triage (see below), then read the
-  code yourself. Scripts surface indicators; they do not replace judgment.
+  code yourself. Scripts surface indicators. They do not replace judgment.
 - Investigate before flagging. Confirm the data flow and the reachability of a
   sink. Do not pattern-match a keyword into a finding.
 - Produce a findings report in the exact format in
-  `references/00-methodology-and-severity.md`: ordered by severity, each with
-  location, CWE, OWASP mapping, the evidence the finding was confirmed on, and
-  a concrete fix. End with what you did *not* review.
+  `references/00-methodology-and-severity.md`. Order it by severity. Each
+  finding carries location, CWE, OWASP mapping, the evidence the finding was
+  confirmed on, and a concrete fix. End with what you did *not* review.
 
-**Write-time.** Trigger when you're generating or modifying backend code for a
-feature. Behavior:
+**Write-time.** Trigger when you generate or modify backend code for a feature.
+Behavior:
 
-- Apply the secure defaults from the relevant category file(s) as you write —
-  parameterized queries, scoped querysets, explicit serializer fields, correct
-  cookie/security flags, safe deserializers, secrets from the environment. The
-  standing contract behind those, and the index of which file carries the rule
-  for each generation moment, are in
-  `references/00-methodology-and-severity.md`.
+- Apply the secure defaults from the relevant category file(s) as you write.
+  Those defaults are parameterized queries, scoped querysets, explicit
+  serializer fields, correct cookie and security flags, safe deserializers, and
+  secrets from the environment. `references/00-methodology-and-severity.md`
+  holds the standing contract behind those, and the index of which file carries
+  the rule for each generation moment.
 - Prefer built-in framework mechanisms over add-ons (see the libraries file).
-- Where a secure default conflicts with what was asked for, apply the default
-  and say so in one line naming the risk and the exact opt-out. Never downgrade
+- Where a secure default conflicts with what was asked for, apply the default.
+  Say so in one line that names the risk and the exact opt-out. Never downgrade
   silently, and never refuse silently.
-- Close with a short **Security decisions** note: the defaults applied,
-  anything the request forced along with its residual risk, and anything left
-  for the caller to do. Write-time does not produce a findings report.
+- Close with a short **Security decisions** note. It carries the defaults
+  applied, anything the request forced with its residual risk, and anything
+  left for the caller to do. Write-time does not produce a findings report.
 
-**If it's ambiguous,** default to write-time guardrails while coding and offer to
-run a review afterward.
+**If it is ambiguous,** default to write-time guardrails while you code, and
+offer to run a review afterward.
 
 ## Using the scripts
 
-All three scripts are read-only, stdlib-only, and make no network calls, and all
-three take `--json`, which is JSON Lines in each — one object per line, consumed
-a record at a time rather than parsed as one document. Run them for triage;
-always confirm what they surface by reading the code.
+All three scripts are read-only, stdlib-only, and make no network calls. All
+three take `--json`, which is JSON Lines in each. That is one object per line,
+consumed a record at a time rather than parsed as one document. Run them for
+triage. Always confirm what they surface by a read of the code.
 
 - Entry-point inventory, the instrument for the workflow's first phase:
   `python scripts/entrypoint_inventory.py path/to/project --settings path/to/settings --json`
@@ -248,22 +252,24 @@ always confirm what they surface by reading the code.
 - Confirm the scanner itself before trusting a quiet result:
   `python scripts/dangerous_patterns.py --selftest`
 
-The inventory enumerates the declared entry points — routes at the full prefix
-their `include()` chain resolves to, routers and actions, Ninja, GraphQL, gRPC,
-Channels, Celery, commands, signals, admin, and middleware — so the review is
-derived from the whole surface rather than from the files that looked
-interesting, and it marks each HTTP-reachable row as declaring its
-authorization, inheriting it from somewhere not visible there, or having none.
+The inventory enumerates the declared entry points. Those are routes at the
+full prefix their `include()` chain resolves to, routers and actions, Ninja,
+GraphQL, gRPC, Channels, Celery, commands, signals, admin, and middleware. The
+review therefore derives from the whole surface rather than from the files that
+looked interesting. The inventory also marks each HTTP-reachable row as one of
+three states. The row declares its authorization, inherits it from somewhere
+not visible there, or has none.
 
-All three parse with the `ast` module rather than grepping lines, so a hit is a
-structural match — parameterized SQL, `mark_safe` on a constant, and anything
-inside a docstring are not reported — every row names the reference file that
-owns it, a `dangerous_patterns.py` hit additionally carries a stable rule
-identifier, and a file that fails to parse is reported as unparsed rather than
-skipped in silence.
+All three parse with the `ast` module rather than match lines, so a hit is a
+structural match. Parameterized SQL, `mark_safe` on a constant, and anything
+inside a docstring are not reported. Every row names the reference file that
+owns it. A `dangerous_patterns.py` hit also carries a stable rule identifier. A
+file that fails to parse is reported as unparsed rather than skipped in
+silence.
 
-Their output is a starting point for investigation, not a final report. Map each
-real issue to a category file, verify it, and write it up per the methodology.
+Their output is a starting point for investigation, not a final report. Map
+each real issue to a category file, verify it, and report it per the
+methodology.
 
 ## Severity, in one line each
 
@@ -275,12 +281,12 @@ real issue to a category file, verify it, and write it up per the methodology.
   defense-in-depth gap.
 - **Low** — hardening / defense-in-depth with limited direct impact.
 
-A race is rated on how reliably its window can be won and what the collision
-costs, rather than filed as Medium for being a race, and a failure that leaves
-personal data alive past a promised deletion is rated on that promise as well
-as on attacker value.
+A race is rated on how reliably its window can be won, and on what the
+collision costs. It is not filed as Medium merely because it is a race. A
+failure that leaves personal data alive past a promised deletion is rated on
+that promise as well as on attacker value.
 
-Report findings you're ≥80% confident are real and reachable. Full rubric, the
-baseline severity table beneath it, the ASVS 5.0 chapter mapping and when to
-cite one, and the report template:
-`references/00-methodology-and-severity.md`.
+Report findings you are ≥80% confident are real and reachable.
+`references/00-methodology-and-severity.md` holds the full rubric, the baseline
+severity table beneath it, the ASVS 5.0 chapter mapping and when to cite one,
+and the report template.

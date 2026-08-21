@@ -189,17 +189,17 @@ rule that a Go-binary tool such as Trivy, Grype, Syft, or cosign is documented
 as a CI pattern rather than tiered in an index that gates pip-installable
 dependencies.
 
-Primary integration is Claude; this file exists so Gemini CLI uses the same
-single source of truth. Modes (review-time / write-time), the severity rubric
-and how it rates a race and a surviving-personal-data failure, the baseline
-severity table under it that makes an ordinary finding class rate the same way
-between runs, the findings format including the evidence line every finding
-carries, the ASVS 5.0 chapter mapping and the chapters declared out of scope
-alongside the terms on which a WSTG section is admissible in the same optional
-position,
-the write-time secure-default contract with the security-decisions note it
-returns in place of a report, and the rule for a default that conflicts with
-the request are in `references/00-methodology-and-severity.md`. That file also
-indexes which reference carries the write-time rule for each generation moment;
-every rule itself lives beside the control it completes rather than in a list.
-The version is recorded in `SKILL.md` frontmatter (`metadata.version`).
+Primary integration is Claude. This file exists so that Gemini CLI uses the
+same single source of truth. Modes (review-time / write-time), the severity
+rubric and how it rates a race and a surviving-personal-data failure, the
+baseline severity table under it that makes an ordinary finding class rate the
+same way between runs, the findings format including the evidence line every
+finding carries, the ASVS 5.0 chapter mapping and the chapters declared out of
+scope alongside the terms on which a WSTG section is admissible in the same
+optional position, the write-time secure-default contract with the
+security-decisions note it returns in place of a report, and the rule for a
+default that conflicts with the request are in
+`references/00-methodology-and-severity.md`. That file also indexes which
+reference carries the write-time rule for each generation moment; every rule
+itself lives beside the control it completes rather than in a list. The version
+is recorded in `SKILL.md` frontmatter (`metadata.version`).

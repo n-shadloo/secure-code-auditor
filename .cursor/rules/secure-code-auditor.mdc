@@ -3,43 +3,38 @@ description: Backend security review and secure-by-default coding, Django/DRF-fi
 alwaysApply: false
 ---
 
-When doing backend security review or writing backend code in this repo, use the
+When you review backend security or write backend code in this repo, use the
 skill defined in `SKILL.md` at the repo root as the source of truth. Read
 `SKILL.md` first for the router and mode logic, then open the relevant
 `references/*.md` file(s). At review-time read `01-audit-workflow.md` before
 any topic file: it owns the sweep — the phase order and what each phase hands
-the next, the entry-point inventory
-that has to be enumerated from declarations rather than from a generated
-schema, the principals and boundaries, hypothesis ordering, the budget rule
-that enumerates a tree too large to read closely in full and rations only the
-close reading, the six-item gate
-a hypothesis discharges before it is written as a finding together with the
-benign Django and DRF patterns it rules out, the coverage
-ledger that keeps examined-and-clean apart from not-examined and is read back
-at each phase boundary rather than recalled, and the WSTG
-mapping at section granularity naming which testing-guide sections the sweep
-covers and which are declared non-goals — and the topic
-files answer the questions that sweep raises. The router is grouped — OWASP
-spine, cross-cutting
-surfaces, package decisions — and the "Ownership and boundaries" section below
-it names the single owning file whenever two rows could both match, as a table
-of topic, owner, and deciding distinction with three splits kept in prose, so
-read that before assuming a topic is duplicated.
-Review-time produces prioritized findings (severity,
-location, CWE + OWASP mapping, an optional ASVS 5.0 chapter or WSTG section
-where the project is held to that standard, the confirmed source-to-sink path
-and the protection
-that failed, fix); write-time applies the secure-default
-contract and closes with a short security-decisions note rather than a findings
-report. Each write-time rule sits beside the control it completes in the
-reference file, so the file you opened for the concern already carries the rule
-for writing it. The methodology, both output formats, the severity rubric
-including how a race and a surviving-personal-data failure are rated, the
-baseline severity table beneath it that makes an ordinary finding class
-reproducible between runs, the ASVS
-chapter mapping and its declared non-goals, and the rule for a secure default
-that conflicts with the request are in
-`references/00-methodology-and-severity.md`.
+the next, the entry-point inventory that has to be enumerated from declarations
+rather than from a generated schema, the principals and boundaries, hypothesis
+ordering, the budget rule that enumerates a tree too large to read closely in
+full and rations only the close reading, the six-item gate a hypothesis
+discharges before it is written as a finding together with the benign Django
+and DRF patterns it rules out, the coverage ledger that keeps
+examined-and-clean apart from not-examined and is read back at each phase
+boundary rather than recalled, and the WSTG mapping at section granularity
+naming which testing-guide sections the sweep covers and which are declared
+non-goals — and the topic files answer the questions that sweep raises. The
+router is grouped — OWASP spine, cross-cutting surfaces, package decisions —
+and the "Ownership and boundaries" section below it names the single owning
+file whenever two rows could both match, as a table of topic, owner, and
+deciding distinction with three splits kept in prose, so read that before
+assuming a topic is duplicated. Review-time produces prioritized findings
+(severity, location, CWE + OWASP mapping, an optional ASVS 5.0 chapter or WSTG
+section where the project is held to that standard, the confirmed
+source-to-sink path and the protection that failed, fix); write-time applies
+the secure-default contract and closes with a short security-decisions note
+rather than a findings report. Each write-time rule sits beside the control it
+completes in the reference file, so the file you opened for the concern already
+carries the rule for writing it. The methodology, both output formats, the
+severity rubric including how a race and a surviving-personal-data failure are
+rated, the baseline severity table beneath it that makes an ordinary finding
+class reproducible between runs, the ASVS chapter mapping and its declared
+non-goals, and the rule for a secure default that conflicts with the request
+are in `references/00-methodology-and-severity.md`.
 
 Treat the privilege model and object-/field-level authorization, impersonation
 and break-glass access, OAuth2/OIDC and social login, API-key lifecycle/scoping,
@@ -121,9 +116,9 @@ view — it carries the inventory of every sink and the reference that owns each
 one — and the security-hardening library index for dated package
 dispositions.
 
-Read-only triage scripts are in `scripts/`; all three parse with the `ast`
-module rather than grepping lines, so a hit is a structural match carrying the
-reference file that owns it, `entrypoint_inventory.py` enumerates the declared
+Read-only triage scripts are in `scripts/`. All three parse with the `ast`
+module rather than match lines, so a hit is a structural match that carries the
+reference file that owns it. `entrypoint_inventory.py` enumerates the declared
 entry points a sweep starts from, and `settings_scan.py` reads a settings
 package rather than a single module. Do not rely on this summary alone — read
 the referenced files.

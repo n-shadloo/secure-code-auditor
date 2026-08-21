@@ -1,14 +1,14 @@
 # AGENTS.md
 
 This repository is a backend security skill. Its canonical instructions live in
-`SKILL.md`, which routes to the topic files under `references/`. Any agent
-working in this repo should load `SKILL.md` first and then read only the
+`SKILL.md`, which routes to the topic files under `references/`. An agent that
+works in this repo should load `SKILL.md` first, and then read only the
 `references/*.md` file(s) relevant to the task.
 
 Primary integration: **Claude** (Anthropic Agent Skills). The files below let
-other agents use the same content; they are pointers, not copies. If anything
-here disagrees with `SKILL.md`, `SKILL.md` wins. The current version is recorded
-in `SKILL.md` frontmatter (`metadata.version`).
+other agents use the same content. They are pointers, not copies. If anything
+here disagrees with `SKILL.md`, `SKILL.md` wins. The current version is
+recorded in `SKILL.md` frontmatter (`metadata.version`).
 
 ## What this skill does
 Reviews backend code for security issues and applies secure defaults while
@@ -177,43 +177,42 @@ read differently because one calls `getlist` and the other subscripts the
 - Review-time: audit existing code, produce prioritized findings (severity,
   location, CWE + OWASP mapping, an optional ASVS 5.0 chapter, WSTG section, or
   LLM/Agentic Top 10 entry token where the project is actually held to that
-  standard, the
-  shortest source-to-sink path the finding was confirmed on together with the
-  protection that failed, concrete fix). Read-only by default. Load
-  `references/01-audit-workflow.md` before any topic file; it owns the sweep
-  the findings are produced by, and the topic files answer the questions that
-  sweep generates.
-- Write-time: apply the standing secure-default contract while generating code,
-  apply the secure default where it conflicts with the request and say so, and
-  close with a short security-decisions note rather than a findings report. The
-  rule for each generation moment sits beside the control it completes, in the
-  reference the router already sends you to, so opening a file for the concern
-  loads the rule for writing it.
-Mode selection, both output formats, the severity rubric including how a race
-and a surviving-personal-data failure are rated, the baseline severity table
-that makes an ordinary finding class reproducible between runs while the rubric
-keeps deciding the borderline one, the ASVS 5.0 chapter mapping with the
-chapters this skill treats as non-goals, the conflict rule, and the convention
-that every control is stated in a review form and a write-time form together
-are defined in `references/00-methodology-and-severity.md`.
+  standard, the shortest source-to-sink path the finding was confirmed on
+  together with the protection that failed, concrete fix). Read-only by
+  default. Load `references/01-audit-workflow.md` before any topic file. It
+  owns the sweep that produces the findings, and the topic files answer the
+  questions that sweep generates.
+- Write-time: apply the standing secure-default contract while you generate
+  code. Apply the secure default where it conflicts with the request, and say
+  so. Close with a short security-decisions note rather than a findings report.
+  The rule for each generation moment sits beside the control it completes, in
+  the reference the router already sends you to. A file opened for the concern
+  therefore loads the rule for writing it. Mode selection, both output formats,
+  the severity rubric including how a race and a surviving-personal-data
+  failure are rated, the baseline severity table that makes an ordinary finding
+  class reproducible between runs while the rubric keeps deciding the
+  borderline one, the ASVS 5.0 chapter mapping with the chapters this skill
+  treats as non-goals, the conflict rule, and the convention that every control
+  is stated in a review form and a write-time form together are defined in
+  `references/00-methodology-and-severity.md`.
 
 ## How to use the content
 1. Read `SKILL.md` for the router, mode logic, and severity summary.
 2. At review-time, read `references/01-audit-workflow.md` next and run its
-   phases; the entry-point inventory decides which topic files are needed and
+   phases. The entry-point inventory decides which topic files are needed, and
    the coverage ledger records what each pass reached. That file also carries
-   the WSTG mapping at section granularity, which says which testing-guide
-   sections this sweep covers and which are declared non-goals rather than
-   gaps.
+   the WSTG mapping at section granularity. That mapping says which
+   testing-guide sections this sweep covers, and which are declared non-goals
+   rather than gaps.
 3. Open the `references/*.md` file(s) for the concern in front of you. The
    router is grouped — the OWASP Top 10:2025 spine, then cross-cutting
    surfaces, then package decisions — so pick the group, then the row.
 4. Where two rows could both match, the "Ownership and boundaries" section
-   below the router names the single owning file for each contested topic, as a
-   table of topic, owner, and the distinction that decides a case near the
-   boundary; three splits keep a paragraph because a row would misstate the
+   below the router names the single owning file for each contested topic. It
+   is a table of topic, owner, and the distinction that decides a case near the
+   boundary. Three splits keep a paragraph, because a row would misstate the
    axis they turn on. Every other file cross-references the owner rather than
-   restating its rules, and each reference file repeats its own half of that
+   restates its rules, and each reference file repeats its own half of that
    rule in its opening paragraph.
 5. Optional read-only triage (standard library only, no network; `--json` on any
    of the three is JSON Lines, one object per line, consumed a record at a time):
@@ -221,19 +220,22 @@ are defined in `references/00-methodology-and-severity.md`.
    - `python scripts/settings_scan.py path/to/settings/ --json`
    - `python scripts/dangerous_patterns.py path/to/project`
    - `python scripts/dangerous_patterns.py path/to/project --json --min-severity MEDIUM`
-   - `python scripts/dangerous_patterns.py --selftest`
-All three parse with the `ast` module rather than grepping lines, so a hit is a
-structural match rather than a text one, every row names the reference file that
-owns it, a `dangerous_patterns.py` hit additionally carries a stable rule
-identifier, and a file that fails to parse is reported as unparsed rather than
-skipped in silence. Every `--json` stream ends with one `kind: "summary"`
-record, so an empty stream never occurs. The inventory enumerates the declared entry points the sweep
-starts from — routes at their include-resolved prefix, routers and actions,
-Ninja, GraphQL, gRPC, Channels, Celery, commands, signals, admin, middleware —
-marking each HTTP-reachable row as declaring its authorization, inheriting it,
-or having none, and the settings scan reads a whole settings package rather than
-one module, naming which module each effective value came from. Treat script
-output as leads to verify, not confirmed findings.
+   - `python scripts/dangerous_patterns.py --selftest` All three parse with the
+     `ast` module rather than match lines, so a hit is a structural match
+     rather than a text one. Every row names the reference file that owns it. A
+     `dangerous_patterns.py` hit also carries a stable rule identifier. A file
+     that fails to parse is reported as unparsed rather than skipped in
+     silence. Every `--json` stream ends with one `kind: "summary"` record, so
+     an empty stream never occurs.
+
+     The inventory enumerates the declared entry points the sweep starts from —
+     routes at their include-resolved prefix, routers and actions, Ninja,
+     GraphQL, gRPC, Channels, Celery, commands, signals, admin, middleware. It
+     marks each HTTP-reachable row as one of three states: it declares its
+     authorization, it inherits it, or it has none. The settings scan reads a
+     whole settings package rather than one module, and names which module each
+     effective value came from. Treat script output as leads to verify, not
+     confirmed findings.
 
 ## Tool-specific entry points
 - Claude Code: `SKILL.md` (native Agent Skill).

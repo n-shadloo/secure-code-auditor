@@ -20,7 +20,7 @@ body:
     attributes:
       label: Skill version
       description: The value of metadata.version in SKILL.md.
-      placeholder: 1.49.0
+      placeholder: 1.50.0
     validations:
       required: true
   - type: textarea
