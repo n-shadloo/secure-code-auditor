@@ -40,8 +40,8 @@ store**. Never invent crypto. Never compare secrets with a non-constant-time
 `==`.
 
 Know what the category actually catches in the field. Three of the most common
-CWEs OWASP maps to A04:2025 are about **randomness**, not about ciphers:
-CWE-331 (insufficient entropy), CWE-338 (cryptographically weak PRNG), and
+CWEs OWASP maps to A04:2025 are about **randomness**, not about ciphers. They
+are CWE-331 (insufficient entropy), CWE-338 (cryptographically weak PRNG), and
 CWE-1241 (predictable algorithm in a random number generator). CWE-327 (broken
 or risky algorithm) stands beside them. A guessable token is a cryptographic
 failure in exactly the same sense that a fast password hash is. Reviewers miss
@@ -148,10 +148,10 @@ often:
    passphrase contributes nothing past that point.
    `BCryptSHA256PasswordHasher` pre-hashes with SHA-256 first and does not.
    Only the latter belongs in the list.
-7. **Mixed algorithms in one user table are a user-enumeration timing
-   oracle**, and Django's own documentation says so. A login for a user whose
-   hash is in a non-preferred algorithm takes measurably different time from a
-   login for a user who does not exist. Upgrade-on-login shrinks the exposure
+7. **Mixed algorithms in one user table are a user-enumeration timing oracle**,
+   and Django's own documentation says so. A login for a user whose hash is in
+   a non-preferred algorithm takes measurably different time. The comparison is
+   a login for a user who does not exist. Upgrade-on-login shrinks the exposure
    as people sign in. The residue is the dormant accounts that never do. See
    `a07-authentication-failures.md`, "Brute force and enumeration".
 
@@ -212,9 +212,9 @@ moves in one pass, whether or not its owner ever returns.
 
 The wrapper hashes the legacy digest in place of the password. Three parts:
 
-1. A hasher that subclasses the target, with its own `algorithm` string and an
-   `encode_<legacy>_hash` helper that the migration calls with the digest read
-   out of the column.
+1. A hasher that subclasses the target, with its own `algorithm` string. It
+   also carries an `encode_<legacy>_hash` helper that the migration calls with
+   the digest read out of the column.
 2. A one-way data migration that splits each stored value, re-wraps it, and
    writes it back.
 3. Both the wrapper and the legacy hasher left in `PASSWORD_HASHERS`, so
@@ -311,9 +311,9 @@ things to know before you run it:
   wrapped into it. Such a row needs a different target, or the reset path
   below.
 - **The data-migration form is fine here** in a way the key-rotation pass
-  earlier in this file is not, because it depends on no key that will later be
-  destroyed. The resumability argument still holds at scale. A user table
-  large enough to time out a deploy wants the same chunked management command.
+  earlier in this file is not. It depends on no key that will later be
+  destroyed. The resumability argument still holds at scale. A user table large
+  enough to time out a deploy wants the same chunked management command.
 - **A wrap raises the cost of future cracking and undoes no past exposure.**
   It protects the copy in your database. A copy already taken is still
   crackable at the legacy cost.
@@ -336,8 +336,8 @@ A reset costs what a wrap does not. It interrupts every user at once. Support
 absorbs the ones who no longer control the registered address. The reset mail
 is a phishing template in the same week you told everyone to expect one. Where
 none of the four holds, wrap. A wrap closes the dormant gap immediately,
-including the timing difference point 7 leaves open, and the expiry of a
-chosen subset stays available as a separate decision.
+including the timing difference point 7 leaves open. The expiry of a chosen
+subset stays available as a separate decision.
 
 **Write-time.** When you move a project onto a different hasher family, write
 the wrapper and its data migration in the same change as the
@@ -369,9 +369,10 @@ Configure `AUTH_PASSWORD_VALIDATORS` (length, common-password, numeric,
 user-attribute similarity). This is your baseline against weak and reused
 credentials. This file does not own the policy those validators encode.
 `a07-authentication-failures.md`, "Password policy", carries the SP 800-63B-4
-requirements each one maps to, the length floor that sits above Django's
-default, and the breached-corpus screening no built-in provides. Lockout and
-breach handling are in the same file, under "Brute force and enumeration".
+requirements each one maps to. It also carries the length floor that sits above
+Django's default, and the breached-corpus screening no built-in provides.
+Lockout and breach handling are in the same file, under "Brute force and
+enumeration".
 
 ## Secrets
 
@@ -406,9 +407,8 @@ state).
 
 A bearer token's only security property is that nobody can produce a valid one
 without receipt of it. That reduces the requirement to two things. It comes
-from a cryptographically secure source, and it has enough entropy that no
-attacker can guess it. 128 bits is the floor, and 256 bits costs nothing
-extra.
+from a cryptographically secure source. It has enough entropy that no attacker
+can guess it. 128 bits is the floor, and 256 bits costs nothing extra.
 
 Two further rules keep it that way. **One purpose per token**, so nobody can
 present a value minted for one flow to another. **Store long-lived tokens
@@ -490,15 +490,15 @@ scope section below says the comparison is itself the gate.
 
 ### Commonly mistaken for a finding
 
-**`random` for retry jitter, sampling, backoff, shuffling a display order, or
-a test fixture.** The anti-pattern list above names `random.*` outright, and
+**`random` for retry jitter, sampling, backoff, shuffling a display order, or a
+test fixture.** The anti-pattern list above names `random.*` outright, and
 `import random` is a one-line grep with no context in it. Thus every call site
 reads as CWE-338 on sight. Predictability is only a defect where the design
 relies on unpredictability as the security property. The deciding question is
-what the value becomes. A credential, a token, a reset link, a session
-identifier, or anything else whose whole defense is that nobody can guess it
-makes this a finding. A delay, a sample, an ordering, or a fixture makes it
-the correct choice of generator.
+what the value becomes. This becomes a finding for a credential, a token, a
+reset link, or a session identifier. It becomes a finding for anything else
+whose whole defense is that nobody can guess it. A delay, a sample, an
+ordering, or a fixture makes it the correct choice of generator.
 
 **Write-time.** When you generate a value whose only requirement is
 statistical spread, call `random`. Jitter on a retry, a sampled subset, and a
@@ -683,14 +683,13 @@ projects implement the first three and discover the rest during an incident.
 At that point a rotation means a re-encryption of a table nobody has a script
 for.
 
-**Envelope encryption** is the shape that makes the rest tractable. Encrypt
-the data with a **data encryption key (DEK)**. Encrypt the DEK with a
+**Envelope encryption** is the shape that makes the rest tractable. Encrypt the
+data with a **data encryption key (DEK)**. Encrypt the DEK with a
 **key-encryption key (KEK)** that never leaves a KMS or HSM. Store the wrapped
-DEK beside the ciphertext. The plaintext DEK exists only briefly in
-application memory. Three things follow, and they are the whole reason to
-bother: the key that matters is never in a config file to be leaked, every
-unwrap is an audited KMS call, and a KEK rotation is one operation instead of
-a table scan.
+DEK beside the ciphertext. The plaintext DEK exists only briefly in application
+memory. Three things follow, and they are the whole reason to do it. The key
+that matters is never in a config file to be leaked. Every unwrap is an audited
+KMS call, and a KEK rotation is one operation instead of a table scan.
 
 Rotation without downtime is **versioning**, not replacement. New writes use
 the new key version. Reads try the current version, then each prior one in
@@ -797,18 +796,18 @@ about what it does not achieve. It versions keys correctly, but every version
 is in `settings.FIELD_KEYS`. Thus the process holds the material that decrypts
 the whole table for its entire lifetime. A configuration leak is a plaintext
 leak, and nothing anywhere records which rows were read. Envelope encryption
-moves each of those. The KEK stays in the KMS, the only key in the process is
-a per-row DEK that lives for one request, and each unwrap is a call somebody
-can audit and revoke.
+moves each of those. The KEK stays in the KMS, and the only key in the process
+is a per-row DEK that lives for one request. Each unwrap is a call somebody can
+audit and revoke.
 
 Three details carry the pattern, and projects leave out the middle one.
-`generate_data_key` returns both halves at once: `Plaintext`, the DEK you
-encrypt with, and `CiphertextBlob`, the same DEK wrapped under the KEK, which
-is what the row stores. `EncryptionContext` is non-secret additional
-authenticated data. `decrypt` fails with `InvalidCiphertextException` unless
-the caller supplies it again as a case-sensitive exact match. Thus a context
-bound to the table and row stops an attacker from unwrapping a DEK lifted out
-of one row against another.
+`generate_data_key` returns both halves at once. `Plaintext` is the DEK you
+encrypt with. `CiphertextBlob` is the same DEK wrapped under the KEK, which is
+what the row stores. `EncryptionContext` is non-secret additional authenticated
+data. `decrypt` fails with `InvalidCiphertextException` unless the caller
+supplies it again as a case-sensitive exact match. Thus a context bound to the
+table and row stops an attacker from unwrapping a DEK lifted out of one row
+against another.
 
 The context also has to be **stable from the first write**. Thus you cannot
 derive it from a primary key the row does not have yet.
@@ -1016,10 +1015,10 @@ That section owns the blind index that has to be rebuilt when the primitive
 beneath it changes.
 
 **Write-time.** When you generate code that writes a ciphertext, a signature,
-or a non-password digest, record the algorithm identifier and the key
-identifier in the stored format. Make that change in the same edit. The format
-is fixed the moment the first row is written, and every later migration is
-priced by that decision.
+or a non-password digest, record two identifiers in the stored format. Record
+the algorithm identifier and the key identifier. Make that change in the same
+edit. The format is fixed the moment the first row is written, and every later
+migration is priced by that decision.
 
 When you generate a verifier, read the identifier out of the value. Check it
 against a constant allow list in the project, never against the value's own
@@ -1079,35 +1078,36 @@ needs.
 - [ ] No password is stored under a fast hash, without a per-password salt, or
       under any reversible scheme.
 - [ ] Every bearer secret comes from a cryptographic source with at least 128
-      bits of entropy: no `random.*`, no sequential ids, no timestamp-derived
-      values, and no timestamped UUIDs as secrets. Long-lived ones are stored
-      hashed.
+      bits of entropy. There is no `random.*`, no sequential id, no
+      timestamp-derived value, and no timestamped UUID as a secret. Long-lived
+      ones are stored hashed.
 - [ ] Each signed or minted token is scoped to a single purpose, so nobody can
       present one to a different flow. Each one carries a maximum age chosen
       for that purpose.
 - [ ] Caller-supplied secrets that gate access are compared in constant time.
       Variable-length secrets are compared as fixed-length HMACs, so that the
       length itself does not leak.
-- [ ] Encryption keys have a documented lifecycle. They are versioned, wrapped
-      by a KEK held in a KMS or HSM rather than in configuration, rotatable
-      without downtime, and destroyed only after an audit shows no ciphertext
-      references them.
+- [ ] Encryption keys have a documented lifecycle. They are versioned, and
+      wrapped by a KEK held in a KMS or HSM rather than in configuration. They
+      are rotatable without downtime, and destroyed only after an audit shows
+      no ciphertext references them.
 - [ ] Where a KMS holds the KEK, every data key is generated and unwrapped
-      under an encryption context bound to the row it belongs to. The
-      plaintext data key lives in a local, rather than on an instance, in a
-      cache, or in a log line.
+      under an encryption context. That context is bound to the row the key
+      belongs to. The plaintext data key lives in a local, rather than on an
+      instance, in a cache, or in a log line.
 - [ ] Re-encryption after a key rotation exists as a chunked, resumable,
       idempotent job rather than as an intention.
 - [ ] Every stored ciphertext, signature, and non-password digest carries its
       algorithm identifier and key identifier as data. No reader infers either
       one from the payload or from the value's length.
-- [ ] Verification selects the algorithm by checking the stored identifier
-      against a server-side allow list, never by accepting the algorithm the
+- [ ] Verification selects the algorithm by a check of the stored identifier
+      against a server-side allow list. It never accepts the algorithm the
       value names for itself.
-- [ ] Each algorithm migration in progress has all four steps: dual read,
-      single write, a count of what remains on the old identifier, and removal
-      of the old read path only once that count is zero. No old key or read
-      path was retired before the count proved nothing still needs it.
+- [ ] Each algorithm migration in progress has all four steps. They are dual
+      read, single write, and a count of what remains on the old identifier.
+      The fourth removes the old read path, only once that count is zero. No
+      old key or read path was retired before the count proved nothing still
+      needs it.
 - [ ] One inventory names every algorithm in use with its location, owner, and
       review date. It covers the hasher list, signing, tokens, field
       encryption, webhook signatures, and transport ciphers.
@@ -1124,10 +1124,10 @@ needs.
       `must_update()` re-hashes users at their next login. `BCryptSHA256`
       rather than `BCrypt` is listed. Any scrypt use is subclassed above
       Django's default `work_factor`.
-- [ ] A change of hasher *family* is carried by a wrapped-hasher data
-      migration rather than by a reorder of `PASSWORD_HASHERS` alone, so
-      dormant accounts move too. An Argon2 target overrides `verify` as well
-      as `encode`, or every migrated login fails.
+- [ ] A wrapped-hasher data migration carries a change of hasher *family*,
+      rather than a reorder of `PASSWORD_HASHERS` alone. Dormant accounts
+      therefore move too. An Argon2 target overrides `verify` as well as
+      `encode`, or every migrated login fails.
 - [ ] `AUTH_PASSWORD_VALIDATORS` configured.
 - [ ] Tokens use `secrets.token_urlsafe`, `get_random_secret_key()`, or
       `PasswordResetTokenGenerator`. They do not use `get_random_string` at a

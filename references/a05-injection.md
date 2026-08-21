@@ -55,10 +55,10 @@ model retrieved from a document or a web page is the same class. See
 
 A **sink** is any call where data leaves the application's own semantics and
 goes to something that interprets it. That interpreter is a SQL engine, a
-shell, a template compiler, a directory server, a path resolver, an HTTP
-client, a deserializer, a log line, or a response header. Injection is the
-same defect at every one of them. Attacker-influenced content changes what the
-operation *means*, not only what it operates on. That is why the defense is
+shell, a template compiler, or a directory server. It is also a path resolver,
+an HTTP client, a deserializer, a log line, or a response header. Injection is
+the same defect at every one of them. Attacker-influenced content changes what
+the operation *means*, not only what it operates on. That is why the defense is
 one discipline and not a dozen.
 
 A finding needs three things established, in this order.
@@ -66,11 +66,11 @@ A finding needs three things established, in this order.
 **Sources.** Untrusted input is more than the request body. It includes
 `request.GET`, `request.POST`, `request.data`, `request.query_params`,
 `request.FILES`, headers, cookies, and URL keyword arguments. It also includes
-any free-text field in DRF's `validated_data`, WebSocket and consumer
-messages, model fields populated from any of those earlier, and text a model
-generated or retrieved. Validation upstream narrows what a source can contain.
-It does not make the source trusted, because the sink is where the interpreter
-assigns meaning.
+any free-text field in DRF's `validated_data`, and WebSocket and consumer
+messages. It includes model fields populated from any of those earlier, and
+text a model generated or retrieved. Validation upstream narrows what a source
+can contain. It does not make the source trusted, because the sink is where the
+interpreter assigns meaning.
 
 **Sinks.** Enumerate every interpreter the request can reach. The inventory
 below is that list. One location for it is the point. A reference that defers
@@ -240,8 +240,8 @@ reaches outward. Where a gateway, a WAF, or a proxy inspects a request before
 Django does, that component picks an occurrence by its own rule. Nothing
 guarantees it is the one Django will read. This repository does not show which
 occurrence the edge chooses. Carry it as a question to whoever operates the
-edge, under `01-audit-workflow.md`, "Phase 0 — scope, mode, and what the
-repository cannot tell you", rather than assume an answer.
+edge, rather than assume an answer. `01-audit-workflow.md`, "Phase 0 — scope,
+mode, and what the repository cannot tell you" holds that rule.
 
 **Write-time.** When you generate a handler that reads a query or form
 parameter a security decision depends on, read it once into a local name. Use
@@ -355,11 +355,11 @@ sequence after the statement is already parsed, which is exactly the control
 this section asks for.
 
 The deciding question is never whether the string contains `%s`. The question
-is whether the code *builds* the SQL string, by an f-string, `%`
+is whether the code *builds* the SQL string. It builds it by an f-string, `%`
 interpolation, `.format()`, or concatenation with anything that is not a
-literal constant. A static statement with a params argument is the correct
-form of the call. A report of it is the highest-volume false positive
-available in a Django codebase.
+literal constant. A static statement with a params argument is the correct form
+of the call. A report of it is the highest-volume false positive available in a
+Django codebase.
 
 ## The dictionary-expansion column-alias class
 

@@ -928,8 +928,8 @@ had open.
 
 ### Stack-neutral
 
-- [ ] Scope and mode were stated before the sweep, and anything outside scope
-      was recorded as a decision rather than discovered as a gap at write-up.
+- [ ] Scope and mode were stated before the sweep. Anything outside scope was
+      recorded as a decision, rather than discovered as a gap at write-up.
 - [ ] Every claim about a control outside the repository is carried as a
       question to its operator, with the answer that would settle it. No such
       claim is assumed present or absent.
@@ -975,8 +975,7 @@ had open.
       the state behind it. It was confirmed to fail against the code without
       the fix.
 - [ ] Fixture and factory data carries no real secret and no real personal
-      data, and which closed findings have a test is recorded rather than
-      assumed.
+      data. Which closed findings have a test is recorded rather than assumed.
 
 ### Django & DRF
 

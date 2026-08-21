@@ -392,13 +392,12 @@ limit named in documentation and absent from the schema definition is not
 applied. This is one of the few places where the settings file alone is not
 enough.
 
-The database-side backstop — statement timeouts and pool limits, so an
-expensive document cannot hold connections indefinitely — is in
-`data-layer-and-database.md`, "Connection exhaustion and query timeouts". The
-four limits here are the instance of a wider rule on this surface. That rule
-is that every caller-controlled value which multiplies work carries a
-server-enforced ceiling. `a06-insecure-design.md`, "Algorithmic resource
-exhaustion" states it.
+`data-layer-and-database.md`, "Connection exhaustion and query timeouts" holds
+the database-side backstop. That is statement timeouts and pool limits, so an
+expensive document cannot hold connections indefinitely. The four limits here
+are the instance of a wider rule on this surface. That rule is that every
+caller-controlled value which multiplies work carries a server-enforced
+ceiling. `a06-insecure-design.md`, "Algorithmic resource exhaustion" states it.
 
 ## Introspection, field suggestions, and error masking
 
@@ -910,22 +909,21 @@ backend code for these, and do not report their absence as a backend finding:
 ### Stack-neutral
 
 - [ ] Authorization is enforced on every resolved edge, not once at the query
-      root; a nested selection reaching another tenant's records is tested for
-      explicitly.
+      root. A test covers a nested selection that reaches another tenant's
+      records.
 - [ ] Types expose an explicit field allow-list; no all-fields type and no
       deny-list `exclude`.
 - [ ] Depth, alias, token, and cost limits are all applied as validation rules
-      that run before execution, and a document over budget is tested and
-      rejected.
+      that run before execution. A document over budget is tested and rejected.
 - [ ] The cost rule compounds its multiplier down the tree. It follows a
       fragment spread, and does not skip one. It assumes a ceiling for a page
       size supplied in a variable.
 - [ ] An execution or wall-clock timeout exists underneath the limits.
 - [ ] Array batching is bounded or disabled, and aliases and operations count
       toward the document budget.
-- [ ] Rate limiting meters cost per identity, not HTTP requests; mutations
-      that authenticate carry the same anti-automation controls as a login
-      route, applied per operation.
+- [ ] Rate limiting meters cost per identity, not HTTP requests. Mutations that
+      authenticate carry the same anti-automation controls as a login route,
+      applied per operation.
 - [ ] Introspection and the in-browser query interface are disabled in
       production, and nothing depends on the schema being secret.
 - [ ] Production errors are masked; no exception strings, SQL, model names, or

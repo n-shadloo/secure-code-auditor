@@ -159,13 +159,13 @@ question is "what happens when it says no".
 
 **The SBOM is generated from the lock, not from the finished image alone.** An
 SBOM produced from a scan of a built image records what a scanner could
-identify inside it. An SBOM produced from the lockfile records what the
-project resolved and pinned. The two disagree exactly where it matters: a
-wheel installed by a build step, a vendored dependency, or anything the
-scanner's Python detector did not recognize. Only the second is traceable to a
-file a reviewer can open. Generate it in the same job that performs the
-install, and from the same file the install reads. The two then cannot diverge
-unless somebody edits both.
+identify inside it. An SBOM produced from the lockfile records what the project
+resolved and pinned. The two disagree exactly where it matters. That is a wheel
+installed by a build step, a vendored dependency, or anything the scanner's
+Python detector did not recognize. Only the second is traceable to a file a
+reviewer can open. Generate it in the same job that performs the install, and
+from the same file the install reads. The two then cannot diverge unless
+somebody edits both.
 
 CycloneDX is the Python ecosystem's working default. The 1.7 specification
 appeared in October 2025, and `cyclonedx-py` 7.3.1 still emits 1.6 unless you
@@ -192,10 +192,11 @@ project believe it verifies artifacts it never verified.
 
 **A scan gate is configuration, so review it as configuration.** Read what the
 workflow does with the result, rather than whether the step is present. Four
-conditions are the same finding written four ways: `continue-on-error: true`,
-a trailing `|| true`, a severity threshold set above the findings the project
-actually has, and a report uploaded to an artifact nobody opens. In each one
-the scanner runs and gates nothing. The exit code is the control.
+conditions are the same finding written four ways. They are
+`continue-on-error: true`, a trailing `|| true`, and a severity threshold set
+above the findings the project actually has. The fourth is a report uploaded to
+an artifact nobody opens. In each one the scanner runs and gates nothing. The
+exit code is the control.
 
 For Python dependencies the primary scanner stays `pip-audit`. The PyPA
 maintains it under Apache-2.0, at 2.10.1 as of 10 June 2026. Its advisory
@@ -234,13 +235,13 @@ searched the filesystem for cloud credentials. The attacker also replaced all
 seven tags in `aquasecurity/setup-trivy`. A second wave put malicious v0.69.5
 and v0.69.6 images on Docker Hub on 22 March.
 
-Trivy's advisory GHSA-69fq-xp46-6x23, carrying CVE-2026-33634, is precise
-about what survived: releases at v0.69.3 or earlier, images referenced by
-digest, builds from source, and action references pinned to a safe commit. No
-`setup-trivy` tag was safe, because the attacker force-pushed every one of
-them. That is the reason to record the rule as "pin the SHA", and never as
-"pin the last known-good tag". A tag is a name the publisher can repoint, and
-so can anyone holding the publisher's credentials.
+Trivy's advisory GHSA-69fq-xp46-6x23, which carries CVE-2026-33634, is precise
+about what survived. That is releases at v0.69.3 or earlier, images referenced
+by digest, builds from source, and action references pinned to a safe commit.
+No `setup-trivy` tag was safe, because the attacker force-pushed every one of
+them. That is the reason to record the rule as "pin the SHA", and never as "pin
+the last known-good tag". A tag is a name the publisher can repoint, and so can
+anyone holding the publisher's credentials.
 
 **Provenance is produced inside the repository and verified outside it, and
 only the second half is a control.** A GitHub artifact attestation binds a
@@ -412,12 +413,13 @@ gh attestation verify ./dist/app-1.4.2-py3-none-any.whl \
 ```
 
 **Write-time.** When you generate a build or release workflow, write four
-things into the first version of the file: the SHA pin, the `--require-hashes`
-install, the scanner step with no `continue-on-error` and no `|| true`, and
-the SBOM generated from the lockfile. Do not leave them for a later hardening
-pass. Each of these is the kind of line a team adds once and never examines
-again. A scan step that somebody added with `|| true` to make a red build
-green reads, a year later, exactly like a scan step that works.
+things into the first version of the file. They are the SHA pin, the
+`--require-hashes` install, and the scanner step with no `continue-on-error`
+and no `|| true`. The fourth is the SBOM generated from the lockfile. Do not
+leave them for a later hardening pass. Each of these is the kind of line a team
+adds once and never examines again. A scan step that somebody added with
+`|| true` to make a red build green reads, a year later, exactly like a scan
+step that works.
 
 Put the attestation's three permissions on the job rather than on the
 workflow. The write scopes then do not extend to jobs that have no reason to
@@ -563,8 +565,8 @@ recursion over `get_resolver().url_patterns` is a few lines with no
 dependency, and from Django 6.2 the built-in `listurls` supersedes both.
 
 CWE-1104 (Use of Unmaintained Third Party Components) where the tier reflects
-maintenance, and CWE-489 (Active Debug Code) where the shipped tooling exposes
-a console or debugger. Severity: high where the package carries an interactive
+maintenance. CWE-489 (Active Debug Code) where the shipped tooling exposes a
+console or debugger. Severity: high where the package carries an interactive
 debugger or shell. Severity: medium in every other case.
 
 ## Migration and data-integrity safety
@@ -579,8 +581,8 @@ appropriate.
 A migration is privileged, versioned deployment code. It can transform every
 row, temporarily change the meaning of missing data, or preserve a secret in
 history forever. The invariant is: **the old application, migration phase, and
-new application must all preserve the intended access and data constraints, and
-every transformed row must be accounted for before enforcement changes.**
+new application must all preserve the intended access and data constraints.
+Every transformed row must be accounted for before enforcement changes.**
 
 - Use an expand/backfill/enforce/contract sequence for changes that span
   releases. During a mixed-version deployment, both old and new code must
@@ -767,8 +769,8 @@ repository's history.
       install.
 - [ ] `pip-audit` runs in CI as an advisory input, and automated update PRs
       are enabled.
-- [ ] Each pipeline control gates rather than merely runs: hashes are enforced
-      on install, the scanner's exit code fails the build, the SBOM is
+- [ ] Each pipeline control gates rather than merely runs. Hashes are enforced
+      on install, and the scanner's exit code fails the build. The SBOM is
       generated from the lockfile, and provenance is verified against a pinned
       signer identity. Platform-side artifacts are recorded as operator
       questions.
@@ -779,9 +781,9 @@ repository's history.
 - [ ] Components discovered and loaded at runtime are pinned or
       provenance-checked at call time. Tool descriptions are treated as
       untrusted input.
-- [ ] Every security dependency has a recorded need, a maintenance and
-      advisory check, a minimum safe version, compatibility, a license, a
-      secure-default review, and a disposition. Scanners are not treated as
+- [ ] Every security dependency has a recorded need, a maintenance and advisory
+      check, and a minimum safe version. It also has compatibility, a license,
+      a secure-default review, and a disposition. Scanners are not treated as
       proof of safety.
 - [ ] The requirements file the production image actually installs carries no
       package the library index tiers development-only. `django-extensions` is

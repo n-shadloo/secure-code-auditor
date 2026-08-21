@@ -500,10 +500,10 @@ under the control, and not in separate files. A control with only a review
 form is incomplete. It tells a reviewer what to look for, and tells a writer
 nothing.
 
-The write-time form is a positive imperative in framework vocabulary with one
-clause of reason — *when [the generation moment], [the concrete action],
-because [the reason]*. Three properties do the work. Each one fails in a
-specific way when the author drops it:
+The write-time form is a positive imperative in framework vocabulary, with one
+clause of reason. Its shape is *when [the generation moment], [the concrete
+action], because [the reason]*. Three properties do the work. Each one fails in
+a specific way when the author drops it:
 
 - **The moment** is the property that makes the rule fire. A rule with no
   trigger is a true statement that a reader agrees with and does not apply.
@@ -550,5 +550,5 @@ lives beside its control, and this file does not copy it back.
 - [ ] At write-time the secure default was applied first, and anything the
       request forced is named with its residual risk instead of left silent.
 - [ ] Any control added to this skill carries both a review form and a
-      write-time form, co-located under the control rather than split across
+      write-time form. The two sit under the control, rather than split across
       files.

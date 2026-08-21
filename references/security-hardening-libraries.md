@@ -3,36 +3,40 @@
 This is a dated decision index, not an install-all list. It is current as of
 **9 Aug 2026** for the repository baseline (Django 6.1, 6.0.8, and 5.2.17 LTS,
 with DRF 3.18.0). Re-run the A03 dependency gate for the project's actual
-Python/Django versions and whenever maintenance, advisories, or compatibility
-changes.
+Python and Django versions. Re-run it also whenever maintenance, advisories, or
+compatibility change.
 
 **How this file is dated.** One index date in the header governs every version
-and classifier claim below, and an entry or section states its own date only
-where something was checked on a different day. Every package version and
+and classifier claim below. An entry or section states its own date only where
+somebody checked something on a different day. Every package version and
 classifier in this file was re-checked against PyPI on the index date. The
-behavioral notes are dated separately and deliberately: what a package ships,
+behavioral notes carry a separate date, deliberately. What a package ships,
 what its defaults are, and what its own source does were not re-read on that
-date, so they keep the date stated at the head of their section. Hold that
-split on the next sweep. A version is one page away and cheap to re-check, a
-default is neither, and collapsing the two would date a claim nobody verified.
+date. They therefore keep the date at the head of their section.
+
+Hold that split on the next sweep. A version is one page away and cheap to
+re-check, and a default is neither. A collapse of the two would date a claim
+nobody verified.
 
 Django 6.1 was released on 5 Aug 2026, so most entries below still declare
-support through 6.0 and not yet 6.1. Days after a feature release that is the
-normal packaging lag rather than a compatibility finding, and it is recorded
-here once so that no entry has to repeat it; it becomes a gate question at the
-point a project actually moves to 6.1. A package declaring no currently
-supported line at all is a different matter, and each one is called out where
+support through 6.0 and not yet 6.1. Days after a feature release, that is the
+normal packaging lag rather than a compatibility finding. This file records it
+once, so that no entry has to repeat it. It becomes a gate question at the
+point a project actually moves to 6.1. A package that declares no currently
+supported line at all is a different matter, and this file names each one where
 it appears.
 
-This file owns the **disposition of a named package** — its tier, its
-minimum-safe floor, and the vetting fields behind both, each carrying the date
-it was checked. It does not own the gate that produces a disposition:
+This file owns the **disposition of a named package**: its tier, its
+minimum-safe floor, and the vetting fields behind both. Each one carries the
+date somebody checked it. It does not own the gate that produces a disposition.
 `a03-software-supply-chain.md` owns dependency vetting, pinning and hashing,
 advisory scanning, and SBOM as a method, and this file is that method's
-recorded output for one baseline. Nor does it own the controls these packages
-implement — every entry defers to the reference that owns the concern, and each
-section names it. A platform SDK a project already runs is audited there as a
-pattern rather than tiered here.
+recorded output for one baseline.
+
+Nor does this file own the controls these packages implement. Every entry
+defers to the reference that owns the concern, and each section names it. A
+platform SDK a project already runs is audited there as a pattern rather than
+tiered here.
 
 ## Contents
 - [Recommendation gate](#recommendation-gate)
@@ -54,12 +58,13 @@ pattern rather than tiered here.
 
 ## Recommendation gate
 
-Before recommending a dependency, record: the control and built-in alternative;
-maintenance and latest-release signal; known advisories and minimum safe version;
-Python/Django/runtime compatibility; license; security-sensitive defaults;
-operational/transitive cost; and an exit plan. Classify it as **recommend**,
-**conditional**, **existing-install audit only**, or **reject for new use**.
-Advisory scanning alone is not vetting.
+Before you recommend a dependency, record eight facts. Record the control and
+the built-in alternative, the maintenance and latest-release signal, and the
+known advisories with the minimum safe version. Record the Python, Django, and
+runtime compatibility, the license, the security-sensitive defaults, the
+operational and transitive cost, and an exit plan. Classify it as
+**recommend**, **conditional**, **existing-install audit only**, or **reject
+for new use**. Advisory scanning alone is not vetting.
 
 ## Recommended or conditional choices
 
@@ -101,47 +106,52 @@ Advisory scanning alone is not vetting.
 
 **Category ruling — general-purpose rate limiting, 9 Aug 2026.** No maintained
 general-purpose rate-limiting package clears this gate for the current
-baseline. The question recurs often enough — the control is real, the packages
-are easy to find, and the reasons each one fails are not the same — that the
-ruling is recorded here rather than re-derived. `django-ratelimit` is at 4.1.0
-from 2023 and `django-defender` at 0.9.8 from 2024, both dormant.
-`django-smart-ratelimit` 4.12.1 is current and actively released but fails on
-maintainer concentration and an unsafe default backend, as above.
-`django-axes==8.3.1` is unaffected by this ruling and stays a recommend: it
-solves the narrower login-lockout problem, not general rate limiting.
-Everything else layers: edge and platform limits, plus the owned atomic
-counter in `api-drf-specific.md`, "Throttling as quota, not security (API4)".
-Re-open the ruling when a limiter ships with more than one active maintainer
-and a shared backend by default.
+baseline. The question recurs often, because the control is real, the packages
+are easy to find, and the reasons each one fails are not the same. This file
+therefore records the ruling rather than re-derives it.
 
-**Standing re-vet triggers, re-checked 9 Aug 2026.** A handful of entries below
-are held at their tier by one fact that a single release would overturn, so
-each is re-checked every sweep and its status restated here rather than left to
-age quietly inside its own row. **None of them moved this pass.**
+`django-ratelimit` is at 4.1.0 from 2023, and `django-defender` at 0.9.8 from
+2024. Both are dormant. `django-smart-ratelimit` 4.12.1 is current and actively
+released, but it fails on maintainer concentration and an unsafe default
+backend, as above. `django-axes==8.3.1` is unaffected by this ruling and stays
+a recommend, because it solves the narrower login-lockout problem, not general
+rate limiting.
+
+Everything else layers: edge and platform limits, with the owned atomic counter
+in `api-drf-specific.md`, "Throttling as quota, not security (API4)". Re-open
+the ruling when a limiter ships with more than one active maintainer and a
+shared backend by default.
+
+**Standing re-vet triggers, re-checked 9 Aug 2026.** One fact holds a handful
+of entries below at their tier, and a single release would overturn that fact.
+Each one is therefore re-checked every sweep, and its status restated here
+rather than left to age quietly inside its own row. **None of them moved this
+pass.**
+
 `django-safedelete` is still 1.4.1 from 5 Mar 2025 with no Django classifiers,
 so the cascade behavior behind its tier is still open. `graphene-django` is
-still 3.2.3 from 13 Mar 2025 with classifiers stopping at Django 4.2 — the
-release declaring 5.2 or 6.x that would move it back to conditional has not
-appeared. `django-ipware` is still 7.0.1 from 19 Apr 2024, as is
-`python-ipware` 3.0.0 alongside it. `ariadne-django` is still 0.3.0 from
-19 Jul 2022 while Ariadne core reached 1.1.0 on 15 Jun 2026, so the gap between
-the core and its Django binding widened rather than closed.
-`django-gdpr-assist` is still 1.4.2 with no release since 2022 and its
-repository archived read-only, and no maintained successor has taken the
-pattern over. The one trigger that did fire — a maintained general-purpose
-rate limiter appearing — is ruled on immediately above.
+still 3.2.3 from 13 Mar 2025, with classifiers that stop at Django 4.2. The
+release that declares 5.2 or 6.x, and would move it back to conditional, has
+not appeared. `django-ipware` is still 7.0.1 from 19 Apr 2024, as is
+`python-ipware` 3.0.0 alongside it.
+
+`ariadne-django` is still 0.3.0 from 19 Jul 2022, while Ariadne core reached
+1.1.0 on 15 Jun 2026. The gap between the core and its Django binding therefore
+widened rather than closed. `django-gdpr-assist` is still 1.4.2 with no release
+since 2022, and its repository is archived read-only. No maintained successor
+has taken the pattern over. One trigger did fire, a maintained general-purpose
+rate limiter, and the ruling immediately above covers it.
 
 ## Authorization, object permissions, and impersonation
 
-The behavioral notes in this section were checked on **1 Aug 2026**; versions
-and classifiers carry the index date above. Read with
-`authorization-architecture.md` and
-`privileged-access-and-impersonation.md`.
+The behavioral notes in this section carry a check date of **1 Aug 2026**.
+Versions and classifiers carry the index date above. Read with
+`authorization-architecture.md` and `privileged-access-and-impersonation.md`.
 
-Before adding any of these, note that the default recommendation for object
-authorization is **queryset scoping**, which needs no dependency at all. Reach
-for a package when per-object grants are genuinely data, or when the same
-per-object rule is being hand-written across more than a handful of views.
+Before you add any of these, note that the default recommendation for object
+authorization is **queryset scoping**, which needs no dependency at all. Use a
+package when per-object grants are genuinely data, or when the same per-object
+rule is hand-written across more than a handful of views.
 
 | Concern | Choice and version | Disposition and review notes |
 |---|---|---|
@@ -158,15 +168,16 @@ per-object rule is being hand-written across more than a handful of views.
 
 ## Agent and MCP interfaces
 
-The defaults in this section were checked on **1 Aug 2026**; versions and
+The defaults in this section carry a check date of **1 Aug 2026**. Versions and
 classifiers carry the index date above. Read with
 `agent-and-llm-interfaces.md`.
 
 **No package in this area clears the gate for a `recommend` tier.** The default
 construction is DRF's own authentication, permission, filter, pagination, and
-throttle classes plus a hand-written audience-validating authentication class,
-with `django-oauth-toolkit` above where the application is the authorization
-server. Every entry below is a disposition for something already installed.
+throttle classes, with a hand-written authentication class that validates the
+audience. Where the application is the authorization server, add
+`django-oauth-toolkit` above. Every entry below is a disposition for something
+already installed.
 
 | Candidate | Disposition and review notes |
 |---|---|
@@ -176,29 +187,31 @@ server. Every entry below is a disposition for something already installed.
 | `mcp-django==0.14.0` (23 Jul 2026) | **Reject for production.** Offers management-command and stateful shell access, which is arbitrary code execution by design. Active maintenance and a Django 6.0 classifier do not move this one: the disposition is about what the package exposes, not how well it is kept. Development tooling only; treat any production install as a Critical finding. |
 | `mcp` (Python SDK) | **Infrastructure, not a recommendation target.** 2.0.0 shipped 28 Jul 2026 for the stateless 2026-07-28 specification revision, which is final rather than the draft it was taken for, so a bare `pip install mcp` now resolves to the 2.x line and 1.x is on security fixes only. Pin `mcp>=1.28,<2` until the migration is a deliberate one and re-vet at that point; 2026-07-28 is the audit baseline. |
 
-The MCP authorization requirements themselves — OAuth 2.1, RFC 9728 protected-
-resource metadata, RFC 8707 audience-bound tokens, and the prohibition on token
-passthrough — are properties of the specification rather than of any transport
-package, and none of the three entries above implements them. One package now
-does implement part of it: `django-oauth-toolkit` 3.4.0 added first-class MCP
-authorization-server support, with RFC 9728 protected-resource metadata,
-RFC 8707 resource indicators, and RFC 7591/7592 dynamic client registration.
-That is the issuing half only. Validating the audience on the way in is still
-the resource server's own work — `service-identity-and-secrets.md`,
-"Validating an inbound machine token" — and the passthrough prohibition remains
-an architectural rule that no package enforces for you.
+The MCP authorization requirements themselves are properties of the
+specification rather than of any transport package, and none of the three
+entries above implements them. Those requirements are OAuth 2.1, RFC 9728
+protected-resource metadata, RFC 8707 audience-bound tokens, and the
+prohibition on token passthrough. One package now implements part of it.
+`django-oauth-toolkit` 3.4.0 added first-class MCP authorization-server
+support, with RFC 9728 protected-resource metadata, RFC 8707 resource
+indicators, and RFC 7591/7592 dynamic client registration.
+
+That is the issuing half only. Validation of the audience on the way in is
+still the resource server's own work — `service-identity-and-secrets.md`,
+"Validating an inbound machine token". The passthrough prohibition remains an
+architectural rule that no package enforces for you.
 
 ## Service identity and secrets
 
 The defaults in this section were checked against the projects' own release
-notes on **3 Aug 2026**; versions and classifiers carry the index date above.
+notes on **3 Aug 2026**. Versions and classifiers carry the index date above.
 Read with `service-identity-and-secrets.md`.
 
 Most of this area is not a dependency at all. `django.core.signing`,
 `SECRET_KEY_FALLBACKS`, `salted_hmac`, and the standard library's `secrets`
-cover signing and key rotation, and the platform side — workload identity, a
-service mesh, a secret manager — sits outside the Python dependency tree and is
-a pattern to audit rather than a package to tier.
+cover signing and key rotation. The platform side sits outside the Python
+dependency tree, and it is a pattern to audit rather than a package to tier.
+That side is workload identity, a service mesh, and a secret manager.
 
 | Concern | Choice and version | Disposition and review notes |
 |---|---|---|
@@ -212,12 +225,12 @@ a pattern to audit rather than a package to tier.
 
 Read with `data-layer-and-database.md`.
 
-Most of this domain is configuration rather than dependency: role separation,
+Most of this domain is configuration rather than dependency. Role separation,
 row-level security, connection verification, statement timeouts, and pool
-sizing are database and driver settings, and no package supplies them. The
-encryption primitives themselves — `cryptography`, and the one packaged field
-library still worth a disposition — are in "Cryptographic primitives and
-password hashing" below.
+sizing are database and driver settings, and no package supplies them.
+"Cryptographic primitives and password hashing" below holds the encryption
+primitives themselves: `cryptography`, and the one packaged field library still
+worth a disposition.
 
 | Concern | Choice and version | Disposition and review notes |
 |---|---|---|
@@ -230,9 +243,9 @@ password hashing" below.
 
 Read with `data-lifecycle-and-privacy.md`.
 
-The dedicated privacy packages are the weakest category in this index: the
-best-known option is archived, the rest are years past their last release, and
-none of them closes the related-object leak that makes soft delete unsafe as a
+The dedicated privacy packages are the weakest category in this index. The
+best-known option is archived, and the rest are years past their last release.
+None of them closes the related-object leak that makes soft delete unsafe as a
 deletion control. Django's own partial `UniqueConstraint`, custom managers,
 `FieldFile.delete()`, a management command on a real schedule, and a local
 classification convention cover the area without a dependency.
@@ -257,17 +270,17 @@ classification convention cover the area without a dependency.
 ## GraphQL and alternative API surfaces
 
 The GraphQL defaults in this section were checked against the packages' own
-source on **4 Aug 2026** and the gRPC ones on **9 Aug 2026**; versions and
+source on **4 Aug 2026**, and the gRPC ones on **9 Aug 2026**. Versions and
 classifiers carry the index date above. Read with
 `graphql-and-alternative-api-surfaces.md`.
 
 No package in this area ships the controls that make a GraphQL endpoint safe.
 Depth, alias, token, and cost limits, resolver-level authorization, and error
-masking are all opt-in in every library below, so the disposition decides which
-footguns you inherit, not whether you still have to do the work. The same holds
-one surface over: grpcio authenticates nothing until an interceptor is
-installed, and neither it nor the Django integration sets a message-size or
-concurrency limit on your behalf.
+masking are all opt-in in every library below. The disposition therefore
+decides which unsafe defaults you inherit, and not whether you still have to do
+the work. The same holds one surface over. grpcio authenticates nothing until
+you install an interceptor. Neither it nor the Django integration sets a
+message-size or concurrency limit on your behalf.
 
 | Concern | Choice and version | Disposition and review notes |
 |---|---|---|
@@ -291,22 +304,24 @@ concurrency limit on your behalf.
 
 Read with `api-drf-specific.md`. The DRF baseline moved to `3.18.0` (7 Aug
 2026) in this pass, and two things about that line matter more than the number.
-The security fixes are in `3.17.2` (5 Aug 2026) and not in `3.18.0`: it stopped
-`AdminRenderer` disclosing GET-protected data through a validation-error
-response, and made `request.data` parsing honor Django's
-`DATA_UPLOAD_MAX_MEMORY_SIZE` rather than reading past it. `3.17.2` is
-therefore the minimum safe version, and a project that cannot take `3.18.0`
-should still be on it. `3.18.0` itself is a feature release: it drops Django
-4.2, 5.0, and 5.1 — all end-of-life — adds Django 6.1 support, and changes the
-error format that list serializers return to a dict, which is a breaking change
-for any client parsing those responses.
+The security fixes are in `3.17.2` (5 Aug 2026) and not in `3.18.0`. That
+release stopped `AdminRenderer` from a disclosure of GET-protected data through
+a validation-error response. It also made `request.data` parsing honor Django's
+`DATA_UPLOAD_MAX_MEMORY_SIZE` rather than read past it. `3.17.2` is therefore
+the minimum safe version, and a project that cannot take `3.18.0` should still
+be on it.
 
-The controls that make a DRF surface safe — scoped querysets, allow-listed
-serializer fields and filters, per-object authorization on every route — are
-framework built-ins and need no dependency. The packages below are for the two
-places DRF genuinely ships nothing: an OpenAPI schema worth generating, and
-declarative filtering. The bulk packages are listed because they are the ones
-already installed when a bulk endpoint turns out to skip every object check.
+`3.18.0` itself is a feature release. It drops Django 4.2, 5.0, and 5.1, which
+are all end-of-life. It adds Django 6.1 support. It also changes the error
+format that list serializers return to a dict, which is a breaking change for
+any client that parses those responses.
+
+The controls that make a DRF surface safe are framework built-ins and need no
+dependency. Those controls are scoped querysets, allow-listed serializer fields
+and filters, and per-object authorization on every route. The packages below
+are for the two places DRF genuinely ships nothing: an OpenAPI schema, and
+declarative filters. This file lists the bulk packages because they are the
+ones already installed when a bulk endpoint skips every object check.
 
 | Concern | Choice and version | Disposition and review notes |
 |---|---|---|
@@ -327,8 +342,8 @@ Read with `a10-exceptional-conditions.md`.
 This is the area where the built-ins win most clearly. `transaction.atomic()`,
 `select_for_update()`, `F()`, `UniqueConstraint`, `CheckConstraint`,
 `ExclusionConstraint`, and `transaction.on_commit()` cover the whole in-scope
-surface, and the idempotency design is one model with one unique constraint. No
-package below beats them on merit for the core controls; the two conditional
+surface. The idempotency design is one model with one unique constraint. No
+package below beats them on merit for the core controls. The two conditional
 entries are for the narrow cases the built-ins genuinely do not reach.
 
 | Concern | Choice and version | Disposition and review notes |
@@ -350,13 +365,14 @@ entries are for the narrow cases the built-ins genuinely do not reach.
 
 Read with `a08-integrity-and-deserialization.md`.
 
-Nothing is recommended here, and that is the finding. A conformant inbound
-webhook verifier is `hmac.new`, `hmac.compare_digest`, and a model with a unique
-constraint — standard library and ORM, perhaps thirty lines, fully reviewable.
-Taking a dependency to compute one HMAC widens the supply-chain surface this
-skill exists to shrink, and does so on the one route that is unauthenticated by
-design. The rule for this area: **verify inbound with the standard library; take
-a package only for the outbound interop problem, if at all.**
+This file recommends nothing here, and that is the finding. A conformant
+inbound webhook verifier is `hmac.new`, `hmac.compare_digest`, and a model with
+a unique constraint. That is standard library and ORM, perhaps thirty lines,
+and fully reviewable. A dependency that computes one HMAC widens the
+supply-chain surface this skill exists to shrink. It does so on the one route
+that is unauthenticated by design. The rule for this area: **verify inbound
+with the standard library; take a package only for the outbound interop
+problem, if at all.**
 
 | Concern | Choice and version | Disposition and review notes |
 |---|---|---|
@@ -371,16 +387,17 @@ a package only for the outbound interop problem, if at all.**
 
 ## Cryptographic primitives and password hashing
 
-The defaults in this section — above all the Argon2 parameters below — were
-checked against the projects' own source on **7 Aug 2026**; versions and
+The defaults in this section were checked against the projects' own source on
+**7 Aug 2026**, and above all the Argon2 parameters below. Versions and
 classifiers carry the index date above. Read with
 `a04-cryptographic-failures.md`.
 
 This area is mostly two dependencies and a lot of parameters. The standard
-library covers randomness and constant-time comparison outright — `secrets` and
-`hmac.compare_digest` need no package — and `django.core.signing` covers signed
-values. What genuinely needs a dependency is the Argon2 implementation behind
-Django's hasher and the primitives behind an encrypted column.
+library covers randomness and constant-time comparison outright, because
+`secrets` and `hmac.compare_digest` need no package. `django.core.signing`
+covers signed values. What genuinely needs a dependency is the Argon2
+implementation behind Django's hasher, and the primitives behind an encrypted
+column.
 
 | Concern | Choice and version | Disposition and review notes |
 |---|---|---|
@@ -398,13 +415,14 @@ Django's hasher and the primitives behind an encrypted column.
 
 Read with `deployment-and-runtime.md`.
 
-Nothing is recommended here, for the same reason as the webhook section above:
-both controls in scope are already built in. Reading the client IP correctly is
-a hop count and a list index — DRF exposes it as `NUM_PROXIES`, and outside DRF
-it is the few lines in `deployment-and-runtime.md`, "Reading the client IP".
-Container posture is a Dockerfile, not a dependency. The packages below are
-listed because they are the ones already installed when a review finds a
-spoofable throttle key or a SQL console answering on a production host.
+This file recommends nothing here, for the same reason as the webhook section
+above: both controls in scope are already built in. A correct read of the
+client IP is a hop count and a list index. DRF exposes it as `NUM_PROXIES`, and
+outside DRF it is the few lines in `deployment-and-runtime.md`, "Reading the
+client IP". Container posture is a Dockerfile, not a dependency. This file
+lists the packages below for one reason. They are the ones already installed
+when a review finds a spoofable throttle key or a SQL console that answers on a
+production host.
 
 | Candidate | Disposition and safer direction |
 |---|---|
@@ -416,33 +434,35 @@ spoofable throttle key or a SQL console answering on a production host.
 
 ## Use in a review
 
-This index supplies the disposition; the finding is still written against the
-project in front of you, whose Python, Django, and DRF versions are the ones
-that decide whether an entry applies. Work through it in the order below.
+This index supplies the disposition. You still write the finding against the
+project in front of you. Its Python, Django, and DRF versions are the ones that
+decide whether an entry applies. Work through it in the order below.
 
 ## Review checklist
 
-- [ ] The tier was read as a disposition rather than a score: **recommend** is
-      the default choice for this baseline, **conditional** names a condition
-      that has to hold in the target project before the choice is sound,
-      **existing-install audit only** means audit what is installed and do not
-      newly adopt it, and **reject for new use** means the entry is a finding
-      waiting to be written up.
+- [ ] The tier was read as a disposition rather than a score. **recommend** is
+      the default choice for this baseline. **conditional** names a condition
+      that has to hold in the target project before the choice is sound.
+      **existing-install audit only** means audit what is installed, and do not
+      newly adopt it. **reject for new use** means the entry is a finding to
+      write up.
 - [ ] The installed version and the actual configuration were reported, not
       merely the package name.
 - [ ] The version recorded here was checked against the versions the project
-      itself declares — its Python, its Django, its DRF — because a tier is
-      granted against this file's baseline, not against that project.
-- [ ] An install below a stated minimum-safe floor, or outside the
-      compatibility a package declares, was written up as a finding on its own
-      weight even where the application appears to work.
+      itself declares: its Python, its Django, and its DRF. A tier is granted
+      against this file's baseline, not against that project.
+- [ ] The review reported an install below a stated minimum-safe floor as a
+      finding on its own weight. The same holds for an install outside the
+      compatibility a package declares, and even where the application appears
+      to work.
 - [ ] Secure defaults were traced in the target project rather than assumed:
       adapters, pipelines, middleware order, proxy trust, token persistence,
       callbacks, and failure behavior.
-- [ ] A re-vet was triggered where one is due — a framework or Python upgrade,
-      a relevant advisory, an ownership change, a long release gap, or a change
-      in the package's security-sensitive defaults.
+- [ ] A re-vet was triggered where one is due. The triggers are a framework or
+      Python upgrade, a relevant advisory, and an ownership change. They also
+      include a long release gap, or a change in the package's
+      security-sensitive defaults.
 - [ ] Every claim taken from this file was read against the date stated above
-      it. A date records when the entry was checked and guarantees nothing
-      about today, so an entry older than the package's own release cadence is
-      re-checked before it is quoted in a finding.
+      it. A date records when somebody checked the entry, and it guarantees
+      nothing about today. An entry older than the package's own release
+      cadence is re-checked before it is quoted in a finding.

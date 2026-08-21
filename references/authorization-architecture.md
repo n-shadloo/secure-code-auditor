@@ -748,7 +748,7 @@ path. The offboarding job never revokes a credential that it cannot find.
 - [ ] Joiner, mover, and leaver each have a path, and a mover's previous
       grants are replaced rather than added to.
 - [ ] A disable at the identity provider fans out to sessions, tokens, keys,
-      and locally made grants, and a periodic reconciliation reports what the
+      and locally made grants. A periodic reconciliation reports what the
       fan-out missed.
 - [ ] Every machine identity has a named owner whose own identity is still
       active. Those identities are the service account, the bot user, and the

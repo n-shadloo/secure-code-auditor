@@ -1,11 +1,12 @@
 # A08:2025 — Software and Data Integrity Failures
 
-This file covers insecure deserialization, unsafe task serializers, unsigned
-or unauthenticated data that crosses a system boundary, and the integrity of
-the pipeline that ships code. It owns the receiving end of cross-system trust:
-the webhook a provider sends you, the message a worker takes off a broker, and
-every layer that turns stored or transmitted bytes back into live objects.
-Payment webhook integrity lives here and in the DRF file.
+This file covers insecure deserialization, unsafe task serializers, and
+unsigned or unauthenticated data that crosses a system boundary. It also covers
+the integrity of the pipeline that ships code. It owns the receiving end of
+cross-system trust. That end is the webhook a provider sends you, and the
+message a worker takes off a broker. It is also every layer that turns stored
+or transmitted bytes back into live objects. Payment webhook integrity lives
+here and in the DRF file.
 
 ## Contents
 - [Principle](#principle)
@@ -120,11 +121,11 @@ denial of service rather than execution, and the current 7.x line is outside
 the affected range of each.
 
 Two behaviors stay reviewable on any version. An unpacked `Any` instantiates
-whichever message type the sender named, so allow-list the acceptable type
-URLs before you unpack. proto3 preserves unknown fields through a binary parse
-and re-serialize, so a message relayed onward carries fields this service
-never validated. `graphql-and-alternative-api-surfaces.md`, "gRPC: nothing
-from the DRF request cycle applies", owns the surface that receives them.
+whichever message type the sender named. Allow-list the acceptable type URLs
+before you unpack. proto3 preserves unknown fields through a binary parse and
+re-serialize. A message relayed onward therefore carries fields this service
+never validated. `graphql-and-alternative-api-surfaces.md`, "gRPC: nothing from
+the DRF request cycle applies", owns the surface that receives them.
 
 #### The paths the framework runs for you
 
@@ -139,11 +140,11 @@ setting to change.
 
 The consequence is the write-primitive rule above, made concrete. Anyone who
 can write to the cache store gets code execution the next time the application
-calls `cache.get()`. Treat each of these as a finding in its own right: a
-world-writable file-cache directory, a Redis or memcached instance reachable
-without authentication, a cache table exposed to SQL injection, or a cache
-shared across environments so that a lower-trust deployment can write what
-production reads.
+calls `cache.get()`. Treat each of these as a finding in its own right. The
+first is a world-writable file-cache directory, and the second a Redis or
+memcached instance reachable without authentication. The third is a cache table
+exposed to SQL injection. The fourth is a cache shared across environments, so
+that a lower-trust deployment can write what production reads.
 
 Django's own documentation warns that the file-cache directory is a
 code-execution path where an attacker can write to it.
@@ -206,9 +207,9 @@ attacker controls the bytes, and `pickle.loads` is the most recognizable
 identifier in the file. Thus a reviewer often reports the call as remote code
 execution before they read the store behind it. The deciding question is who
 can write the bytes, not which module reads them. The safe cases are a
-memoization file under a directory only this process owns, a cached
-computation in a Redis instance nothing else can reach, and a blob in a table
-no untrusted path writes.
+memoization file under a directory only this process owns. The second is a
+cached computation in a Redis instance nothing else can reach. The third is a
+blob in a table no untrusted path writes.
 
 Keep the design objection, because that answer is a property of the deployment
 rather than of the code. The write controls are exactly what the review before
@@ -245,9 +246,9 @@ Two consequences follow, and the second is the one usually missed:
   execution outright.
 - **Even with a data-only serializer, a principal that reaches the broker can
   invoke any registered task with any arguments.** That is an authorization
-  bypass on every task. It is frequently an indirect route to code execution,
-  through a task that calls another program, writes a file, or processes input
-  it believes is internal.
+  bypass on every task. It is frequently an indirect route to code execution.
+  The route is a task that calls another program, writes a file, or processes
+  input it believes is internal.
 
 **Therefore task arguments are a trust boundary, not internal data.** Validate
 them inside the task as though they arrived from an anonymous client. Never
@@ -332,7 +333,7 @@ signed serializer, which authenticates the message without concealment of it.
 ## Django's built-in tasks framework
 
 Maps to CWE-306 (Missing Authentication for Critical Function) for the task
-body, and to CWE-863 (Incorrect Authorization) where a task re-derives a
+body. It maps to CWE-863 (Incorrect Authorization) where a task re-derives a
 permission it has no principal to derive.
 
 Django gained a built-in tasks framework in the 6.0 line. It holds
@@ -472,9 +473,9 @@ The framework does enforce two constraints. Know them, so that nobody mistakes
 them for protections. `validate_task` requires a module-level function, and
 rejects a nested function, a bound method, and a builtin. It also raises
 `InvalidTask` for a coroutine, a non-default priority, or a `run_after` on a
-backend whose capability flags do not declare support, and for a `queue_name`
-missing from the backend's configured `QUEUES`. Neither constraint is an
-authorization control.
+backend whose capability flags do not declare support. It raises the same error
+for a `queue_name` missing from the backend's configured `QUEUES`. Neither
+constraint is an authorization control.
 
 Django 6.1 makes `Task` and `TaskResult` picklable, which moves them into
 stores this file already rules on. A `TaskResult` holds the arguments and the
@@ -777,7 +778,7 @@ specific to webhook delivery:
 Maps to CWE-494 (Download of Code Without Integrity Check) and CWE-829.
 `a03-software-supply-chain.md` owns which dependencies you are entitled to
 install, and how the project pins and scans them. This section owns the
-narrower question A08 asks: **can you prove that what you shipped is what you
+narrower question A08 asks. **Can you prove that what you shipped is what you
 built, and that what you consumed is what its publisher produced.**
 
 What a backend repository owns, and can be reviewed for:
@@ -789,14 +790,15 @@ What a backend repository owns, and can be reviewed for:
   unhashed, while the lockfile sits unused beside it.
 - Base images and critical build tools you consume are signature-verified or
   provenance-verified before use, rather than fetched by a mutable tag.
-- Artifacts you publish carry provenance. SLSA's Build track sets the floor:
+- Artifacts you publish carry provenance. SLSA's Build track sets the floor.
   **L1 is "package has provenance showing how it was built"**, and it is a
   repository-level opt-in that generated attestations satisfy. Treat its own
   caveat as part of the finding. L1 provenance is trivial to forge, so it
   establishes a record, and not a guarantee. `a03-software-supply-chain.md`,
-  "SBOM, scan gate, and provenance", holds the current specification version,
-  what a build on hosted runners may honestly claim above that floor, and the
-  consumer-side verification without which none of it means anything.
+  "SBOM, scan gate, and provenance", holds the current specification version.
+  It also holds what a build on hosted runners may honestly claim above that
+  floor. It holds the consumer-side verification without which none of it means
+  anything.
 - Deploy credentials and CI secrets are protected, because a compromised
   pipeline ships attacker code under your signature. Prefer short-lived
   federated credentials over long-lived deploy keys. A03 and
@@ -805,10 +807,10 @@ What a backend repository owns, and can be reviewed for:
   `django.core.signing` with `TimestampSigner` and `max_age`. Do not use a
   hand-rolled token or anything pickle-based.
 
-**Name these as out of scope**, so that nobody mistakes them for an
-unaddressed gap. Hardened or hermetic isolated builders (SLSA Build L3), the
-CI platform's key custody, two-person review, and organization-wide registry
-admission control are platform work rather than repository work. Report them
+**Name these as out of scope**, so that nobody mistakes them for an unaddressed
+gap. Hardened or hermetic isolated builders (SLSA Build L3) and the CI
+platform's key custody are platform work rather than repository work. So are
+two-person review and organization-wide registry admission control. Report them
 as platform recommendations, and not as repository findings.
 
 ## Review checklist
@@ -869,8 +871,8 @@ as platform recommendations, and not as repository findings.
       internet, and the result backend holds no secrets.
 - [ ] Where a project uses `django.tasks`, `TASKS` is set explicitly rather
       than inherited. The default backend executes tasks inline in the request
-      cycle, hides the exception, and gives the operation the request timeout
-      it was moved off the request path to escape.
+      cycle, and hides the exception. It gives the operation the request
+      timeout it was moved off the request path to escape.
 - [ ] Every `@task` body receives its authorization outcome as an argument the
       caller resolved. It does not re-derive permission from an identifier
       with no principal to check it against. Secrets and personal data stay

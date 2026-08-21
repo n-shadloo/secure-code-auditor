@@ -909,9 +909,9 @@ them against the baseline the review was written against. Anything weaker
 compares two descriptions of a deployment rather than the deployment.
 
 **Every suppression is a decision that decays with time.** A normal Python
-project has four kinds, and they behave identically. They are a silenced
-system check, a scanner's ignore list, a dependency advisory recorded as
-accepted, and an inline suppression comment on a line of code. Each one was
+project has four kinds, and they behave identically. They are a silenced system
+check, a scanner's ignore list, and a dependency advisory recorded as accepted.
+The fourth is an inline suppression comment on a line of code. Each one was
 defensible the day somebody wrote it. None of them expires. None of them names
 who decided. A reader usually reconstructs the reason years later out of a
 commit message.
@@ -1070,9 +1070,9 @@ it that can still object.
       non-production target. Those checks are registered `deploy=True`,
       identified under a project prefix, and return `Error` where they are
       meant to stop a deploy.
-- [ ] Drift is established from the settings the deployed process resolved,
-      compared against the reviewed baseline, rather than from a diff of two
-      settings modules. The comparison output is treated as secret.
+- [ ] Drift is established from the settings the deployed process resolved, and
+      compared against the reviewed baseline. It is not a diff of two settings
+      modules. The comparison output is treated as secret.
 - [ ] Every suppression carries an owner, a reason, and an expiry date that
       executable code enforces. A suppression is a silenced check, a scanner
       ignore entry, an accepted advisory, or an inline comment.

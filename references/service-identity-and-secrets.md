@@ -40,7 +40,7 @@ recovery. This file is about principals that are processes.
 ## Principle
 
 Human authentication asks "which person is this, and are they still who they
-claim?" Machine authentication asks a different question: "which workload is
+claim?" Machine authentication asks a different question. "Which workload is
 this, what was it allowed to do, and who is accountable when it does the wrong
 thing?" The mechanisms differ because the failure modes differ. A password
 leaks, and one account is at risk. A service credential leaks, and every call
@@ -57,12 +57,12 @@ Three properties order every decision in this file:
    it. One shared token across ten services has none.
 
 The invariant is: **prefer an identity the platform can attest over a secret
-the workload must hold; where a secret is unavoidable, prefer a short-lived
-derived token over a long-lived static credential; and prefer a credential
-bound to its holder over a bearer credential that anyone who copies it can
-replay.** The ranking is by blast radius and attributability, not by
-cryptographic strength. A correctly generated static API key is
-cryptographically sound, and it is still the weakest option on this list.
+the workload must hold. Where a secret is unavoidable, prefer a short-lived
+derived token over a long-lived static credential. Prefer a credential bound to
+its holder over a bearer credential that anyone who copies it can replay.** The
+ranking is by blast radius and attributability, not by cryptographic strength.
+A correctly generated static API key is cryptographically sound, and it is
+still the weakest option on this list.
 
 Severity for findings in this area follows the same weighting. Weight by what
 the credential unlocks, and by whether anybody could trace the abuse. Do not
@@ -104,15 +104,16 @@ below are ordered by blast radius, and not by implementation effort.
    above genuinely is not justified. A static key stays valid until somebody
    rotates it, and most teams never do. It travels on every request, and it is
    hard to attribute after the fact. Where one is unavoidable, apply the full
-   key discipline in `a07-authentication-failures.md`, "API keys": high
-   entropy, digest-only storage, a non-secret key ID logged on every use,
-   narrow scope, and rotation that does not require downtime.
+   key discipline in `a07-authentication-failures.md`, "API keys". That
+   discipline is high entropy, digest-only storage, and a non-secret key ID
+   logged on every use. It also needs narrow scope, and rotation that does not
+   require downtime.
 
 Review notes:
 
 - The finding is rarely "they used the wrong mechanism." It is usually that a
-  tier-4 credential does a tier-1 job: one static key, shared by several
-  callers, never rotated, and granting more than any single caller needs.
+  tier-4 credential does a tier-1 job. That key is static and shared by several
+  callers, is never rotated, and grants more than any single caller needs.
 - Check a mechanism choice again once a service that had one caller has six.
   Reuse of a single credential across callers destroys attribution silently,
   and no code changes.
@@ -294,12 +295,12 @@ Review notes:
 
 ## Sender-constrained tokens
 
-**Principle: constrain a token where it passes through hands you do not trust,
-and a replay would be worth more than the cost of a proof of possession on
-every request.** DPoP (RFC 9449) binds a token to a key the client proves it
-holds, through a per-request signed proof and a `cnf.jkt` claim.
-Mutual-TLS-bound tokens (RFC 8705) bind it to the client certificate, through
-`cnf.x5t#S256`. In both cases, a stolen token alone is inert.
+**Principle: constrain a token where it passes through hands you do not trust.
+Do this where a replay would be worth more than the cost of a proof of
+possession on every request.** DPoP (RFC 9449) binds a token to a key the
+client proves it holds, through a per-request signed proof and a `cnf.jkt`
+claim. Mutual-TLS-bound tokens (RFC 8705) bind it to the client certificate,
+through `cnf.x5t#S256`. In both cases, a stolen token alone is inert.
 
 It is justified where the token crosses an intermediary you do not fully
 control, such as a gateway, a backend-for-frontend, or a public mobile client.

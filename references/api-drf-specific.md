@@ -249,10 +249,10 @@ class UserSerializer(serializers.ModelSerializer):
   back. Be careful with `depth` and nested serializers exposing related data.
 - Never trust the client to omit dangerous fields; the serializer must exclude
   them.
-- Object permissions are **not** applied on create — `get_object()` never runs,
-  so `has_object_permission` cannot stop a client from creating a record against
-  another owner or tenant. Set those fields in `perform_create()` from
-  `request.user`, or validate them in the serializer.
+- Object permissions are **not** applied on create, because `get_object()`
+  never runs. `has_object_permission` therefore cannot stop a client from a
+  create against another owner or tenant. Set those fields in
+  `perform_create()` from `request.user`, or validate them in the serializer.
 
 The declared-field rule above is the one most often read and then violated,
 because the `Meta` entry looks authoritative. A declared field silently wins:
@@ -404,9 +404,9 @@ class PatientViewSet(viewsets.ModelViewSet):
   leaks its relative values across the result set. Allow-list
   `ordering_fields` as deliberately as `filterset_fields`. Never leave either
   one as `"__all__"`.
-- **`search_fields` traversals** follow relations with `__`, so a search
-  configured across a foreign key can match on a related record the caller has
-  no access to. Review each traversal as a read.
+- **`search_fields` traversals** follow relations with `__`. A search
+  configured across a foreign key can therefore match on a related record the
+  caller has no access to. Review each traversal as a read.
 - **Pagination should not reveal what it excluded.** `PageNumberPagination`
   and `LimitOffsetPagination` return a total `count`. That count discloses the
   size of the matching set, including under a filter the caller controls. The
@@ -565,10 +565,10 @@ own infrastructure appended. The rule and the topology it depends on are in
   therefore cannot protect the authentication step itself; login and token
   endpoints need lockout and edge limits, not a throttle class.
 
-Where a limit must actually hold — login, password reset, payment, invitation
-— supplement the throttle with an atomic counter and a limit at the edge. No
-maintained general-purpose limiter currently clears the package gate to supply
-one. This is therefore a pattern to own, and not a dependency to add.
+A limit must actually hold on login, password reset, payment, and invitation.
+There, supplement the throttle with an atomic counter and a limit at the edge.
+No maintained general-purpose limiter currently clears the package gate to
+supply one. This is therefore a pattern to own, and not a dependency to add.
 `security-hardening-libraries.md`, "Existing-install audit only or rejected
 candidates" records that category ruling and the date behind it. Django's own
 cache API carries the pattern: `cache.incr()` is a single atomic operation on
@@ -1007,9 +1007,10 @@ exploits. Read those; they are not restated here. Two rules are worth
 repeating because they are absolute: never trust a client-supplied amount,
 price, or currency, and never store raw card data.
 
-The complete receiver — raw-body capture, timestamp tolerance, constant-time
-comparison, the per-provider signing schemes, and the de-duplication store — is
-in `a08-integrity-and-deserialization.md`, "Webhook and callback integrity".
+`a08-integrity-and-deserialization.md`, "Webhook and callback integrity" holds
+the complete receiver. That is raw-body capture, timestamp tolerance,
+constant-time comparison, the per-provider signing schemes, and the
+de-duplication store.
 
 The DRF-specific mechanic is the raw body. A verifier must check a signature
 against the exact bytes that the provider signed. The DRF parsers consume the
@@ -1094,5 +1095,5 @@ def payment_webhook(request):
 - [ ] Payments resolve amounts server-side; webhook verifiers read
       `request.body` before `request.data`; no raw card storage.
 - [ ] Any GraphQL schema or non-DRF framework in the same project was reviewed
-      against `graphql-and-alternative-api-surfaces.md`; DRF defaults such as
+      against `graphql-and-alternative-api-surfaces.md`. DRF defaults such as
       `DEFAULT_PERMISSION_CLASSES` do not apply to those surfaces.

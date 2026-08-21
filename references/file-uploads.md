@@ -1,27 +1,31 @@
 # File Upload Handling
 
-Untrusted file ingestion from request to storage to download, including the
-architecture where the bytes never transit the application at all. Covers
-spoofed types, unsafe names, active content, parser and decompression hazards,
-quotas, object-store configuration, delegated upload and download URLs, and
-authorization for private files. Maps primarily to CWE-434, CWE-22, CWE-79,
-CWE-400, CWE-409, CWE-284, and CWE-770; relevant OWASP categories include
-A01:2025, A02:2025, A05:2025, A06:2025, A08:2025, and API4:2023.
+This file covers untrusted file ingestion from request to storage to download.
+It includes the architecture where the bytes never transit the application at
+all. The topics in scope are spoofed types, unsafe names, active content, and
+parser and decompression hazards. They also include quotas, object-store
+configuration, delegated upload and download URLs, and authorization for
+private files.
 
-This file owns **the file from the request to the reader**, including the
-architecture where the bytes never reach the application at all: what a
-delegated upload URL binds, the quarantine prefix an object waits in until the
-server has verified it against the store rather than against the uploader's
-claims, and the choice between proxying a private download and signing a URL
-for it. `a08-integrity-and-deserialization.md` owns the signature, timestamp,
-and replay rules a storage callback has to satisfy;
-`a01-broken-access-control.md` owns import-from-URL SSRF, the
-cache-mediated leak that a CDN cache key dropping its signing parameters is
-one case of, and path traversal on a read whose path the request named, which
-leaves this file the name an upload brings and the key it lands under;
-`a05-injection.md` owns the sink a storage key or a filename
-reaches; and `data-lifecycle-and-privacy.md` owns whether the bytes are gone,
-leaving this file only the fact that an already-issued signed URL is beyond
+Maps primarily to CWE-434, CWE-22, CWE-79, CWE-400, CWE-409, CWE-284, and
+CWE-770. Relevant OWASP categories include A01:2025, A02:2025, A05:2025,
+A06:2025, A08:2025, and API4:2023.
+
+This file owns **the file from the request to the reader**, and that includes
+the architecture where the bytes never reach the application at all. It owns
+what a delegated upload URL binds. It owns the quarantine prefix an object
+waits in until the server has verified it against the store rather than against
+the uploader's claims. It also owns the choice between a proxy for a private
+download and a signed URL for it.
+
+`a08-integrity-and-deserialization.md` owns the signature, timestamp, and
+replay rules a storage callback has to satisfy. `a01-broken-access-control.md`
+owns import-from-URL SSRF. It also owns the cache-mediated leak that a dropped
+CDN signing parameter is one case of. It owns path traversal on a read whose
+path the request named. This file therefore keeps the name an upload brings and
+the key it lands under. `a05-injection.md` owns the sink a storage key or a
+filename reaches. `data-lifecycle-and-privacy.md` owns whether the bytes are
+gone. This file keeps only the fact that an already-issued signed URL is beyond
 the reach of any erasure.
 
 ## Contents
@@ -40,51 +44,54 @@ the reach of any erasure.
 
 ## Principle
 
-An uploaded file is attacker-controlled input in several forms at once: its
-bytes, filename, extension, declared media type, structure, size, and eventual
-serving behavior. A check of only one signal cannot establish safety. The
-security invariant is: **accept only formats the feature needs, establish the
-type from the content with a real parser, generate the storage identity on the
-server, keep untrusted bytes non-executable, and apply authorization again when
-the file is retrieved.**
+An uploaded file is attacker-controlled input in several forms at once. Those
+forms are its bytes, filename, extension, declared media type, structure, size,
+and eventual serving behavior. A check of only one signal cannot establish
+safety. The security invariant is: **accept only formats the feature needs, and
+establish the type from the content with a real parser. Generate the storage
+identity on the server, keep untrusted bytes non-executable, and apply
+authorization again when the file is retrieved.**
 
 Design the full lifecycle, not just the upload endpoint:
 
 - Allowlist the minimum formats needed. Compare extension, declared media type,
-  detected signature, and parser result; reject contradictions. Signatures
-  identify a container, not whether the entire document is well-formed or safe.
-- Replace client filenames with server-generated opaque keys. A display name
-  may be retained as metadata after removing path and control characters, but it
-  must never decide a filesystem or object-store path.
+  detected signature, and parser result, and reject contradictions. Signatures
+  identify a container. They do not show whether the entire document is
+  well-formed or safe.
+- Replace client filenames with server-generated opaque keys. You may retain a
+  display name as metadata after you remove path and control characters. That
+  name must never decide a filesystem or object-store path.
 - Store new files in a quarantined, non-executable location. Scan, parse, or
   transform before promotion. Serve untrusted content from an isolated origin
   or as a download, not from the application's authenticated origin.
-- Bound work before expensive parsing: request bytes, bytes per file, number of
-  files, decoded dimensions, archive entries, total expanded bytes, nesting,
-  processing time, and per-principal storage or processing quota.
+- Bound work before expensive parsing. Bound request bytes, bytes per file,
+  number of files, decoded dimensions, archive entries, total expanded bytes,
+  nesting, processing time, and per-principal storage or processing quota.
 - Treat archives as collections of hostile paths and payloads. Every extracted
   entry must stay under a fresh destination, and links or special files must not
   escape it.
 - Keep private-file identifiers unguessable, but never use unguessability as
-  authorization. Resolve an allowed object for the current principal before
-  returning bytes or a short-lived delegated download.
+  authorization. Resolve an allowed object for the current principal before you
+  return bytes or a short-lived delegated download.
 
 ## Django & DRF implementation
 
 `UploadedFile.name`, `UploadedFile.content_type`, and a DRF parser's media type
-come from the request and are untrusted. Django's `FileExtensionValidator`
-checks the filename extension only; it is a useful allowlist signal, not content
-validation. DRF's `MultiPartParser` and `FileUploadParser` use Django's upload
-handlers but do not make the content safe. With `FileUploadParser`, both the URL
-filename and `Content-Disposition` filename remain attacker-controlled.
+come from the request, and they are untrusted. Django's
+`FileExtensionValidator` checks the filename extension only. It is a useful
+allowlist signal, not content validation. DRF's `MultiPartParser` and
+`FileUploadParser` use Django's upload handlers, but they do not make the
+content safe. With `FileUploadParser`, both the URL filename and the
+`Content-Disposition` filename remain attacker-controlled.
 
 Process large uploads through `UploadedFile.chunks()` rather than an unbounded
-`read()`. A bounded prefix may support signature detection, provided the file
-position is reset before later parsing or storage. Validate with multiple
+`read()`. A bounded prefix may support signature detection, if you reset the
+file position before later parsing or storage. Validate with multiple
 independent signals and a maintained format-specific parser, then decode the
-complete bounded file; canonical re-encoding is stronger than a magic-byte match.
-Do not newly recommend `python-magic` or `filetype`: their release/maintenance
-signals do not pass the 9 Aug 2026 dependency gate. Existing use must be re-vetted.
+complete bounded file. A canonical re-encode is stronger than a magic-byte
+match. Do not newly recommend `python-magic` or `filetype`, because their
+release and maintenance signals do not pass the 9 Aug 2026 dependency gate.
+Existing use must be re-vetted.
 
 ## Type and content validation
 
@@ -104,18 +111,19 @@ Use independent checks and fail closed. A safe ingestion gate should:
 7. reset streams deliberately and test truncated, oversized, decompression-bomb,
    malformed, parser-differential, and active-content samples.
 
-No single detector proves a file safe. Select a maintained parser for each format
-the product actually accepts and run it through the A03 package gate; otherwise
-remove that format from the allowlist.
+No single detector proves a file safe. Select a maintained parser for each
+format the product actually accepts, and run it through the A03 package gate.
+Otherwise remove that format from the allowlist.
 
-**Write-time.** When generating an upload field or handler, write the format
-allowlist, the size cap, and the server-generated storage key in the same edit
-as the field itself, because each is separately load-bearing and the one
-deferred is the one that ships. `FileExtensionValidator` belongs in that first
-edit as the cheapest of the signals rather than as the whole gate — it reads
-the name the client chose. Never assemble the stored path from `upload.name`,
-and settle where the bytes will be served from before the first file arrives,
-since changing that afterwards means moving every object already stored.
+**Write-time.** When you generate an upload field or handler, write three
+things in the same edit as the field itself. Write the format allowlist, the
+size cap, and the server-generated storage key. Each one is separately
+load-bearing, and the one you defer is the one that ships.
+`FileExtensionValidator` belongs in that first edit as the cheapest of the
+signals, not as the whole gate, because it reads the name the client chose.
+Never assemble the stored path from `upload.name`. Settle where the bytes will
+be served from before the first file arrives, because a change afterwards means
+a move of every object already stored.
 
 ## Filenames and storage keys
 
@@ -136,42 +144,43 @@ def generated_upload_name(*, detected_type):
     return f"{uuid4().hex}{extension}"
 ```
 
-If custom storage or archive extraction performs path joins, resolve the final
-path and verify it remains below the intended root. Reject absolute paths,
-drive-qualified paths, `..` traversal, NUL/control characters, alternate path
-separators, links, devices, and other special entries. Sanitizing a display name
-does not make it a safe storage path.
+If custom storage or archive extraction joins paths, resolve the final path and
+verify that it remains below the intended root. Reject absolute paths,
+drive-qualified paths, `..` traversal, NUL and control characters, alternate
+path separators, links, devices, and other special entries. A sanitized display
+name is still not a safe storage path.
 
 A key has to be **unguessable and inert**. `uuid4().hex` carries 122 bits of
-randomness — a 128-bit value with six bits fixed for version and variant —
-which settles the guessing question for any bucket that does not let the world
-list its contents. The threat is someone guessing a key, not someone
-exhausting the space. Unguessability still is not authorization: it decides
-how bad the other failures are. A predictable key combined with an object
-readable without credentials is a mass-exposure primitive, because the whole
-corpus can be walked; either one alone is a far smaller finding.
+randomness, a 128-bit value with six bits fixed for version and variant. That
+settles the guessing question for any bucket that does not let the world list
+its contents. The threat is a guess at one key, not an exhaustion of the space.
 
-Inert means the key discloses nothing by being seen. Keys travel further than
-the objects they name — into access logs, referrer headers, support tickets,
-and analytics — so treat the key itself as published text. Customer and tenant
-names, email addresses, sequential identifiers, original filenames, document
-titles, and dates in a key path all leak (CWE-201): a sequential
-identifier discloses volume and invites enumeration, and a retained filename
-such as `redundancy-letter-2026.pdf` discloses the content of a file nobody
-was authorized to read.
+Unguessability still is not authorization, and it only decides how bad the
+other failures are. A predictable key with an object readable without
+credentials is a mass-exposure primitive, because an attacker can walk the
+whole corpus. Either one alone is a far smaller finding.
 
-A tenant prefix is worth adding on top of the random component, not instead of
-it. Its value is that it can be enforced *below* the application: a storage
-credential restricted to one prefix keeps an application bug from writing or
-reading across tenants, which a check in view code cannot promise. Keep the
-prefix a surrogate identifier rather than a name.
+Inert means that the key discloses nothing when somebody sees it. Keys travel
+further than the objects they name, into access logs, referrer headers, support
+tickets, and analytics. Treat the key itself as published text. Customer and
+tenant names, email addresses, sequential identifiers, original filenames,
+document titles, and dates in a key path all leak (CWE-201). A sequential
+identifier discloses volume and invites enumeration. A retained filename such
+as `redundancy-letter-2026.pdf` discloses the content of a file nobody was
+authorized to read.
+
+Add a tenant prefix on top of the random component, not instead of it. Its
+value is that the platform can enforce it *below* the application. A storage
+credential restricted to one prefix stops an application bug from a write or a
+read across tenants. A check in view code cannot promise that. Keep the prefix
+a surrogate identifier rather than a name.
 
 Finally, a key is an identity, so two writes to the same key are one object.
-Object stores overwrite by default rather than deduplicating — S3 replaces the
+Object stores overwrite by default rather than deduplicate. S3 replaces the
 existing object on a PUT to an existing key, and `FileSystemStorage` is the
-outlier in appending a suffix instead. Under a server-generated key that is
-irrelevant; under a user-influenced key it is silent data loss and, across a
-tenant boundary, an unauthorized write (CWE-639).
+outlier that appends a suffix instead. Under a server-generated key that is
+irrelevant. Under a user-influenced key it is silent data loss, and across a
+tenant boundary it is an unauthorized write (CWE-639).
 
 ## Storage and serving
 
@@ -179,7 +188,7 @@ tenant boundary, an unauthorized write (CWE-639).
   server and object store must never interpret them as scripts or configuration.
 - Prefer a separate object store or a distinct registrable-domain origin for
   public user content. A sibling subdomain can still share some browser trust
-  boundaries; do not send application cookies to the upload origin.
+  boundaries. Do not send application cookies to the upload origin.
 - Return `X-Content-Type-Options: nosniff`, an allowlisted `Content-Type`, and
   usually `Content-Disposition: attachment`. Do not reflect the supplied media
   type into the response.
@@ -187,71 +196,74 @@ tenant boundary, an unauthorized write (CWE-639).
   transitions explicit so an unapproved object cannot be fetched through a
   predictable media URL.
 - Keep permissions non-executable and credentials least-privileged. The upload
-  worker may write quarantine; the serving tier should not be able to modify
+  worker may write quarantine. The serving tier should not be able to modify
   application code.
 
-- Use Django's Storage API with an official, maintained provider SDK or a freshly
-  vetted backend. Do not newly recommend `django-storages==1.14.6` for the Django 6
-  baseline: `1.14.6` was released in April 2025 and its own Django classifiers
-  stop at 5.1, so it declares support for neither 5.2 LTS nor 6.0. Existing
-  deployments need a compatibility and credential/URL-signing review before
-  framework upgrades; the settings that decide whether that review passes are
-  in "Object storage configuration" below.
+- Use Django's Storage API with an official, maintained provider SDK, or a
+  freshly vetted backend. Do not newly recommend `django-storages==1.14.6` for
+  the Django 6 baseline. `1.14.6` was released in April 2025, and its own
+  Django classifiers stop at 5.1. It therefore declares support for neither 5.2
+  LTS nor 6.0. Existing deployments need a compatibility review and a
+  credential and URL-signing review before a framework upgrade. "Object storage
+  configuration" below holds the settings that decide whether that review
+  passes.
 
-See `deployment-and-runtime.md` for edge and serving configuration. Serving an
-upload outside the web root is useful only if the separate serving path is also
+See `deployment-and-runtime.md` for edge and serving configuration. An upload
+served outside the web root is useful only if the separate serving path is also
 configured to be inert.
 
 ### Metadata the store echoes back
 
-An object store persists metadata the uploader influenced and returns it on
-retrieval, which makes stored metadata an input to the response rather than a
+An object store persists metadata the uploader influenced, and returns it on
+retrieval. Stored metadata is therefore an input to the response rather than a
 record about it. Custom metadata lives under `x-amz-meta-*` on S3,
-`x-goog-meta-*` on GCS, and `x-ms-meta-*` on Azure, and all three come back as
-response headers on a read. Those are the obvious half. The dangerous half is
-the content-type and content-disposition pair, because that is what decides
-whether a browser renders the bytes or saves them, and every provider offers a
-route by which it is chosen somewhere other than your serving code:
+`x-goog-meta-*` on GCS, and `x-ms-meta-*` on Azure. All three come back as
+response headers on a read.
 
-- **S3** stores `Content-Type` at upload and returns it on a read, and a
-  signed request can override it for that request through the
-  `response-content-type` and `response-content-disposition` query
-  parameters, which take precedence over the stored value.
+Those are the obvious half. The dangerous half is the content-type and
+content-disposition pair, because that pair decides whether a browser renders
+the bytes or saves them. Every provider offers a route by which something other
+than your serving code chooses it:
+
+- **S3** stores `Content-Type` at upload and returns it on a read. A signed
+  request can override it for that request through the `response-content-type`
+  and `response-content-disposition` query parameters. Those parameters take
+  precedence over the stored value.
 - **GCS** stores `Content-Type`, `Content-Disposition`, `Content-Encoding`,
   `Cache-Control`, and `Content-Language` as object metadata and serves them
   back as given.
 - **Azure** stores the blob content-type and content-disposition system
-  properties and serves them as the corresponding response headers, unless
-  the SAS carries an `rsct` or `rscd` override, which wins for that request.
+  properties, and serves them as the corresponding response headers. A SAS that
+  carries an `rsct` or `rscd` override wins for that request.
 
-So whoever controlled the upload controls how the object is later
-interpreted, and a filename that reaches a disposition header unescaped
-controls the header itself: `text/html` served from an origin holding session
-cookies is stored XSS (CWE-79), and an unsanitized filename in a disposition
-is header injection (CWE-116). Neither needs a second bug — a stored value
-being trusted is the whole of it.
+So whoever controlled the upload controls how the object is later interpreted.
+A filename that reaches a disposition header unescaped controls the header
+itself. `text/html` served from an origin that holds session cookies is stored
+XSS (CWE-79), and an unsanitized filename in a disposition is header injection
+(CWE-116). Neither needs a second bug, because trust in a stored value is the
+whole of it.
 
-The serving rules above are the answer, applied one layer earlier: the content
-type and disposition belong to the server's validated verdict at serve time,
-not to anything the upload supplied, so set them explicitly on the response
-and let the stored copy be a record rather than an instruction. Where a
-display name has to survive into a disposition, encode it as `filename*`
-rather than interpolating it, and treat every `*-meta-*` value as untrusted
-text wherever it is rendered.
+The serving rules above are the answer, applied one layer earlier. The content
+type and the disposition belong to the server's validated verdict at serve
+time, not to anything the upload supplied. Set them explicitly on the response,
+and let the stored copy be a record rather than an instruction. Where a display
+name has to survive into a disposition, encode it as `filename*` rather than
+interpolate it. Treat every `*-meta-*` value as untrusted text wherever the
+code renders it.
 
-**Write-time.** When writing the code that serves an upload back, pass the
-content type from the server's own record of what the file was found to be and
-set the disposition explicitly, in the same edit as the read. The default in
-every one of these APIs is to hand back what was stored, so the value that was
-never chosen is the uploader's.
+**Write-time.** When you write the code that serves an upload back, pass the
+content type from the server's own record. That record holds what the file was
+found to be. Set the disposition explicitly, in the same edit as the read. The
+default in every one of these APIs is to return what was stored, so the value
+that nobody chose is the uploader's.
 
 ## Object storage configuration
 
-Storage configuration decides whether any of the controls above are reachable:
-an object that can be read without going through the application has no
-authorization on it at all. Maps to CWE-284 (Improper Access Control),
-CWE-668 (Exposure of Resource to Wrong Sphere), and CWE-732 (Incorrect
-Permission Assignment), under A01:2025 and A02:2025.
+Storage configuration decides whether any of the controls above are reachable.
+An object that a reader can get without the application has no authorization on
+it at all. Maps to CWE-284 (Improper Access Control), CWE-668 (Exposure of
+Resource to Wrong Sphere), and CWE-732 (Incorrect Permission Assignment), under
+A01:2025 and A02:2025.
 
 ### Principle layer
 
@@ -259,16 +271,16 @@ Two questions decide exposure, and a code review can only answer the first:
 
 1. **Does the application hand out a URL that grants access by itself?** A URL
    built from a bucket or CDN hostname with no signature is a bearer
-   capability — whoever holds it reads the object, and it can be logged,
-   forwarded, and indexed. This is visible in the repository.
+   capability. Whoever holds it reads the object, and logs, forwards, and
+   indexes can all carry it. This is visible in the repository.
 2. **Would the object be readable without that URL?** Public-access blocking,
    the bucket policy, and object ownership answer that, and none of them lives
    in the codebase.
 
 Report the first, name the second as an open question, and do not collapse the
-two. A signal of the first kind is Critical only when the second turns out
-badly; against a bucket that blocks public access the same signal is a
-hardening finding.
+two. A signal of the first kind is Critical only when the second answer is bad.
+Against a bucket that blocks public access, the same signal is a hardening
+finding.
 
 Application-visible signals worth raising:
 
@@ -283,24 +295,25 @@ Application-visible signals worth raising:
 - one credential used to upload, to serve, and to administer, so a narrowly
   scoped URL still carries broad authority.
 
-Name these as requiring out-of-band verification rather than asserting them
-from code: public-access blocking, the bucket policy and object-ownership
-setting, versioning and delete protection, the permissions actually attached
-to the signing principal, bucket-level CORS, and lifecycle rules.
-Infrastructure code in the same repository brings some of them back into
-scope — read it when it is there, and say which findings came from it.
+Name these items as items that need out-of-band verification, rather than
+assert them from code. They are public-access blocking, the bucket policy, and
+the object-ownership setting. They are also versioning and delete protection,
+the permissions actually attached to the signing principal, bucket-level CORS,
+and lifecycle rules. Infrastructure code in the same repository brings some of
+them back into scope. Read it when it is there, and say which findings came
+from it.
 
-Two platform defaults are worth knowing so a review does not raise something
-the platform already closed. On S3, public access has been blocked and ACLs
-disabled on new buckets since April 2023, and server-side encryption with
-S3-managed keys has applied to every new object since January 2023 and cannot
-be turned off. Encryption at rest is therefore not the finding; which key
+Two platform defaults are worth knowing, so that a review does not raise
+something the platform already closed. On S3, public access has been blocked
+and ACLs disabled on new buckets since April 2023. Server-side encryption with
+S3-managed keys has applied to every new object since January 2023, and nobody
+can turn it off. Encryption at rest is therefore not the finding. Which key
 protects it, and who may use that key, still is.
 
 **A bucket per tenant, or one bucket with a prefix per tenant.** Both are
-defensible, the choice is an architecture decision rather than a security
-verdict, and it is made once and is expensive to undo — so it is worth making
-deliberately rather than by default:
+defensible, and the choice is an architecture decision rather than a security
+verdict. You make it once, and it is expensive to undo. Make it deliberately
+rather than by default:
 
 | Dimension | Bucket per tenant | Shared bucket, prefix per tenant |
 | --- | --- | --- |
@@ -309,24 +322,25 @@ deliberately rather than by default:
 | Credential scoping | A credential cannot name a bucket it was not given; the boundary is structural | The boundary is a prefix condition in the policy, which holds only if it was written correctly and is absent silently |
 | Operational cost | Provisioning, per-account bucket limits, and per-bucket configuration drift become the scaling constraint | One bucket to configure, monitor, and reason about |
 
-The failure that decides most cases is the third row meeting the second: a
+The failure that decides most cases is the third row against the second. A
 shared bucket is sound when the prefix condition on the upload and download
-credentials is real and tested, and is a cross-tenant read the moment it is
-merely intended. A per-tenant bucket makes that failure structurally
-unavailable, which is what makes it the stronger default for
-high-sensitivity content and the wrong default at high tenant counts, where
-the bucket limit and the configuration drift become the larger risk. Either
-way the tenant component of the key stays a surrogate identifier rather than a
-name, for the reasons in "Filenames and storage keys" above, and either way
+credentials is real and tested. It is a cross-tenant read the moment that
+condition is merely intended. A per-tenant bucket makes that failure
+structurally unavailable. That property makes it the stronger default for
+high-sensitivity content. It is the wrong default at high tenant counts, where
+the bucket limit and the configuration drift become the larger risk.
+
+Either way, the tenant component of the key stays a surrogate identifier rather
+than a name, for the reasons in "Filenames and storage keys" above. Either way,
 the prefix or bucket restriction on the signing credential is the control that
 a check in view code cannot promise.
 
 ### Django & DRF implementation layer
 
-`STORAGES` is the configuration form — `DEFAULT_FILE_STORAGE` and
-`STATICFILES_STORAGE` were removed in Django 5.1 — and a second named alias is
-the built-in way to keep private user content off the backend that serves
-public assets:
+`STORAGES` is the configuration form, because Django 5.1 removed
+`DEFAULT_FILE_STORAGE` and `STATICFILES_STORAGE`. A second named alias is the
+built-in way to keep private user content off the backend that serves public
+assets:
 
 ```python
 # Wrong: one backend for everything, so a private document inherits whatever
@@ -351,9 +365,9 @@ STORAGES = {
 ```
 
 `FILE_UPLOAD_PERMISSIONS` (`0o644` since Django 3.0) and
-`FILE_UPLOAD_DIRECTORY_PERMISSIONS` (`None`, leaving it to the process umask)
-govern `FileSystemStorage` only. An object store ignores both, so a clean
-local-storage review says nothing about the bucket.
+`FILE_UPLOAD_DIRECTORY_PERMISSIONS` (`None`, which leaves it to the process
+umask) govern `FileSystemStorage` only. An object store ignores both, so a
+clean local-storage review says nothing about the bucket.
 
 Where `django-storages` is already installed, four of its S3 defaults decide
 whether a private object is private. Read them off the backend's own source
@@ -365,19 +379,19 @@ rather than off documentation:
   is not, and an install carried across the version where the default was
   `public-read` may still be setting it.
 - `AWS_QUERYSTRING_AUTH` defaults to `True`, with `AWS_QUERYSTRING_EXPIRE` at
-  3600 seconds. Setting it to `False` on private media publishes unsigned URLs
-  that work only if the object is public, so finding it there is a strong
-  indication that the bucket is.
-- `AWS_S3_CUSTOM_DOMAIN` silently overrides both of those. With a custom
-  domain set, `url()` returns a signed URL only when a CloudFront signer is
-  *also* configured; with no signer it returns the plain domain-and-key URL,
-  and `AWS_QUERYSTRING_AUTH = True` has no effect on that path. A custom
-  domain on private media without `AWS_CLOUDFRONT_KEY_ID` and
-  `AWS_CLOUDFRONT_KEY` is a permanent, unsigned URL for every private object,
-  and nothing in the settings file looks wrong.
-- `AWS_S3_FILE_OVERWRITE` defaults to `True`, so `get_available_name()`
-  returns the key unchanged and a second save replaces the first, which is the
-  opposite of the deduplicating behavior a `FileSystemStorage` habit expects.
+  3600 seconds. A value of `False` on private media publishes unsigned URLs
+  that work only if the object is public. That value is therefore a strong
+  indication that the bucket is public.
+- `AWS_S3_CUSTOM_DOMAIN` silently overrides both of those. With a custom domain
+  set, `url()` returns a signed URL only when a CloudFront signer is *also*
+  configured. With no signer it returns the plain domain-and-key URL, and
+  `AWS_QUERYSTRING_AUTH = True` has no effect on that path. A custom domain on
+  private media without `AWS_CLOUDFRONT_KEY_ID` and `AWS_CLOUDFRONT_KEY` is a
+  permanent, unsigned URL for every private object. Nothing in the settings
+  file looks wrong.
+- `AWS_S3_FILE_OVERWRITE` defaults to `True`, so `get_available_name()` returns
+  the key unchanged and a second save replaces the first. That is the opposite
+  of the behavior a `FileSystemStorage` habit expects.
 
 That last pair is the reason to review the *combination* of settings rather
 than each one. Grep for `AWS_S3_CUSTOM_DOMAIN`, `AWS_QUERYSTRING_AUTH`,
@@ -386,21 +400,21 @@ storage alias the sensitive `FileField`s actually use.
 
 ## Direct-to-storage uploads
 
-When the client uploads straight to the object store, every synchronous
-control above is bypassed: the bytes never reach the application, so nothing
+When the client uploads straight to the object store, that path bypasses every
+synchronous control above. The bytes never reach the application, so nothing
 validates a type, counts a byte, or rejects an archive before the object
-exists. The controls do not disappear — they move to either side of the
+exists. The controls do not disappear. They move to either side of the
 transfer, and an architecture that omits the second half never applies them at
 all. Maps to CWE-770, CWE-434, CWE-639, CWE-345, and CWE-306, under A01:2025,
 A08:2025, and API4:2023.
 
 ### Principle layer
 
-A delegated upload URL is the issuer's authority compressed into a link.
-Whatever the signing principal may do, the holder of the link may do, within
-the signed constraints and for as long as it lives. It is a bearer token that
-survives being copied, so the question is never whether the URL stays secret —
-it is what the URL permits.
+A delegated upload URL is the issuer's authority in a link. Whatever the
+signing principal may do, the holder of the link may do, within the signed
+constraints and for as long as it lives. It is a bearer token that survives a
+copy. The question is never whether the URL stays secret. The question is what
+the URL permits.
 
 Bind all seven of these, because each unbound one is a specific attack:
 
@@ -416,17 +430,17 @@ Bind all seven of these, because each unbound one is a specific attack:
   captured (CWE-524, CWE-613).
 - **Server-side encryption terms**, where a specific key rather than the
   platform default is required.
-- **A least-privileged signing principal.** The URL cannot be narrower than
-  the credential behind it, so a signer that can also read and list the bucket
-  makes every scoping decision above advisory (CWE-269, CWE-732).
+- **A least-privileged signing principal.** The URL cannot be narrower than the
+  credential behind it. A signer that can also read and list the bucket
+  therefore makes every scoping decision above advisory (CWE-269, CWE-732).
 
-Severity turns on combinations. An unbounded size on a private bucket is a
-cost and availability finding; a predictable key plus an unsigned public URL
-is a mass-exposure primitive.
+Severity turns on combinations. An unbounded size on a private bucket is a cost
+and availability finding. A predictable key with an unsigned public URL is a
+mass-exposure primitive.
 
-The size bound is where the three major stores diverge, so what to look for
-depends on which one is behind the URL rather than on one rule generalized
-from S3:
+The size bound is where the three major stores diverge. What to look for
+therefore depends on which one is behind the URL, rather than on one rule
+generalized from S3:
 
 - **S3** — a presigned PUT binds no size at all. The enforced form is a
   presigned POST whose policy carries a `content-length-range` condition.
@@ -436,32 +450,32 @@ from S3:
   policy supports a `content-length-range` condition as well.
 - **Azure** — a SAS binds no size in any form. Its whole signed field set is
   the permission, the resource, the window, an IP range, the protocol, a
-  stored-policy identifier, and five response-header overrides; none of them
-  is a length. The ceiling has to be applied after the object exists, which
-  makes the verification step the only thing between a SAS and an unmetered
-  write.
+  stored-policy identifier, and five response-header overrides. None of them is
+  a length. The ceiling has to be applied after the object exists, which makes
+  the verification step the only thing between a SAS and an unmetered write.
 
 **No delegated URL can be recalled one at a time, and not within its lifetime.
 What differs by provider is how much else you have to break to withdraw one
-early** — and on that, the rule the rest of this section is written around
-holds for S3 and GCS but is too strong for Azure. On S3 and GCS the only lever
-is the signing credential, so the URL dies when it does. Signing with a
-short-lived session credential rather than a long-lived key is therefore the
-real control — on S3 an assumed-role session lasts one hour by default and an
-instance-profile credential roughly six, against the seven days a long-lived
-key permits, and the URL expires with the credential even when a longer expiry
-was requested. Rotating or deactivating that credential invalidates every URL
-it signed, which is blunt but works. And an object that is still in quarantine
-grants a URL holder access to nothing that is served.
+early.** On that point, the rule the rest of this section is written around
+holds for S3 and GCS, and is too strong for Azure. On S3 and GCS the only lever
+is the signing credential, so the URL dies when the credential dies.
+
+A signature from a short-lived session credential rather than a long-lived key
+is therefore the real control. On S3 an assumed-role session lasts one hour by
+default, and an instance-profile credential roughly six, against the seven days
+a long-lived key permits. The URL expires with the credential, even when the
+caller requested a longer expiry. Rotation or deactivation of that credential
+invalidates every URL it signed, which is blunt but works. And an object that
+is still in quarantine grants a URL holder access to nothing that is served.
 
 Azure's shared access signature comes in three forms, and which one was issued
 decides how blunt the withdrawal is. A **user-delegation SAS** is signed with a
-user-delegation key obtained through Entra credentials, so the signing identity
-is a security principal and no account key is involved; it is Blob-only. A
-**service SAS** is signed with the storage account key and scoped to one
-service. An **account SAS** is signed with the account key and spans services
-and service-level operations. Only Azure offers a withdrawal that leaves the
-signing credential in place:
+user-delegation key obtained through Entra credentials. The signing identity is
+therefore a security principal, no account key is involved, and it is
+Blob-only. A **service SAS** is signed with the storage account key and scoped
+to one service. An **account SAS** is signed with the account key, and it spans
+services and service-level operations. Only Azure offers a withdrawal that
+leaves the signing credential in place:
 
 | Form | Withdrawn before expiry by | Granularity, and on what timeline |
 | --- | --- | --- |
@@ -471,22 +485,23 @@ signing credential in place:
 | Azure service SAS bound to a stored access policy | Deleting the policy, renaming it, or moving its expiry into the past | Per policy, so one grant goes without touching the account key; timeline not published |
 | Azure user-delegation SAS | Revoking the user-delegation key, or removing the signing principal's role assignment | Per key or per principal, still not per URL; timeline not published, and both the key and the role assignments are cached |
 
-Those two are worth preferring on Azure for that reason, and the
-user-delegation SAS additionally keeps the account key out of the process.
-Neither is a recall button: the granularity is a policy or a key rather than a
-URL, and Azure publishes no number for how long a revocation takes to land,
-stating only that there may be a delay. Treat any specific latency you are
-told as unverified.
+Prefer those two on Azure for that reason, and note that the user-delegation
+SAS also keeps the account key out of the process. Neither is a recall button.
+The granularity is a policy or a key rather than a URL. Azure publishes no
+number for how long a revocation takes to land, and states only that there may
+be a delay. Treat any specific latency you are told as unverified.
 
-So the lifetime cap remains the control that does not depend on anyone
-noticing, and every provider tops out in the same place — 604800 seconds,
-seven days, on a GCS V4 signature, an S3 SigV4 presigned URL, and an Azure
-user-delegation key regardless of the expiry requested. An upload URL has no
-business near that ceiling; minutes is the right order of magnitude. Where the
-platform can cap it centrally instead of trusting the issuer it should, and
-that control is provider-specific rather than the S3 one generalized: an S3
-bucket policy can refuse requests whose signature is older than a chosen age,
-and an Azure storage account can carry a SAS expiration policy. GCS has no
+So the lifetime cap remains the control that does not depend on anybody's
+attention. Every provider has the same maximum of 604800 seconds, or seven
+days. That maximum holds on a GCS V4 signature, an S3 SigV4 presigned URL, and
+an Azure user-delegation key, whatever expiry the caller requested. An upload
+URL has no business near that ceiling, and minutes is the right order of
+magnitude.
+
+Where the platform can cap it centrally instead of trust in the issuer, it
+should. That control is provider-specific rather than the S3 one generalized.
+An S3 bucket policy can refuse requests whose signature is older than a chosen
+age. An Azure storage account can carry a SAS expiration policy. GCS has no
 server-side equivalent, so there the bound the signer chose is the only one
 there is. Design for expiry, not for recall.
 
@@ -509,64 +524,72 @@ The prefix that is served must not be writable by the upload credential.
 Otherwise the client writes straight into it and steps six through eight
 decide nothing.
 
-That state machine needs a terminal `REJECTED` state, and a sweeper for
-objects that are uploaded and never confirmed — without one, abandoned
-quarantine objects accumulate as unreviewed content and unbilled-for storage.
-Where scanning is part of the verdict it must be asynchronous and must fail
-closed. Four failure modes let unscanned content reach a reader: a scanner
-timeout treated as clean; the object copied to the served prefix before the
-verdict is recorded; a scan run against the type in the database rather than
-the bytes in the store; and an object that can still be overwritten between
-the scan and the serve. The last is why the served prefix is write-denied to
-the uploader and why object versioning is worth having. Copy the exact
-`versionId` or generation that the scanner read, so a write after the scan
-cannot reach the reader. Selecting a scanning
-engine is a separate decision and belongs to the dependency gate in
-`a03-software-supply-chain.md`.
+That state machine needs a terminal `REJECTED` state, and a sweeper for objects
+that are uploaded and never confirmed. Without one, abandoned quarantine
+objects accumulate as unreviewed content and unbilled-for storage. Where a scan
+is part of the verdict, it must be asynchronous and must fail closed.
 
-A verdict is a fact about bytes, not about a row, so cache it under a hash of
-the content rather than under the object key or the filename. Keyed that way,
-identical content uploaded twice reuses the existing verdict, a rename cannot
+Four failure modes let unscanned content reach a reader. The first is a scanner
+timeout treated as clean. The second is a copy to the served prefix before the
+verdict is recorded. The third is a scan against the type in the database
+rather than the bytes in the store. The fourth is an object that somebody can
+still overwrite between the scan and the serve.
+
+The last one is why the served prefix is write-denied to the uploader, and why
+object versioning is worth the cost. Copy the exact `versionId` or generation
+that the scanner read, so that a write after the scan cannot reach the reader.
+The choice of a scanning engine is a separate decision, and it belongs to the
+dependency gate in `a03-software-supply-chain.md`.
+
+A verdict is a fact about bytes, not about a row. Cache it under a hash of the
+content rather than under the object key or the filename. Keyed that way,
+identical content uploaded twice reuses the existing verdict. A rename cannot
 launder a rejected object into a fresh scan, and two different objects can
-never share one. A verdict is also only as good as the signatures that
-produced it, so record the engine and signature version beside it and treat a
-version advance as invalidating — content admitted before a signature existed
-stays admitted otherwise, and that window is exactly the one a novel sample
-occupies. Re-scanning lazily on next access is usually enough; the requirement
-is that a stale "clean" cannot become permanent.
+never share one.
+
+A verdict is also only as good as the signatures that produced it. Record the
+engine and the signature version beside it, and treat a version advance as an
+invalidation. Otherwise content admitted before a signature existed stays
+admitted, and that window is exactly the one a novel sample occupies. A lazy
+re-scan on next access is usually enough. The requirement is that a stale
+"clean" cannot become permanent.
 
 Where a detection gap is not tolerable at all, content disarm and
-reconstruction is the other shape of the control. Rather than deciding whether
-a file is malicious, CDR decomposes it, discards every component outside an
-allowlist — macros, embedded scripts, other active content — and rebuilds a
-functionally equivalent file from what is left. Depending on no signature, it
-is unaffected by novel or polymorphic content; rewriting the file, it can
-break what the file was for, and editability, embedded logic, and fidelity all
-move. That trade is why it is a control to choose deliberately rather than a
-default, and it sits alongside scanning rather than replacing it.
+reconstruction is the other shape of the control. CDR does not decide whether a
+file is malicious. It decomposes the file and discards every component outside
+an allowlist: macros, embedded scripts, other active content. It then rebuilds
+a functionally equivalent file from what is left. It depends on no signature,
+so novel or polymorphic content does not affect it. It rewrites the file, so it
+can break what the file was for, and editability, embedded logic, and fidelity
+all move. That trade is why it is a control to choose deliberately rather than
+a default, and it sits beside a scan rather than replaces it.
 
 Confirmations and event notifications are the weak point, because they are the
 step that grants availability. An unauthenticated callback that moves a row
 from `PENDING` to `AVAILABLE` lets an attacker approve their own object
-(CWE-306). A callback that takes the object key from the request body without
-checking it against the row lets one user confirm another's upload. And a
+(CWE-306). A callback that takes the object key from the request body, and does
+not check it against the row, lets one user confirm another's upload. A
 confirmation that believes a client-supplied size or content type has undone
 the entire verification. Verify the message's authenticity, then re-derive
-every fact from the store. The signature, timestamp, and replay rules for
-doing that are in `a08-integrity-and-deserialization.md`, "Webhook and
-callback integrity", which owns them; the SSRF rules that an "import from a
-URL" upload path must satisfy are in `a01-broken-access-control.md`, "SSRF".
+every fact from the store.
+
+`a08-integrity-and-deserialization.md`, "Webhook and callback integrity" owns
+the signature, timestamp, and replay rules for that.
+`a01-broken-access-control.md`, "SSRF" owns the SSRF rules that an "import from
+a URL" upload path must satisfy.
 
 ### Django & DRF implementation layer
 
 On S3 the two delegated-upload forms are not interchangeable. A presigned
-`put_object` URL binds only what was signed into it, and there is no signed
-element for a maximum body size — so a presigned PUT cannot bound how much is
-uploaded at all. A presigned POST carries a policy document that S3 itself
+`put_object` URL binds only what was signed into it, and no signed element
+exists for a maximum body size. A presigned PUT therefore cannot bound how much
+is uploaded at all. A presigned POST carries a policy document that S3 itself
 evaluates, and `content-length-range` is the only mechanism either form offers
-for capping object size. Re-checked against `boto3` 1.43.67 on 9 Aug 2026 and
-still true: `generate_presigned_url` accepts an operation, its parameters, and
-an expiry, and admits no condition of any kind, while the POST policy carries
+to cap object size.
+
+Re-checked against `boto3` 1.43.67 on 9 Aug 2026 and still true.
+`generate_presigned_url` accepts an operation, its parameters, and an expiry,
+and admits no condition of any kind. The POST policy carries
 `content-length-range` as a first-class condition. Prefer POST wherever size,
 key, or type has to be enforced rather than merely expected:
 
@@ -612,37 +635,38 @@ def presign_upload(*, tenant_id):
     )
 ```
 
-Two mechanics of that call are easy to get wrong. A condition and its field
-are separate arguments and neither implies the other, so a `Content-Type`
-condition with no matching `Fields` entry rejects every upload; and S3 requires
-every form field the client sends to appear in the conditions, apart from the
-signature, the file, the policy itself, and any `x-ignore-` prefixed field — a
-field the client can add freely is a field you did not constrain.
+Two mechanics of that call are easy to misread. A condition and its field are
+separate arguments, and neither implies the other, so a `Content-Type`
+condition with no matching `Fields` entry rejects every upload. S3 also
+requires every form field the client sends to appear in the conditions. The
+exceptions are the signature, the file, the policy itself, and any `x-ignore-`
+prefixed field. A field the client can add freely is a field you did not
+constrain.
 
 After the upload, `head_object` returns the size and content type the store
-recorded, which is what verification runs against. Read them there, never from
-the confirmation request; then apply "Type and content validation" above to
-the bytes themselves, because a store-reported content type is only what the
+recorded, and verification runs against those. Read them there, never from the
+confirmation request. Then apply "Type and content validation" above to the
+bytes themselves, because a store-reported content type is only what the
 uploader declared at PUT time. S3 has been strongly read-after-write consistent
-for writes, overwrites, and deletes since 2020, so an immediate read back is
-correct and the retry loops that older guidance recommends are obsolete —
-bucket-level configuration is still eventually consistent, and other
+for writes, overwrites, and deletes since 2020. An immediate read back is
+therefore correct, and the retry loops that older guidance recommends are
+obsolete. Bucket-level configuration is still eventually consistent, and other
 S3-compatible stores may not offer the same guarantee.
 
-Model the states as a field with an explicit transition, not as a boolean, and
-keep the promotion — copy to the served prefix, then mark `AVAILABLE` — in
-that order, so a crash leaves an object that is present but unreachable rather
-than reachable but unverified. Enforcing the transition itself against
-concurrent confirmations is in `a10-exceptional-conditions.md`.
+Model the states as a field with an explicit transition, not as a boolean. Keep
+the promotion in one order: copy to the served prefix, then mark `AVAILABLE`. A
+crash then leaves an object that is present but unreachable, rather than
+reachable but unverified. `a10-exceptional-conditions.md` owns how to enforce
+the transition itself against concurrent confirmations.
 
 #### GCS: the signed PUT that does bound size
 
 `google-cloud-storage` expresses the binding through the `headers` argument of
-`generate_signed_url`. Anything passed there is folded into the canonical
-headers that the V4 string-to-sign covers and is named in the URL's
-`X-Goog-SignedHeaders`, so the client must send each one, unaltered, or the
-signature fails. That is what makes an `x-goog-content-length-range` header a
-constraint rather than a suggestion:
+`generate_signed_url`. Anything you pass there joins the canonical headers that
+the V4 string-to-sign covers, and the URL names it in `X-Goog-SignedHeaders`.
+The client must therefore send each one, unaltered, or the signature fails.
+That is what makes an `x-goog-content-length-range` header a constraint rather
+than a suggestion:
 
 ```python
 from datetime import timedelta
@@ -678,35 +702,37 @@ def gcs_presign_upload(*, tenant_id):
     )
 ```
 
-Verified against `google-cloud-storage` 3.13.1 on 9 Aug 2026: signing that
-call puts `x-goog-content-length-range` into `X-Goog-SignedHeaders`, and the
-seven-day ceiling is enforced by the library itself — an expiration over
-604800 seconds raises `ValueError` rather than producing a URL. That check is
-specific to V4; a `version="v2"` signature accepts a longer expiration without
+Verified against `google-cloud-storage` 3.13.1 on 9 Aug 2026. A signature on
+that call puts `x-goog-content-length-range` into `X-Goog-SignedHeaders`. The
+library itself enforces the seven-day ceiling: an expiration over 604800
+seconds raises `ValueError` rather than returns a URL. That check is specific
+to V4. A `version="v2"` signature accepts a longer expiration without
 complaint, which is one more reason to sign V4.
 
-Two bucket-level settings that sound like they would interfere do not. Uniform
-bucket-level access, which disables object ACLs and leaves IAM as the only
-grant, is the posture to want and does not restrict signed URLs. Neither does
-public access prevention: a signed URL derives its authority from the signing
-service account's own IAM permissions rather than from any public grant, so it
-keeps working under both. The corollary is the one that matters for review —
-under UBLA the signing service account's IAM role *is* the ceiling on every
-URL it issues, so that role is the thing to scope down.
+Two bucket-level settings sound as though they would interfere, and they do
+not. Uniform bucket-level access disables object ACLs and leaves IAM as the
+only grant. It is the posture to want, and it does not restrict signed URLs.
+Public access prevention does not restrict them either. A signed URL derives
+its authority from the signing service account's own IAM permissions, rather
+than from any public grant. The corollary is the one that matters for review.
+Under UBLA the signing service account's IAM role *is* the ceiling on every URL
+it issues, so narrow that role.
 
 #### Azure: a SAS binds less than you would expect
 
 Two things about `generate_blob_sas` have to be read off the source, because
-its own docstring is wrong about the first. `protocol` is not defaulted: pass
-nothing and no `spr` field is emitted at all, which leaves the SAS usable over
-plain HTTP — while the docstring states that the default is HTTPS. State it.
-The second is that `permission` and `expiry`, ordinarily required, are both
-waived by supplying a `policy_id`: the resulting token carries only `si`, `sr`,
-`sv`, and the signature, and takes its permission and its expiry from a stored
-access policy on the container that no amount of reading the codebase will
-show you. That is one of the two forms the revocation table above prefers, so
-the trade is explicit — the withdrawable SAS is also the one whose grant is
-invisible in code, and reviewing it means reading the container's policy.
+its own docstring is wrong about the first. `protocol` has no default. If you
+pass nothing, the call emits no `spr` field at all, which leaves the SAS usable
+over plain HTTP. The docstring states that the default is HTTPS. State the
+protocol yourself.
+
+The second is that a `policy_id` waives `permission` and `expiry`, which are
+ordinarily required. The resulting token carries only `si`, `sr`, `sv`, and the
+signature. It takes its permission and its expiry from a stored access policy
+on the container that no amount of reading the codebase will show you. That is
+one of the two forms the revocation table above prefers, so the trade is
+explicit. The withdrawable SAS is also the one whose grant is invisible in
+code, and a review of it means a read of the container's policy.
 
 ```python
 from datetime import datetime, timedelta, timezone
@@ -756,15 +782,16 @@ Verified against `azure-storage-blob` 12.30.0 on 9 Aug 2026. The delegation
 key carries its own seven-day maximum, so the `expiry` above is bounded by the
 key as well as by the argument.
 
-**Write-time.** When generating a delegated upload URL, settle the provider
+**Write-time.** When you generate a delegated upload URL, settle the provider
 before the constraints, because the provider decides which of them can be
-signed at all: on GCS write the `x-goog-content-length-range` header into the
-same call as the key and the expiry, on S3 reach for the presigned POST rather
-than the PUT the moment a size matters, and on Azure write the verification
-step in the same change as the SAS, since nothing in the token will bound the
-bytes. State the protocol and the expiry explicitly on every provider rather
-than inheriting a default, and sign with the narrowest credential the platform
-offers — a session credential on S3, a scoped service account on GCS, a
+signed at all. On GCS, write the `x-goog-content-length-range` header into the
+same call as the key and the expiry. On S3, use the presigned POST rather than
+the PUT the moment a size matters. On Azure, write the verification step in the
+same change as the SAS, because nothing in the token will bound the bytes.
+
+State the protocol and the expiry explicitly on every provider, rather than
+inherit a default. Sign with the narrowest credential the platform offers: a
+session credential on S3, a scoped service account on GCS, and a
 user-delegation key on Azure.
 
 ## SVG and other active content
@@ -772,19 +799,20 @@ user-delegation key on Azure.
 SVG is XML-based active content, not a passive image. It can contain scripts,
 event handlers, links, external resource loads, and `foreignObject` HTML.
 Reject SVG by default for image uploads. If the product genuinely requires it,
-use a dedicated, maintained allowlist sanitizer; remove scripts, event
-attributes, external references, animation where unnecessary, and
-`foreignObject`; then reserialize and serve it from an isolated origin or as an
-attachment. A CSP header is defense in depth, not a substitute for sanitization
-and origin isolation. Apply the same scrutiny to HTML, XML, and office/document
+use a dedicated, maintained allowlist sanitizer. Remove scripts, event
+attributes, external references, unnecessary animation, and `foreignObject`.
+Then reserialize it, and serve it from an isolated origin or as an attachment.
+
+A CSP header is defense in depth, not a substitute for sanitization and origin
+isolation. Apply the same scrutiny to HTML, XML, and office and document
 containers that can carry active content.
 
 ## Images and archives
 
-For images, open and decode under limits, verify the reported format, cap width,
-height, total pixels, frames, and metadata, and re-encode to an approved format.
-Keep Pillow's decompression-bomb protection enabled; treat its warning as a
-rejection for untrusted uploads rather than disabling `MAX_IMAGE_PIXELS`.
+For images, open and decode under limits, and verify the reported format. Cap
+width, height, total pixels, frames, and metadata, and re-encode to an approved
+format. Keep Pillow's decompression-bomb protection enabled. Treat its warning
+as a rejection for untrusted uploads, rather than disable `MAX_IMAGE_PIXELS`.
 
 For ZIP, tar, and similar archives:
 
@@ -822,11 +850,11 @@ before the extraction call. The library enforces no policy of its own.
 
 ## Size, count, and quota limits
 
-Put a hard request-body limit at the reverse proxy, CDN, or gateway so oversized
-requests are rejected before the application reads or spools them. Add
+Put a hard request-body limit at the reverse proxy, CDN, or gateway, so that it
+rejects oversized requests before the application reads or spools them. Add
 endpoint-specific limits for each file, aggregate bytes and file count per
 request, and rolling quotas per authenticated user, tenant, destination, and
-time window. Expensive scanning or conversion should run under worker CPU,
+time window. An expensive scan or conversion should run under worker CPU,
 memory, wall-clock, and concurrency limits.
 
 Django settings have narrower meanings than their names suggest:
@@ -836,12 +864,12 @@ Django settings have narrower meanings than their names suggest:
 - `FILE_UPLOAD_MAX_MEMORY_SIZE` chooses when an upload moves from memory to a
   temporary file; it is a spooling threshold, not a rejection limit.
 - `DATA_UPLOAD_MAX_NUMBER_FIELDS` and `DATA_UPLOAD_MAX_NUMBER_FILES` (the
-  latter defaulting to 100) constrain multipart complexity and should not be
-  raised casually.
+  latter defaults to 100) constrain multipart complexity, and you should not
+  raise them casually.
 - From Django 6.1 `HttpRequest.multipart_parser_class` selects the parser that
   reads the request body. A replacement parser owns every bound above, because
-  the settings are read by the parser rather than applied around it. Review a
-  custom value as request-handling code, not as configuration.
+  the parser reads the settings rather than something around it applying them.
+  Review a custom value as request-handling code, not as configuration.
 - Django 6.1 validates Base64 strictly where it decodes request and stored
   data. `django.http.multipartparser.MultiPartParser` raises
   `MultiPartParserError` on invalid Base64, where earlier versions could ignore
@@ -850,34 +878,34 @@ Django settings have narrower meanings than their names suggest:
   on a corrupt entry rather than skipping it. Each is a fail-closed change:
   confirm the handler around these paths returns a 400 rather than a 500.
 - A custom upload handler can stop a stream early, but an edge limit is still
-  required. Under ASGI, request data may already have been received or spooled
-  before application-level handling rejects it — and CVE-2026-5766, fixed in
-  Django 6.0.5 and 5.2.14, was that failure exactly: an ASGI request with a
-  missing or understated `Content-Length` bypassed
-  `FILE_UPLOAD_MAX_MEMORY_SIZE` and was read into memory. Its severity is
-  recorded by two bodies that disagree — low under Django's own security
-  policy, medium in the GitHub Advisory Database — and both belong in a report,
-  because a scanner keyed to the second and a reviewer quoting the first will
-  otherwise describe the same install in different words. Patching closes that
-  instance, but the size ceiling belongs at the web server either way.
+  required. Under ASGI, the server may already have received or spooled request
+  data before application-level code rejects it. CVE-2026-5766, fixed in Django
+  6.0.5 and 5.2.14, was that failure exactly. An ASGI request with a missing or
+  understated `Content-Length` bypassed `FILE_UPLOAD_MAX_MEMORY_SIZE`, and
+  Django read it into memory. Two bodies record its severity and they disagree:
+  low under Django's own security policy, medium in the GitHub Advisory
+  Database. Put both in a report. Otherwise a scanner keyed to the second and a
+  reviewer who quotes the first describe the same install in different words. A
+  patch closes that instance, but the size ceiling belongs at the web server
+  either way.
 
 A direct-to-storage upload has no reverse proxy in its path, so none of the
 above applies to it. The equivalent ceiling is a `content-length-range`
 condition in the signed policy, and it is the only one there is.
 
-Keep application checks even with an edge limit because different endpoints and
-principals need different policies. Use `upload.size` only as an early signal;
-enforce a counted byte limit while streaming when the storage or transport does
-not guarantee it.
+Keep application checks even with an edge limit, because different endpoints
+and principals need different policies. Use `upload.size` only as an early
+signal. Enforce a counted byte limit during the stream when the storage or
+transport does not guarantee it.
 
 Size, count, and expansion ratio are this file's instances of a rule that runs
-across every surface — every caller-controlled value that multiplies work
-carries a server-enforced ceiling. The design rule and the table of surfaces
-are in `a06-insecure-design.md`, "Algorithmic resource exhaustion".
+across every surface. Every caller-controlled value that multiplies work
+carries a server-enforced ceiling. `a06-insecure-design.md`, "Algorithmic
+resource exhaustion" holds the design rule and the table of surfaces.
 
 ## Private downloads
 
-Resolve the file through a requester-scoped queryset before opening storage:
+Resolve the file through a requester-scoped queryset before you open storage:
 
 ```python
 from django.contrib.auth.decorators import login_required
@@ -903,70 +931,73 @@ def download_document(request, document_id):
     )
 ```
 
-Passing `content_type` there is not decoration. `FileResponse` sets the header
-from the filename when it is not given, so a stored display name would choose
-the response's media type; the validated type is the one that belongs in the
-header, and `as_attachment=True` supplies the `attachment` disposition.
+The `content_type` argument there is not decoration. `FileResponse` sets the
+header from the filename when the caller gives no type, so a stored display
+name would choose the response's media type. The validated type is the one that
+belongs in the header, and `as_attachment=True` supplies the `attachment`
+disposition.
 
 ### Proxy or signed URL
 
 If Nginx, a CDN, or object storage sends the bytes, perform the same
-authorization first and issue an internal redirect or short-lived,
+authorization first. Then issue an internal redirect, or a short-lived,
 single-purpose signed URL. Bind delegated URLs to the exact object and
-disposition, use a short expiry, and prevent shared caching of private
+disposition, use a short expiry, and prevent a shared cache of private
 responses. Do not expose a permanent public media URL for a private object.
 
 The two arrangements fail differently, so choose deliberately:
 
-- **Proxying through the application** authorizes every request, logs every
+- **A proxy through the application** authorizes every request, logs every
   access, and revokes the moment the permission changes. It costs application
-  bandwidth and, under WSGI, occupies a worker for the whole transfer, so a
-  slow reader on a large file is an availability concern of its own.
-- **An internal redirect** — an Nginx `internal;` location reached through
-  `X-Accel-Redirect`, or `mod_xsendfile` on Apache — keeps per-request
-  authorization in the application and hands the transfer to the web server.
-  Django ships neither; both are edge configuration. This is usually the right
-  answer for private content, and the `internal;` marker is load-bearing:
-  without it the location is directly reachable and the authorization is
-  decorative.
+  bandwidth. Under WSGI it occupies a worker for the whole transfer, so a slow
+  reader on a large file is an availability concern of its own.
+- **An internal redirect** keeps per-request authorization in the application
+  and hands the transfer to the web server. It is an Nginx `internal;` location
+  reached through `X-Accel-Redirect`, or `mod_xsendfile` on Apache. Django
+  ships neither, and both are edge configuration. This is usually the right
+  answer for private content. The `internal;` marker is load-bearing: without
+  it the location is directly reachable, and the authorization does nothing.
 - **A signed URL** offloads the bytes entirely and can be cached at an edge,
   but it moves authorization to issue time. It cannot be withdrawn while it
   lives, and it leaks through logs, referrers, and forwarding.
 
-Whichever is used, range and partial reads must go through the same
+Whichever you use, range and partial reads must go through the same
 authorization as a full read.
 
 ### Private objects and CDN cache keys
 
 A signed URL behind a CDN whose cache key drops the query string is an
-authorization bypass, not a caching inefficiency: one user's authorized
-response is stored under a key that another user's request also produces, and
-the second reader is served bytes no check was run for (CWE-524, CWE-525).
+authorization bypass, not a cache inefficiency. The CDN stores one user's
+authorized response under a key that another user's request also produces. The
+second reader then receives bytes that no check was run for (CWE-524, CWE-525).
 
-In order of preference: do not cache private objects at all, and return
-`Cache-Control: private, no-store` on proxied private responses; or use the
-CDN's own signed-URL or signed-cookie mechanism so the edge validates before
-serving; or, if origin signed URLs must pass through a CDN, include the
-signing parameters in the cache key. `Vary` is not a substitute — cookie
-values are high-cardinality and every layer has to honor it for the boundary
-to hold. The general rule this is one case of, including the invalidation
-requirement, is in `a01-broken-access-control.md`, "Caching and
-authorization"; the edge and CDN configuration itself is in
-`deployment-and-runtime.md`.
+Three options follow, in order of preference. Do not cache private objects at
+all, and return `Cache-Control: private, no-store` on proxied private
+responses. Or use the CDN's own signed-URL or signed-cookie mechanism, so the
+edge validates before it serves. Or, if origin signed URLs must pass through a
+CDN, include the signing parameters in the cache key.
 
-Stored files outlive the rows that reference them: deleting a model instance
+`Vary` is not a substitute, because cookie values are high-cardinality and
+every layer has to honor it for the boundary to hold.
+`a01-broken-access-control.md`, "Caching and authorization" holds the general
+rule this is one case of, and the invalidation requirement.
+`deployment-and-runtime.md` holds the edge and CDN configuration itself.
+
+Stored files outlive the rows that reference them. A delete of a model instance
 does not delete its file, so erasure and retention have to remove the bytes
 explicitly. One property of delegated delivery bounds what an erasure can
-promise, and it belongs here rather than there: a signed URL that has already
-been issued cannot be recalled, so the only controls over it are the expiry it
-was given, rotation of the credential that signed it, and, on Azure alone,
-revocation of the stored access policy or user-delegation key behind it on a
-timeline Microsoft does not publish. That is the practical
-argument for short expiries on private content — every minute of lifetime is a
-minute an erasure cannot reach. A generated export archive is this same
-delivery primitive wrapped around a subject's whole record, with its own
-lifetime. Deletion completeness itself, including what an ordinary delete
-leaves behind on a versioned bucket, is in `data-lifecycle-and-privacy.md`.
+promise, and it belongs here rather than there. Nobody can recall a signed URL
+that has already been issued. The only controls over it are the expiry it was
+given, and rotation of the credential that signed it. On Azure alone,
+revocation of the stored access policy or user-delegation key behind it is a
+third, on a timeline Microsoft does not publish.
+
+That is the practical argument for short expiries on private content, because
+every minute of lifetime is a minute an erasure cannot reach. A generated
+export archive is this same delivery primitive around a subject's whole record,
+with its own lifetime. `data-lifecycle-and-privacy.md` owns deletion
+completeness itself, including what an ordinary delete leaves behind on a
+versioned bucket.
 
 ## Review checklist
 
@@ -985,32 +1016,33 @@ leaves behind on a versioned bucket, is in `data-lifecycle-and-privacy.md`.
 - [ ] Private downloads repeat object-level authorization; identifiers or signed
       URLs do not replace that check.
 - [ ] Delegated upload URLs bind the operation, the key, a maximum size, the
-      content type, and the shortest workable expiry, and are signed by a
-      credential that can write only the quarantine prefix.
-- [ ] An object becomes reachable only after server-side verification, with
-      size and type re-derived from the store rather than from the client or
-      the callback that announced the upload.
+      content type, and the shortest workable expiry. A credential that can
+      write only the quarantine prefix signs them.
+- [ ] An object becomes reachable only after server-side verification. That
+      verification re-derives size and type from the store, rather than from
+      the client or the callback that announced the upload.
 - [ ] The upload state machine has a terminal rejected state and a sweeper for
       objects that were uploaded and never confirmed.
-- [ ] On S3, a bucket taking multipart uploads carries an
+- [ ] On S3, a bucket that takes multipart uploads carries an
       `AbortIncompleteMultipartUpload` lifecycle rule with a
-      `DaysAfterInitiation` value — the parts of an abandoned upload bill as
-      storage and appear in no object listing.
+      `DaysAfterInitiation` value. The parts of an abandoned upload bill as
+      storage, and appear in no object listing.
 - [ ] On GCS, the same rule under Object Lifecycle Management: an
       `AbortIncompleteMultipartUpload` action keyed on `age`, for the same
       invisible-cost reason.
-- [ ] On Azure there is nothing to configure, and that is the finding: blocks
-      left by a `Put Block` that no `Put Block List` ever committed are
-      collected on a fixed seven-day schedule no policy can shorten, so the
-      cleanup is the application's and the storage-versus-listing gap is what
-      there is to monitor.
+- [ ] On Azure there is nothing to configure, and that is the finding. A
+      `Put Block` that no `Put Block List` ever committed leaves blocks behind.
+      Azure collects them on a fixed seven-day schedule that no policy can
+      shorten. The cleanup is therefore the application's, and the
+      storage-versus-listing gap is what there is to monitor.
 - [ ] Storage keys are opaque and disclose no name, address, sequence, or
       original filename.
-- [ ] Private objects have no permanent public URL, and any CDN in front of one
-      either does not cache it or includes the signing parameters in the key.
-- [ ] Findings that depend on platform state — public-access blocking, bucket
-      policy, versioning, the signing principal's permissions, bucket CORS —
-      are marked for out-of-band verification rather than asserted from code.
+- [ ] Private objects have no permanent public URL. Any CDN in front of one
+      either does not cache it, or includes the signing parameters in the key.
+- [ ] The review marks findings that depend on platform state for out-of-band
+      verification, rather than asserts them from code. That state is
+      public-access blocking, bucket policy, versioning, the signing
+      principal's permissions, and bucket CORS.
 
 ### Django & DRF
 

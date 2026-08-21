@@ -1,18 +1,19 @@
 # A10:2025 — Mishandling of Exceptional Conditions
 
-New in 2025. Errors, edge cases, and failure modes handled in ways that leak
-information or fail open, plus the concurrency and duplicate-effect defects
-that appear when one security decision is spread across two statements.
+New in 2025. This category covers errors, edge cases, and failure modes that
+leak information or fail open. It also covers the concurrency defects and the
+duplicate-effect defects that appear when one security decision is spread
+across two statements.
 
-A10:2025's own weakness list is the error-handling half of that: CWE-209 and
-CWE-215 for sensitive information in errors and debug output, CWE-636 for not
-failing securely, and CWE-703, CWE-754, and CWE-755 for improper check or
-handling of exceptional conditions. Race conditions are not in it — OWASP 2025
-maps CWE-362 and CWE-841 to A06:2025 Insecure Design. They are documented here
-anyway, because the question a reviewer asks is the one this category is
-about: what does this code do when the expected sequence does not hold?
-`a06-insecure-design.md` keeps the catalog of business flows worth attacking;
-this file keeps the mechanics and the fixes.
+The weakness list of A10:2025 is the error-handling half of that. It holds
+CWE-209 and CWE-215 for sensitive information in errors and debug output. It
+holds CWE-636 for code that does not fail securely. It holds CWE-703, CWE-754,
+and CWE-755 where code checks or handles an exceptional condition improperly.
+Race conditions are not in it, because OWASP 2025 maps CWE-362 and CWE-841 to
+A06:2025 Insecure Design. This file documents them anyway. A reviewer asks the
+question that this category is about: what this code does when the expected
+sequence does not hold. `a06-insecure-design.md` keeps the catalog of business
+flows worth attacking, and this file keeps the mechanics and the fixes.
 
 ## Contents
 - [Principle](#principle)
@@ -25,37 +26,39 @@ this file keeps the mechanics and the fixes.
 
 ## Principle
 
-How software behaves when something goes wrong is a security property. Three
-failure patterns dominate: **leaking** (stack traces, internal messages, and
-detailed errors handed to the attacker), **failing open** (an exception or edge
-case skips a security check and the request proceeds), and **assuming a
-sequence** (code that is correct run alone and wrong when a second caller
-interleaves with it, or when a retry delivers the same request twice). The
-principle is **fail closed and fail quiet**: on error, deny the action and
-return a generic message, while logging the detail server-side. Handle the
-unexpected explicitly rather than letting a swallowed exception or an unlucky
-interleaving decide security for you.
+The behavior of software when something goes wrong is a security property.
+Three failure patterns dominate. The first is **leaking**: stack traces,
+internal messages, and detailed errors go to the attacker. The second is
+**failing open**: an exception or an edge case skips a security check, and the
+request proceeds. The third is **assuming a sequence**: the code is correct
+when it runs alone. It is wrong when a second caller interleaves with it, or
+when a retry delivers the same request twice.
+
+The principle is **fail closed and fail quiet**. On error, deny the action and
+return a generic message, and log the detail server-side. Handle the unexpected
+explicitly. Do not let a swallowed exception or an unlucky interleaving decide
+security for you.
 
 ## Don't leak on error
 
 - `DEBUG = False` in production; provide custom `handler400/403/404/500` and error
   templates that reveal nothing internal.
-- Don't return raw exception strings, SQL errors, or stack traces in API
-  responses. Catch, log server-side, and return a generic error with an id the
-  user can quote to support.
+- Do not return raw exception strings, SQL errors, or stack traces in API
+  responses. Catch the exception, log it server-side, and return a generic
+  error with an id that the user can quote to support.
 
 ## Fail closed
 
 Maps to CWE-636 (Not Failing Securely) and CWE-755.
 
-- Permission and authentication code must default to deny. Watch for
-  `try/except` blocks around auth checks that fall through to "allowed" on error,
-  or a permission function that returns `None`/falls off the end (treat as deny,
-  and make it explicit).
-- Feature flags and config lookups that gate access should default to the safe
-  (closed) state if the flag/store is unavailable.
+- Permission code and authentication code must default to deny. Look for a
+  `try/except` block around an auth check that returns "allowed" on error. Look
+  also for a permission function that returns `None` or reaches its end with no
+  return. Treat each one as deny, and make that deny explicit.
+- A feature flag or a config lookup that gates access should default to the
+  safe (closed) state when the flag store is unavailable.
 
-Three shapes account for most of them, and all three are greppable:
+Three shapes account for most of them, and you can grep for all three:
 
 ```python
 # Wrong: any failure inside the check is read as permission granted, so a
@@ -90,18 +93,18 @@ def has_access(user, obj):
         return False
 ```
 
-The third shape is a flag or configuration lookup that opens the gate when its
-store is unreachable: `if flags.get("require_approval"):` evaluates false while
-the flag service is down, and the approval step quietly disappears. Resolve the
-unavailable case explicitly and pick the closed state for it.
+The third shape is a flag lookup or a configuration lookup that opens the gate
+when its store is unreachable. `if flags.get("require_approval"):` evaluates
+false while the flag service is down, and the approval step quietly disappears.
+Resolve the unavailable case explicitly, and select the closed state for it.
 
-DRF's own `exception_handler` cannot turn a denial into a success. It handles
-`APIException` subclasses, Django's `Http404`, and Django's `PermissionDenied`,
-and returns `None` for anything else — at which point the exception is
-re-raised and Django returns a 500. The risk is a **custom** handler, or a
-middleware `process_exception`, that catches broadly and returns a non-error
-response: a 403 or a crash then reaches the caller as a 200, and the 4xx/5xx
-rate that would have raised an alert stays flat. Grep for a configured
+The `exception_handler` of DRF cannot turn a denial into a success. It handles
+`APIException` subclasses, Django's `Http404`, and Django's `PermissionDenied`.
+It returns `None` for anything else, and Django then re-raises the exception
+and returns a 500. The risk is a **custom** handler, or a middleware
+`process_exception`, that catches broadly and returns a non-error response. A
+403 or a crash then reaches the caller as a 200, and the 4xx/5xx rate that
+would have raised an alert stays flat. Grep for a configured
 `EXCEPTION_HANDLER`, for `process_exception`, and for `except Exception` in
 middleware, and check what each one returns.
 
@@ -109,35 +112,38 @@ middleware, and check what each one returns.
 
 Maps to CWE-362 (concurrent execution using a shared resource with improper
 synchronization) and CWE-367 (time-of-check time-of-use). OWASP 2025 places
-CWE-362 and CWE-841 under A06:2025, where the business consequences —
-double-spend, duplicate provisioning, a skipped workflow step — are cataloged.
+CWE-362 and CWE-841 under A06:2025. That category catalogs the business
+consequences: double-spend, duplicate provisioning, and a skipped workflow
+step.
 
 ### Principle layer
 
 A check and the action it authorizes must be a single atomic step against the
 authoritative store. If any other actor can change the checked fact between the
-check and the use, the check is advisory rather than enforcing. Nothing about
-that is Django-specific; the same defect appears in Go, Rails, or hand-written
-SQL, and the same two defenses close it.
+check and the use, the check only gives advice and does not enforce. Nothing
+about that is Django-specific. The same defect appears in Go, Rails, or
+hand-written SQL, and the same two defenses close it.
 
 - **A constraint expresses an invariant about the data** — uniqueness, a value
-  range, non-overlapping intervals. It is declarative, enforced on every path
-  including the ones the application does not know about, and the loser of a
-  concurrent race fails loudly instead of writing a corrupt row.
+  range, non-overlapping intervals. It is declarative, and the database
+  enforces it on every path, including the paths the application does not know
+  about. The loser of a concurrent race fails loudly and does not write a
+  corrupt row.
 - **A lock serializes operations on a specific existing row** — the
   read-modify-write on a balance or a counter. It is a serialization tool, not
   an integrity guarantee: it protects only the rows it actually selected.
 
-Prefer the constraint wherever the invariant can be expressed as one, and push
-it down to the layer that cannot be bypassed. The database is the only actor
-that every request path shares.
+Prefer the constraint wherever you can express the invariant as one, and move
+it to the layer that nothing can bypass. The database is the only actor that
+every request path shares.
 
-Exploiting a window no longer means winning a hand-timed race. A machine caller
-fires hundreds of identical concurrent requests trivially, so a gap that reads
-as "hard to hit" is now cheap to hit at scale. The tool-call side of that is in
+To exploit a window, an attacker no longer has to win a hand-timed race. A
+machine caller fires hundreds of identical concurrent requests easily. A gap
+that reads as "hard to hit" is now cheap to hit at scale.
 `agent-and-llm-interfaces.md`, "Server-enforced confirmation for irreversible
-actions", where the confirmation token is consumed exactly once precisely so a
-duplicated call cannot re-run the effect.
+actions" holds the tool-call side of that. The confirmation token there is
+consumed exactly once, precisely so that a duplicated call cannot re-run the
+effect.
 
 ### Django & DRF implementation layer
 
@@ -169,43 +175,46 @@ with transaction.atomic():
     account.save(update_fields=["balance"])
 ```
 
-That fix has four ways of not working, and reviews miss all of them:
+That fix has four failure modes, and reviews miss all of them:
 
-- **Outside a transaction it is not a lock.** Evaluating a queryset carrying
-  `select_for_update()` in autocommit mode raises `TransactionManagementError`
-  on backends that support `SELECT ... FOR UPDATE`, because the rows are not
-  locked. The error is raised at *evaluation*, not construction — querysets are
-  lazy, so the line that builds the queryset is never the line that fails.
+- **Outside a transaction it is not a lock.** A queryset that carries
+  `select_for_update()` raises `TransactionManagementError` when you evaluate
+  it in autocommit mode, on backends that support `SELECT ... FOR UPDATE`. The
+  database does not lock the rows. Django raises the error at *evaluation*, not
+  at construction. Querysets are lazy, so the line that builds the queryset is
+  never the line that fails.
 - **On SQLite there is no error at all.** Django's documentation is explicit
   that on a backend without `SELECT ... FOR UPDATE` the call has no effect and
   raises nothing in autocommit mode. A suite that runs on SQLite proves nothing
-  about the locking path, and production on PostgreSQL is then the only place
+  about the locking path. Production on PostgreSQL is then the only place where
   the lock has ever existed.
-- **The lock covers the rows it selected and nothing else.** If the invariant
-  depends on a different row, on an aggregate over many rows, or on the
-  *absence* of a row, locking the row being mutated protects none of it.
+- **The lock covers the rows it selected and nothing else.** The invariant can
+  depend on a different row, on an aggregate over many rows, or on the
+  *absence* of a row. A lock on the row that you mutate then protects none of
+  it.
 - **The options are not portable.** `nowait=True` and `skip_locked=True` are
-  mutually exclusive and raise `ValueError` when both are set, and passing
-  `nowait`, `skip_locked`, `no_key`, or `of` to a backend that does not support
-  them raises `NotSupportedError`. That is deliberate — it stops code from
-  blocking unexpectedly — but it means "add `skip_locked` so the workers stop
-  queueing behind each other" can crash on the wrong backend.
+  mutually exclusive, and Django raises `ValueError` when you set both. Django
+  raises `NotSupportedError` when you pass `nowait`, `skip_locked`, `no_key`,
+  or `of` to a backend that does not support them. That behavior is deliberate,
+  because it stops code that blocks unexpectedly. But it also means that "add
+  `skip_locked` so the workers stop queueing behind each other" can crash on
+  the wrong backend.
 
-Isolation level decides what the locked read sees. Django defaults to
-`READ COMMITTED` on both PostgreSQL and MySQL, and under `READ COMMITTED` the
-locked read re-reads the latest committed row once it acquires the lock, which
-is what makes the balance pattern above correct. Raising the isolation level is
-a data-layer decision with its own retry requirements, not something to change
-from a view (`data-layer-and-database.md`, "Transaction isolation and
+The isolation level decides what the locked read sees. Django defaults to
+`READ COMMITTED` on both PostgreSQL and MySQL. Under `READ COMMITTED` the
+locked read reads the latest committed row again after it acquires the lock,
+which makes the balance pattern above correct. A change to the isolation level
+is a data-layer decision with its own retry requirements. Do not make that
+change from a view (`data-layer-and-database.md`, "Transaction isolation and
 serialization failures").
 
 `ATOMIC_REQUESTS` wraps every view in a transaction, which removes a whole
 class of "the check committed but the write did not" bugs. Understand the
-trade-off before enabling it: it holds a connection and an open transaction for
-the whole of every view, so exclude long-running, streaming, and
+trade-off before you enable it. It holds a connection and an open transaction
+for the whole of every view. Exclude long-running views, streaming views, and
 external-call views (`data-layer-and-database.md`, "Connection exhaustion and
 query timeouts"). It also has no retry of its own, so it does not combine with
-a raised isolation level without one.
+a raised isolation level unless you add one.
 
 #### Push the invariant into a constraint
 
@@ -238,33 +247,35 @@ class Reservation(models.Model):
         ]
 ```
 
-- Uniqueness, or "at most one of these at a time", is a `UniqueConstraint`;
+- Uniqueness, or "at most one of these at a time", is a `UniqueConstraint`.
   `condition=` makes it partial, which is how a soft-deleted or cancelled row
-  stops blocking a new one. Never enforce uniqueness with `.exists()` followed
-  by `.create()`.
+  no longer blocks a new one. Never enforce uniqueness with `.exists()` and a
+  later `.create()`.
 - Value bounds — non-negative, non-zero, a maximum — are `CheckConstraint`s.
-  They also close the negative-amount and quantity-manipulation abuse that
-  arrives as an entirely valid-looking request (CWE-190, CWE-191).
-- Non-overlapping intervals, which is what booking and reservation systems
-  actually need, are PostgreSQL exclusion constraints, available through
-  `ExclusionConstraint` in `django.contrib.postgres.constraints`. A scalar
-  column beside a range needs the `btree_gist` extension, which the
+  They also close the negative-amount abuse and the quantity-manipulation abuse
+  that arrive as a request that looks entirely valid (CWE-190, CWE-191).
+- Non-overlapping intervals are PostgreSQL exclusion constraints, available
+  through `ExclusionConstraint` in `django.contrib.postgres.constraints`.
+  Booking systems and reservation systems actually need this constraint. A
+  scalar column beside a range needs the `btree_gist` extension, which the
   `BtreeGistExtension` migration operation installs.
-- A constraint added to a table that already violates it fails at deploy time.
-  Sequencing that safely is in `a03-software-supply-chain.md`, "Migration and
-  data-integrity safety".
+- A constraint that you add to a table that already violates it fails at deploy
+  time. `a03-software-supply-chain.md`, "Migration and data-integrity safety"
+  holds the safe sequence for that change.
 
-A distributed lock in Redis is not a substitute for either defense. A lock is
-only as safe as the guarantee that a second holder cannot act, and in an
-asynchronous system — garbage-collection pauses, network delay, clock skew —
-that requires a fencing token which the protected resource itself checks.
-Neither a single-instance `SET NX PX` nor Redlock provides one; Martin
+A distributed lock in Redis does not replace either defense. A lock is only as
+safe as the guarantee that a second holder cannot act. In an asynchronous
+system, with garbage-collection pauses, network delay, and clock skew, that
+guarantee needs a fencing token which the protected resource itself checks.
+Neither a single-instance `SET NX PX` nor Redlock provides one. Martin
 Kleppmann's analysis of Redlock is the standard reference, and single-instance
-Redis adds asynchronous-replication failover on top. For a Django service the
-correct default is a unique constraint plus `transaction.atomic()`, which is a
-fenced, consensus-backed lock you are already running. Reserve a Redis lock for
-best-effort de-duplication where an occasional double execution is merely
-wasteful, and say plainly in the review that that is all it is.
+Redis also adds asynchronous-replication failover.
+
+For a Django service the correct default is a unique constraint with
+`transaction.atomic()`. That combination is a fenced, consensus-backed lock
+that you already run. Reserve a Redis lock for best-effort de-duplication where
+an occasional double execution is merely wasteful. Say plainly in the review
+that this is all it is.
 
 #### `get_or_create` and `update_or_create`
 
@@ -274,15 +285,16 @@ no matching unique constraint, concurrent calls insert duplicate rows and
 nothing raises. With one, the loser's `INSERT` raises `IntegrityError`, which
 Django catches and retries as a `get()`.
 
-That retry has an edge of its own. Under MySQL's own default of
-`REPEATABLE READ`, the retrying `get()` can fail to see the row that just
-committed and the `IntegrityError` escapes; Django's databases reference names
+That retry has an edge of its own. Under the MySQL default of
+`REPEATABLE READ`, the `get()` in the retry can fail to see the row that just
+committed, and the `IntegrityError` escapes. Django's databases reference names
 exactly this as the reason it defaults MySQL to `READ COMMITTED` instead. A
-project that has overridden the isolation level has reintroduced it.
+project that has overridden the isolation level has reintroduced the problem.
 
-So a `get_or_create()` in a security-relevant flow is two questions, not one:
-is there a unique constraint on the lookup fields, in `Meta.constraints` and in
-a migration, and has anything changed the isolation level underneath it?
+So a `get_or_create()` in a security-relevant flow raises two questions, not
+one. The first is whether a unique constraint covers the lookup fields, in
+`Meta.constraints` and in a migration. The second is whether anything has
+changed the isolation level under it.
 
 #### Enforcing a state transition
 
@@ -304,13 +316,13 @@ if not updated:
     raise Conflict
 ```
 
-A state machine that is checked in Python and saved later is decorative
-(CWE-841). A declarative transitions package does not fix that on its own: the
-guard is still an in-memory check followed by a `save()`, and no row lock is
-added. The bypassable shape to grep for is `get()` → `if` → `save()`; the
-enforced shapes are a conditional `.update()` or a `select_for_update()` read
-inside `atomic()`. Which transitions are worth enforcing at all is the flow
-inventory in `a06-insecure-design.md`, "Business-logic abuse".
+A state machine that Python checks and saves later enforces nothing (CWE-841).
+A declarative transitions package does not fix that on its own. The guard is
+still an in-memory check with a `save()` after it, and the package adds no row
+lock. Grep for the bypassable shape `get()` → `if` → `save()`. The enforced
+shapes are a conditional `.update()` or a `select_for_update()` read inside
+`atomic()`. `a06-insecure-design.md`, "Business-logic abuse" holds the flow
+inventory that decides which transitions you must enforce at all.
 
 #### Side effects and the commit boundary
 
@@ -334,70 +346,75 @@ with transaction.atomic():
 ```
 
 - Callbacks run after the **outermost** `atomic()` commits, in registration
-  order. One registered inside a nested block does not run if a rollback to
-  that savepoint or to an earlier one happened during the transaction.
+  order. A callback that you register inside a nested block does not run if a
+  rollback happened during the transaction. That rollback can be to that
+  savepoint or to an earlier one.
 - Delivery is at-least-once, and that guarantee begins at the broker. The
   enqueue itself is lost when the process dies between the commit and the
-  callback, so `on_commit` orders the work without making it durable. Where
-  the record must not be lost, use the transactional outbox in
+  callback. `on_commit` therefore orders the work but does not make it durable.
+  Where the record must not be lost, use the transactional outbox in
   `a09-logging-and-alerting.md`, "Lifecycle hooks and audit guarantees". The
   dispatcher that drains it belongs to queue delivery and retry mechanics,
   which this file does not cover. Past the broker, a worker that finishes the
-  work and dies before acknowledging causes a redelivery. Every task must
-  therefore be safe to run twice. Re-check the state before you act, rather
-  than assuming the first run did not happen. That is the same design as the
-  next section, applied to a worker.
-- Two tasks enqueued in order are not guaranteed to execute in order or on the
-  same worker. Never let task B assume it can see task A's effect; have it
-  check.
-- Under `TestCase`, which wraps each test in a transaction that is never
-  committed, `on_commit` callbacks never run at all. Use
-  `captureOnCommitCallbacks()` or `TransactionTestCase`, or the tests silently
-  cover none of this while continuing to pass.
+  work and dies before it acknowledges causes a redelivery. Every task must
+  therefore be safe to run twice. Re-check the state before you act. Do not
+  assume that the first run did not happen. That is the same design as the next
+  section, applied to a worker.
+- Two tasks that you enqueue in order have no guarantee to execute in order or
+  on the same worker. Never let task B assume that it can see the effect of
+  task A. Make task B check.
+- Under `TestCase`, which wraps each test in a transaction that never commits,
+  `on_commit` callbacks never run at all. Use `captureOnCommitCallbacks()` or
+  `TransactionTestCase`. Without one of them the tests silently cover none of
+  this and still pass.
 
 `a09-logging-and-alerting.md`, "Lifecycle hooks and audit guarantees" owns the
-ordering mechanism itself, the transactional outbox, and which Django write
-paths run which hooks. It is not restated here.
+order mechanism itself, the transactional outbox, and which Django write paths
+run which hooks. This file does not restate it.
 
-**Write-time.** When generating a transaction or a state transition, choose
-between a constraint and a lock before writing either: express the invariant
-as a `UniqueConstraint` or a `CheckConstraint` wherever it is a property of
-the data, and reserve `select_for_update()` inside `atomic()` for the
-read-modify-write on a row that already exists, because the constraint also
-holds on the admin, shell, and migration paths this view does not own. Write
-the transition as a conditional `.update()` whose `WHERE` clause carries the
-guard and whose returned count decides the outcome, rather than a `get()`, an
-`if`, and a later `save()`. Register every external effect through
-`transaction.on_commit()` in the edit that introduces it, and give any handler
-a retry can reach the idempotency-key shape below, because the retry arrives
-whether or not the handler was designed for one.
+**Write-time.** When you generate a transaction or a state transition, choose
+between a constraint and a lock before you write either. Express the invariant
+as a `UniqueConstraint` or a `CheckConstraint` wherever it is a property of the
+data. Reserve `select_for_update()` inside `atomic()` for the read-modify-write
+on a row that already exists. The constraint also holds on the admin, shell,
+and migration paths that this view does not own.
+
+Write the transition as a conditional `.update()`. Its `WHERE` clause carries
+the guard, and its returned count decides the outcome. Do not write a `get()`,
+an `if`, and a later `save()`. Register every external effect through
+`transaction.on_commit()` in the edit that introduces it. Give the
+idempotency-key shape below to any handler that a retry can reach. The retry
+arrives whether or not the handler was designed for one.
 
 #### Reading code for a race
 
 Grep produces starting points, not findings. A race is a property of the gap
-between two statements and of whether a constraint or a lock closes that gap,
-and neither of those is visible in a single line.
+between two statements, and of whether a constraint or a lock closes that gap.
+Neither of those is visible in a single line.
 
-1. **Find the shapes.** Existence and aggregate checks — `.exists(`, `.count(`,
-   `.first(`, `get_or_create`, `update_or_create`. A guard immediately above a
-   mutation — `if not ...:` on the lines before a `.create(`, `.save(`, or
-   `.update(`. Read-modify-write arithmetic — `obj.field = obj.field - n`
-   followed by `.save(`, rather than an `F()` expression. Weight the hits that
-   sit near money, stock, quota, credit, slug, or email vocabulary.
+1. **Find the shapes.** Existence checks and aggregate checks — `.exists(`,
+   `.count(`, `.first(`, `get_or_create`, `update_or_create`. A guard
+   immediately above a mutation — `if not ...:` on the lines before a
+   `.create(`, `.save(`, or `.update(`. Read-modify-write arithmetic —
+   `obj.field = obj.field - n` with a `.save(` after it, rather than an `F()`
+   expression. Weight the hits that sit near money, stock, quota, credit, slug,
+   or email vocabulary.
 2. **Trace each hit from the check to the use.** Name the checked fact — a
    specific row, an aggregate, or the absence of a row — and name the mutation.
-   Then answer three questions. Are the check and the mutation inside one
-   `transaction.atomic()`? Does the check read the exact row being mutated,
-   under `select_for_update()`? Is there a `UniqueConstraint` or
-   `CheckConstraint` behind it, in `Meta.constraints` *and* in a migration,
-   that would turn a lost race into a loud failure?
-3. **Decide whether the gap is already closed.** It is closed if the invariant
-   is uniqueness or a bound with a matching constraint behind it, or if it is a
-   read-modify-write on one row done with `select_for_update()` and `F()`
-   inside `atomic()`. It is a real finding if the only guard is a Python-side
-   `if` or `.exists()` with neither constraint nor lock, if `select_for_update()`
-   is evaluated outside `atomic()`, or if the check reads something the lock
-   does not cover.
+   Then answer three questions. The first is whether the check and the mutation
+   sit inside one `transaction.atomic()`. The second is whether the check reads
+   the exact row that the code mutates, under `select_for_update()`. The third
+   is whether a `UniqueConstraint` or a `CheckConstraint` stands behind it, in
+   `Meta.constraints` *and* in a migration. Such a constraint turns a lost race
+   into a loud failure.
+3. **Decide whether the gap is already closed.** The gap is closed if the
+   invariant is uniqueness or a bound with a matching constraint behind it. It
+   is also closed if it is a read-modify-write on one row with
+   `select_for_update()` and `F()` inside `atomic()`. It is a real finding if
+   the only guard is a Python-side `if` or `.exists()` with neither constraint
+   nor lock. It is also a real finding if the code evaluates
+   `select_for_update()` outside `atomic()`, or if the check reads something
+   that the lock does not cover.
 
 ## Idempotency
 
@@ -407,32 +424,34 @@ event de-duplication; both defer here for the design.
 
 ### Principle layer
 
-Retries are not an anomaly to be designed away. Clients retry, load balancers
-retry, SDKs retry, and queues redeliver, so an endpoint that must not run twice
-will be called twice. A client-supplied key plus a stored fingerprint of the
-request turns an at-least-once channel into exactly-once effects. Four rules
-make that work, and each one is a place implementations go wrong:
+Retries are not an anomaly that you can design away. Clients retry, load
+balancers retry, SDKs retry, and queues redeliver. An endpoint that must not
+run twice therefore will be called twice. A client-supplied key with a stored
+fingerprint of the request turns an at-least-once channel into exactly-once
+effects. Four rules make that work, and each one is a place where
+implementations go wrong:
 
 - **The datastore arbitrates uniqueness, not the application.** Two requests
-  carrying the same key arrive at the same moment; a unique constraint lets
-  exactly one insert win and tells the other that it lost. An `.exists()` check
-  followed by a `.create()` is the race this whole file is about.
-- **Scope the key per actor.** One tenant's key must not collide with the same
-  string sent by another, so the constraint is on the pair, not on the key.
+  that carry the same key arrive at the same moment. A unique constraint lets
+  exactly one insert win, and tells the other that it lost. An `.exists()`
+  check with a `.create()` after it is the race that this whole file is about.
+- **Scope the key per actor.** The key of one tenant must not collide with the
+  same string from another tenant. The constraint is therefore on the pair, not
+  on the key.
 - **A key replayed with different parameters is an error, not a replay.** Store
-  a fingerprint of the canonical request body and compare it. Answering a
-  second, different request with the first one's stored result is worse than
-  the duplicate it was meant to prevent.
-- **Store the outcome and replay it**, failures included, so a client that
-  never saw the first response gets the same answer rather than a second
-  execution. Prune keys past a horizon — twenty-four hours is the common
-  choice — after which a reused key starts fresh.
+  a fingerprint of the canonical request body, and compare it. Do not answer a
+  second, different request with the stored result of the first. That outcome
+  is worse than the duplicate the key was meant to prevent.
+- **Store the outcome and replay it**, failures included. A client that never
+  saw the first response then gets the same answer rather than a second
+  execution. Prune keys past a horizon; twenty-four hours is the common choice.
+  After that horizon a reused key starts fresh.
 
-`Idempotency-Key` is the de-facto header name, established by payment
-processors rather than by a ratified standard: the IETF HTTPAPI working group's
-draft for it expired without being published as an RFC, so there is nothing
-normative to cite and no interoperability guarantee to lean on. `GET` and
-`DELETE` need no key, being idempotent by definition.
+`Idempotency-Key` is the de-facto header name. Payment processors established
+it, and no ratified standard defines it. The draft of the IETF HTTPAPI working
+group for it expired, and nobody published it as an RFC. There is therefore
+nothing normative to cite, and no interoperability guarantee. `GET` and
+`DELETE` need no key, because they are idempotent by definition.
 
 ### Django & DRF implementation layer
 
@@ -506,61 +525,62 @@ The fingerprint above digests the body alone. Canonicalize the method and the
 route into it as well. One key sent to two endpoints then cannot replay the
 wrong response.
 
-The record, the effect, and the stored response commit together, and that is
-what makes the replay branch safe: a record exists only if its effect
-succeeded, so there is no half-written row for a retry to trip over. Two
-consequences follow from it.
+The record, the effect, and the stored response commit together, which makes
+the replay branch safe. A record exists only if its effect succeeded, so a
+retry finds no half-written row. Two consequences follow from that.
 
 - The effect has to be database work. An external call belongs in
-  `transaction.on_commit()`, and a payment capture that cannot be rolled back
-  needs the provider's own idempotency key in addition to this one — the
-  guarantee has to hold on their side of the call too.
+  `transaction.on_commit()`. A payment capture that you cannot roll back needs
+  the idempotency key of the provider in addition to this one. The guarantee
+  has to hold on their side of the call too.
 - A genuinely simultaneous duplicate blocks on the unique index until the first
-  transaction finishes, rather than getting an immediate answer. Committing the
-  insert in its own transaction first buys an instant "still in flight" 409, at
-  the cost of records that can be left with no stored response when the effect
-  fails, which then needs its own expiry and repair path. Choose deliberately;
-  do not end up with the second shape by accident.
+  transaction finishes, and does not get an immediate answer. If you commit the
+  insert in its own transaction first, you get an instant "still in flight"
+  409. The cost is a record that can hold no stored response when the effect
+  fails, which then needs its own expiry path and repair path. Choose
+  deliberately, and do not reach the second shape by accident.
 
-Keys are opaque: a random value the client generates, up to 255 characters.
-Never derive one from an email address, an account number, or anything else
-whose presence in this table is itself a disclosure.
+Keys are opaque: a random value that the client generates, up to 255
+characters. Never derive one from an email address, an account number, or
+anything else whose presence in this table is itself a disclosure.
 
 ## Regular expressions and algorithmic cost
 
 Maps to CWE-1333 (inefficient regular expression complexity), with CWE-400 and
 CWE-770 where the resource is simply unbounded. OWASP API4:2023 Unrestricted
-Resource Consumption is the API-security mapping; the Top 10:2025 has no
-denial-of-service category, so the general class — which caller-controlled
-inputs need a bound, and the table of which surface enforces each one — is
-owned by `a06-insecure-design.md`, "Algorithmic resource exhaustion". This
-section owns the regular expression itself.
+Resource Consumption is the API-security mapping. The Top 10:2025 has no
+denial-of-service category. `a06-insecure-design.md`, "Algorithmic resource
+exhaustion" therefore owns the general class: which caller-controlled inputs
+need a bound, and the table of which surface enforces each one. This section
+owns the regular expression itself.
 
-A backtracking engine can take time exponential in the length of its input on a
-pattern with nested or overlapping quantifiers, so one request costs a CPU core
-for minutes. CPython's `re` is a backtracking engine with no built-in
-protection. Python 3.11 added atomic groups `(?>...)` and possessive
-quantifiers (`*+`, `++`, `?+`, `{m,n}+`), which allow a specific dangerous
-pattern to be rewritten so that it cannot backtrack, but there is still no
-timeout parameter on any `re` function.
+A backtracking engine can take time exponential in the length of its input, on
+a pattern with nested or overlapping quantifiers. One request then costs a CPU
+core for minutes. The `re` module of CPython is a backtracking engine with no
+built-in protection. Python 3.11 added atomic groups `(?>...)` and possessive
+quantifiers (`*+`, `++`, `?+`, `{m,n}+`). These let you rewrite a specific
+dangerous pattern so that it cannot backtrack. But no `re` function has a
+timeout parameter.
 
-Django's own history shows the pattern class reaching a framework rather than
-an application: CVE-2023-36053 in `EmailValidator` and `URLValidator`, and
-CVE-2024-27351, CVE-2023-43665, and CVE-2019-14232 in
+The history of Django shows this pattern class in a framework rather than in an
+application. CVE-2023-36053 is in `EmailValidator` and `URLValidator`.
+CVE-2024-27351, CVE-2023-43665, and CVE-2019-14232 are in
 `django.utils.text.Truncator`, which backs the `truncatechars_html` and
 `truncatewords_html` template filters. All are fixed on supported versions, so
 they are useful as exemplars rather than as live findings.
 
-In application code the reachable paths are: custom `RegexValidator` patterns;
-`re.search` or `re.match` run over request data in a serializer, a filter, or a
-search view; `__regex` and `__iregex` ORM lookups fed from query parameters;
-and anywhere a pattern is *compiled from* user input.
+In application code four paths are reachable. The first is a custom
+`RegexValidator` pattern. The second is `re.search` or `re.match` over request
+data in a serializer, a filter, or a search view. The third is a `__regex` or
+`__iregex` ORM lookup that a query parameter feeds. The fourth is anywhere a
+pattern is *compiled from* user input.
 
-The mitigations, in the order that pays:
+The mitigations follow, in the order that pays:
 
 1. **Cap the input length before it reaches the regex.** Catastrophic
-   backtracking needs a long subject, so a `max_length` on the field or
-   serializer is the cheapest control here and the one to apply by default.
+   backtracking needs a long subject. A `max_length` on the field or the
+   serializer is therefore the cheapest control here, and the one to apply by
+   default.
 2. **Never compile a pattern from user input.** Where a feature genuinely
    requires it, run it on an engine with a linear-time guarantee instead of on
    `re` (`security-hardening-libraries.md`, "Concurrency, idempotency, and
@@ -574,26 +594,26 @@ The mitigations, in the order that pays:
 ### Stack-neutral
 
 - [ ] On error in a security-relevant path the code denies and returns a
-      generic message: no `except` that yields "allowed", no permission
-      function falling off the end, and no flag or config lookup that opens the
-      gate when its store is unavailable.
+      generic message. There is no `except` that yields "allowed", and no
+      permission function that reaches its end with no return. No flag or
+      config lookup opens the gate when its store is unavailable.
 - [ ] Every read-check-write on money, stock, quota, or uniqueness is one
-      atomic step, closed either by a database constraint or by a lock on the
-      exact row being mutated.
+      atomic step. A database constraint or a lock on the exact row that the
+      code mutates closes it.
 - [ ] Invariants that are properties of the data — uniqueness, value bounds,
       non-overlap — are database constraints rather than application checks.
-- [ ] Must-run-once endpoints carry an idempotency key scoped per actor, with a
-      unique constraint arbitrating concurrent arrivals, a stored request
-      fingerprint that rejects a mismatched replay instead of answering it, a
-      stored response, and an expiry.
-- [ ] External side effects are dispatched only after the work commits, and
-      every consumer is safe to run more than once under redelivery.
-- [ ] State transitions are decided by the datastore, not by a check in
-      application memory that a later write trusts.
-- [ ] No distributed lock is relied on for correctness without a fencing token
-      the protected resource itself checks.
-- [ ] User input reaching a regular expression is length-capped, and no pattern
-      is compiled from user input on a backtracking engine.
+- [ ] Must-run-once endpoints carry an idempotency key scoped per actor. A
+      unique constraint arbitrates concurrent arrivals. A stored request
+      fingerprint rejects a mismatched replay rather than answers it. A stored
+      response and an expiry are present.
+- [ ] The code dispatches external side effects only after the work commits,
+      and every consumer is safe to run more than once under redelivery.
+- [ ] The datastore decides state transitions, not a check in application
+      memory that a later write trusts.
+- [ ] No design relies on a distributed lock for correctness without a fencing
+      token that the protected resource itself checks.
+- [ ] User input that reaches a regular expression is length-capped, and no
+      code compiles a pattern from user input on a backtracking engine.
 
 ### Django & DRF
 
@@ -601,18 +621,18 @@ The mitigations, in the order that pays:
       responses.
 - [ ] No custom `EXCEPTION_HANDLER` and no middleware `process_exception`
       converts a `PermissionDenied` or an unhandled exception into a 2xx.
-- [ ] No `select_for_update()` is evaluated outside `transaction.atomic()`, and
-      the locking paths are exercised on the production backend rather than
-      only on SQLite, where the call is a silent no-op.
-- [ ] `get_or_create()` and `update_or_create()` lookups are backed by a
-      matching unique constraint; uniqueness is never enforced by `.exists()`
-      followed by `.create()`.
+- [ ] No code evaluates `select_for_update()` outside `transaction.atomic()`.
+      The tests exercise the locking paths on the production backend rather
+      than only on SQLite, where the call is a silent no-op.
+- [ ] A matching unique constraint backs every `get_or_create()` and
+      `update_or_create()` lookup. No code enforces uniqueness with `.exists()`
+      and a later `.create()`.
 - [ ] Value bounds are `CheckConstraint`s and interval overlaps are exclusion
       constraints, present in `Meta.constraints` and in a migration.
 - [ ] Read-modify-write uses `F()` expressions rather than arithmetic on a
       value read into Python.
-- [ ] Task dispatch and other external effects are registered with
-      `transaction.on_commit()`, and tests use `captureOnCommitCallbacks()` or
-      `TransactionTestCase` so those callbacks actually run.
+- [ ] The code registers task dispatch and other external effects with
+      `transaction.on_commit()`. Tests use `captureOnCommitCallbacks()` or
+      `TransactionTestCase`, so those callbacks actually run.
 - [ ] State changes use a conditional `.update(...)` or a locked read, not
       `get()` → `if` → `save()`.

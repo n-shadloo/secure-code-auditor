@@ -1,33 +1,39 @@
 # Agent and LLM-Facing Backend Interfaces
 
-Backend surfaces exposed to autonomous agents and LLM-driven callers: endpoints
-republished as tools over MCP or a similar protocol, endpoints an agent drives
-on a user's behalf, and any path where model-generated or model-retrieved text
-reaches server-side code. Covers tool-boundary authorization, inbound token
-audience validation, output-as-injection, indirect prompt injection, cost and
-concurrency limits, server-enforced confirmation, runtime-discovered
-components, and tool-call audit. Maps primarily to CWE-862, CWE-863, CWE-441,
-CWE-770, CWE-306, and CWE-1357; relevant OWASP categories include A01:2025,
-A03:2025, A05:2025, A06:2025, and API1, API2, API4, and API5:2023.
+This file covers backend surfaces that autonomous agents and LLM-driven callers
+reach. The first surface is an endpoint republished as a tool over MCP or a
+similar protocol. The second is an endpoint that an agent drives on behalf of a
+user. The third is any path where model-generated or model-retrieved text
+reaches server-side code.
 
-The spine is unchanged. The agent-specific taxonomies — OWASP's Top 10 for
-Agentic Applications (ASI), Top 10 for LLM Applications, and MCP Top 10 — are
-used here as secondary mappings only, stated section by section in "Mapping to
-the LLM and Agentic Top 10s" below, and the MCP Top 10 is a beta document at
-the time of writing; cite it as such rather than as a settled standard.
+The controls in scope are tool-boundary authorization, inbound token audience
+validation, output-as-injection, and indirect prompt injection. They also
+include cost and concurrency limits, server-enforced confirmation,
+runtime-discovered components, and tool-call audit. Maps primarily to CWE-862,
+CWE-863, CWE-441, CWE-770, CWE-306, and CWE-1357. Relevant OWASP categories
+include A01:2025, A03:2025, A05:2025, A06:2025, and API1, API2, API4, and
+API5:2023.
 
-This file owns the **tool-call threat model** — what changes when the caller is
-a program driving the backend on someone's behalf — together with the
-MCP-specific controls, the prohibition on passing an inbound token through to a
-downstream service, and the per-agent cost and concurrency limits no other file
-carries. It restates none of the machinery it reuses:
+The spine is unchanged. This file uses the agent-specific taxonomies as
+secondary mappings only. These taxonomies are OWASP's Top 10 for Agentic
+Applications (ASI), the Top 10 for LLM Applications, and the MCP Top 10.
+"Mapping to the LLM and Agentic Top 10s" below states them section by section.
+The MCP Top 10 is a beta document at the time of writing. Cite it as such
+rather than as a settled standard.
+
+This file owns the **tool-call threat model**: what changes when the caller is
+a program that drives the backend on behalf of someone. It also owns the
+MCP-specific controls and the prohibition on a passthrough of an inbound token
+to a downstream service. It owns the per-agent cost and concurrency limits that
+no other file carries.
+
+This file restates none of the machinery that it reuses.
 `a01-broken-access-control.md` and `authorization-architecture.md` own the
-authorization a tool boundary has to re-run,
-`service-identity-and-secrets.md` owns inbound machine-token validation and
-audience binding, `a05-injection.md` owns the sink that model output or
-retrieved text eventually reaches, `a06-insecure-design.md` owns which flows
-need a limit at all, and `a09-logging-and-alerting.md` owns the audit record a
-tool call has to leave behind.
+authorization a tool boundary has to re-run. `service-identity-and-secrets.md`
+owns inbound machine-token validation and audience binding. `a05-injection.md`
+owns the sink that model output or retrieved text finally reaches.
+`a06-insecure-design.md` owns which flows need a limit at all.
+`a09-logging-and-alerting.md` owns the audit record a tool call has to leave.
 
 ## Contents
 - [Principle](#principle)
@@ -47,20 +53,19 @@ tool call has to leave behind.
 
 ## Principle
 
-An agent calling a backend is a client with four properties that no ordinary
+An agent that calls a backend is a client with four properties that no ordinary
 API consumer has at once. It **holds a credential**, usually granted more
 broadly than the person it acts for. It **acts on someone else's behalf**, so
 the accountable identity is not the identity that authenticated. It **retries
-at machine speed** and is never discouraged by a slow or expensive response.
-And its instructions can be **rewritten by content it reads**, so a document, a
-ticket, or a web page it retrieved can decide what it asks the backend to do
-next.
+at machine speed**, and a slow or expensive response never discourages it. And
+content it reads can **rewrite its instructions**. A document, a ticket, or a
+web page it retrieved can then decide what it asks the backend to do next.
 
 The invariant is: **the effective authority of a tool call is the intersection
-of the tool's granted scope and the invoking user's own permissions; every
+of the tool's granted scope and the invoking user's own permissions. Every
 control that protected the equivalent HTTP endpoint is re-applied explicitly on
-the tool path; and everything a model produces or retrieves is untrusted input
-at every sink it reaches.**
+the tool path. Everything a model produces or retrieves is untrusted input at
+every sink it reaches.**
 
 General defenses:
 
@@ -70,9 +75,10 @@ General defenses:
 - Re-validate the token on every call rather than once per session: signature,
   issuer, expiry, audience, and scope. Accept only tokens whose audience names
   this server, and never forward an inbound token to a downstream service.
-- Enumerate what a republishing layer drops. Moving an endpoint onto a
-  non-HTTP transport silently discards every control attached to the HTTP
-  request/response cycle unless the republisher re-runs it.
+- Enumerate what a republishing layer drops. When you move an endpoint onto a
+  non-HTTP transport, that move silently discards every control attached to the
+  HTTP request/response cycle. The discard holds unless the republisher re-runs
+  each control.
 - Treat model output as untrusted input wherever it reaches a sink — query
   language, shell, template, path, URL fetcher, deserializer. The rules do not
   change; only the source does.
@@ -80,44 +86,47 @@ General defenses:
   spend, tokens, database work, concurrency — per agent identity per window.
 - Make confirmation a server-side state machine. A client-supplied "the user
   approved this" flag is not a control.
-- Move the dependency trust decision from build time to call time wherever
-  components are discovered at runtime.
-- Record each invocation so the episode can be reconstructed afterwards:
-  acting identity, principal, tool, argument shape, granted scope, decision,
-  and outcome.
+- Move the dependency trust decision from build time to call time wherever the
+  system discovers components at runtime.
+- Record each invocation, so that you can reconstruct the episode afterwards.
+  Record the acting identity, the principal, the tool, the argument shape, the
+  granted scope, the decision, and the outcome.
 
 ## Mapping to the LLM and Agentic Top 10s
 
 Two OWASP lists cover this surface, and they answer different questions. The
 **Top 10 for LLM Applications 2026**, published 3 August 2026, ranks what goes
-wrong when a model is a *component* of an application — what it is fed, what
-it emits, and what it costs to run. The **Top 10 for Agentic Applications
-2026**, published 9 December 2025, ranks what goes wrong when a model is an
-*actor* — what it may invoke, under whose identity, and how far the damage
-travels. A backend that publishes tools to an agent is in scope of both, so
-where both apply, cite both.
+wrong when a model is a *component* of an application. That list covers what
+the application feeds the model, what the model emits, and what it costs to
+run. The **Top 10 for Agentic Applications 2026**, published 9 December 2025,
+ranks what goes wrong when a model is an *actor*. That list covers what the
+model may invoke, under whose identity, and how far the damage travels.
 
-Neither displaces the spine. The OWASP Top 10:2025 and API Security Top 10
-2023 identifiers each section already carries are what decide severity and
-routing; these two lists name which agent-specific failure a finding is an
-instance of, which is the thing a reader of an agent design wants and the 2025
-spine has no token for.
+A backend that publishes tools to an agent is in scope of both. Where both
+apply, cite both.
 
-Carry one of these tokens only where the project is genuinely being held to
-that framing — an AI-specific security review, a customer questionnaire built
-on one of these lists, an internal standard that names them. The rule
-`00-methodology-and-severity.md` states for ASVS applies here unchanged: CWE
-and the OWASP mapping are not optional, and this one is.
+Neither list displaces the spine. The OWASP Top 10:2025 and API Security Top 10
+2023 identifiers that each section already carries decide severity and routing.
+These two lists name which agent-specific failure a finding is an instance of.
+A reader of an agent design wants that name, and the 2025 spine has no token
+for it.
+
+Carry one of these tokens only where the project is genuinely held to that
+framing. Such a framing is an AI-specific security review, a customer
+questionnaire built on one of these lists, or an internal standard that names
+them. The rule that `00-methodology-and-severity.md` states for ASVS applies
+here unchanged: CWE and the OWASP mapping are not optional, and this one is.
 
 **Cite the entry token, and pin the edition on the LLM one** — `LLM03:2026`,
-`ASI03`. Below the entry token these documents are prose: prevention
-checklists and example scenarios rewritten between editions, with no stable
-identifier to cite. The token itself is not stable either. The 2026 LLM
-edition renumbered against 2025, moving Excessive Agency from LLM06 to LLM03
-and Improper Output Handling from LLM05 to LLM10, so an unpinned `LLM06` now
-names a different entry than it did when it was written. The Agentic list
-publishes no year inside its tokens; `ASI01` through `ASI10` are cited bare
-and dated by the edition named above.
+`ASI03`. Below the entry token these documents are prose. They hold prevention
+checklists and example scenarios that each edition rewrites, with no stable
+identifier to cite. The token itself is not stable either. The 2026 LLM edition
+renumbered against 2025. It moved Excessive Agency from LLM06 to LLM03, and
+Improper Output Handling from LLM05 to LLM10. An unpinned `LLM06` therefore now
+names a different entry than it did at the time of writing.
+
+The Agentic list publishes no year inside its tokens. Cite `ASI01` through
+`ASI10` bare, and date them by the edition named above.
 
 | Section in this file | LLM Top 10 2026 | Agentic Top 10 2026 |
 |---|---|---|
@@ -132,40 +141,45 @@ and dated by the edition named above.
 | Tool-call audit records | — | ASI10 Rogue Agents, in the one part a backend owns |
 
 **The overlaps are corroboration, not conflict.** LLM03:2026 is the LLM entry
-for three of the rows, because that list treats every failure to bound an
-agent's authority as one entry while the Agentic list separates it into tool
-misuse, identity abuse, and trust exploitation. That is where citing both
-earns its place: the LLM token names the class, the ASI token names which half
-of it failed. ASI03 covers both the token check and the intersection rule and
-has no counterpart at all on the LLM list, which carries no identity entry —
-the largest single gap between the two for a backend. Cost and concurrency is
-the one clean pair, LLM06:2026 against ASI08.
+for three of the rows. That list treats every failure to bound an agent's
+authority as one entry. The Agentic list separates the same failure into tool
+misuse, identity abuse, and trust exploitation. That difference is where a
+citation of both earns its place. The LLM token names the class, and the ASI
+token names which half of it failed.
+
+ASI03 covers both the token check and the intersection rule, and it has no
+counterpart at all on the LLM list. That list carries no identity entry, which
+is the largest single gap between the two for a backend. Cost and concurrency
+is the one clean pair, LLM06:2026 against ASI08.
 
 **Three entries hold on this surface without owning a section here.**
 LLM02:2026 Sensitive Information Disclosure is the impact behind several rows
-above rather than a defect of its own; the controls are the queryset scoping
+above rather than a defect of its own. Its controls are the queryset scoping
 and serializer field sets in `api-drf-specific.md`, "Serializer exposure and
 mass assignment (API3)", and the personal-data rules in
-`data-lifecycle-and-privacy.md`. LLM08:2026 Hidden Context Exposure — the 2026
-rename and rescope of what 2025 called System Prompt Leakage — is a design
-principle rather than a control: treat everything placed in a model's context,
-system prompt and tool schemas included, as discoverable by anyone who can
-prompt the model, which is why no credential belongs in any of it
-(`service-identity-and-secrets.md`, "Where secrets live and how they reach the
-process"). ASI01 Agent Goal Hijack is the outcome the retrieved-content
-section defends against rather than a control of its own: the hijack happens
-at the model layer, and every backend instrument against it is already a row
-above — the intersection rule bounds what a hijacked agent reaches, and egress
-allowlisting bounds what leaves.
+`data-lifecycle-and-privacy.md`.
 
-**Named and excluded rather than mapped**, extending "Out of backend scope"
-below to both lists:
+LLM08:2026 Hidden Context Exposure is the 2026 rename and rescope of what 2025
+called System Prompt Leakage. It is a design principle rather than a control.
+Treat everything placed in a model's context as discoverable by anyone who can
+prompt the model, and include the system prompt and the tool schemas. No
+credential therefore belongs in any of it (`service-identity-and-secrets.md`,
+"Where secrets live and how they reach the process").
+
+ASI01 Agent Goal Hijack is the outcome the retrieved-content section defends
+against, rather than a control of its own. The hijack happens at the model
+layer, and every backend instrument against it is already a row above. The
+intersection rule bounds what a hijacked agent reaches, and egress allowlisting
+bounds what leaves.
+
+**Named and excluded rather than mapped.** The list below extends "Out of
+backend scope" to both lists:
 
 - **LLM05:2026 Data and Model Poisoning** — training, fine-tuning, and
   embedding integrity.
 - **LLM07:2026 Misinformation** — output correctness is a model property. A
-  backend can require verification before acting on model output; it cannot
-  make the output true.
+  backend can require verification before it acts on model output, but it
+  cannot make the output true.
 - **LLM09:2026 Vector and Embedding Weaknesses** — the authorization boundary
   around retrieval is in scope and mapped above; embedding behavior and
   retrieval quality are not.
@@ -174,39 +188,39 @@ below to both lists:
 - **ASI10 Rogue Agents** — behavioral monitoring and fleet governance are
   operational, which is why the audit record is the only row it appears on.
 
-The MCP Top 10 tokens some sections below also carry are a third list and a
-beta document. They stay secondary, as the opening says, and are not part of
-this mapping.
+Some sections below also carry MCP Top 10 tokens. Those tokens are a third list
+and a beta document. They stay secondary, as the opening says, and they are not
+part of this mapping.
 
 ## Django & DRF implementation
 
-There is no secure-by-default way to publish a Django or DRF application as an
+No secure-by-default way exists to publish a Django or DRF application as an
 agent tool surface. **Package decision (1 Aug 2026): no MCP integration package
-clears the recommendation gate**; the dispositions are recorded in
-`security-hardening-libraries.md`, "Agent and MCP interfaces". The preferred
-construction is DRF's own authentication, permission, filter, pagination, and
-throttle classes plus a hand-written audience-validating authentication class,
-in front of a thin tool layer that adds no authority of its own.
+clears the recommendation gate**. `security-hardening-libraries.md`, "Agent and
+MCP interfaces" records the dispositions. The preferred construction is DRF's
+own authentication, permission, filter, pagination, and throttle classes, with
+a hand-written authentication class that validates the audience. Put that
+construction in front of a thin tool layer that adds no authority of its own.
 
 Two properties decide most of the review:
 
-1. **Which identity the tool surface runs as.** A tool mounted under a service
-   account or a superuser token has already lost the intersection rule before
-   any view code runs, because `request.user` is no longer the invoking human.
-2. **Whether the tool path re-enters DRF's pipeline.** Publishing a viewset as
-   a tool does not guarantee that its `authentication_classes`,
-   `permission_classes`, `filter_backends`, `pagination_class`, or throttles
-   execute on that path. Confirm it in the integration's source, not its
-   documentation.
+1. **Which identity the tool surface runs as.** A tool that you mount under a
+   service account or a superuser token has already lost the intersection rule
+   before any view code runs. `request.user` is no longer the invoking human.
+2. **Whether the tool path re-enters DRF's pipeline.** When you publish a
+   viewset as a tool, that step does not guarantee that its
+   `authentication_classes`, `permission_classes`, `filter_backends`,
+   `pagination_class`, or throttles execute on that path. Confirm this in the
+   source of the integration, not in its documentation.
 
 ## What survives when a DRF view is republished as a tool
 
-Enumerate the controls one at a time for every viewset exposed as a tool. None
-of them can be assumed.
+Enumerate the controls one at a time for every viewset that you expose as a
+tool. Assume none of them.
 
-`django-mcp-server` (0.5.7, 10 Oct 2025) publishes DRF viewsets as MCP tools
-with `authentication_classes`, `permission_classes`, `filter_backends`, and
-`pagination_class` **disabled by default**, on the stated reasoning that
+`django-mcp-server` (0.5.7, 10 Oct 2025) publishes DRF viewsets as MCP tools.
+It leaves `authentication_classes`, `permission_classes`, `filter_backends`,
+and `pagination_class` **disabled by default**. Its stated reasoning is that
 MCP-level authentication replaces them. Each consequence is a separate finding:
 
 - object-level checks that ran through `check_object_permissions()` no longer
@@ -215,17 +229,18 @@ MCP-level authentication replaces them. Each consequence is a separate finding:
   a filtered "my documents" view becomes an unfiltered one;
 - pagination is gone and `self.paginator` becomes `None`, so a list tool
   returns the whole table instead of a page of it;
-- view-level throttling does not carry over; and
-- serializer field allowlists survive only where the same serializer is reused
-  — a tool-specific serializer is a new BOPLA surface
+- view-level throttling does not reach the tool path; and
+- serializer field allowlists survive only where the tool reuses the same
+  serializer. A tool-specific serializer is a new BOPLA surface
   (`api-drf-specific.md`, "Serializer exposure and mass assignment (API3)").
 
 `django-rest-framework-mcp` (0.1.0a4) defaults the other way: authentication
 and permissions apply unless `BYPASS_VIEWSET_AUTHENTICATION` or
 `BYPASS_VIEWSET_PERMISSIONS` is set. Its `RETURN_200_FOR_ERRORS` flag, also off
 by default, returns HTTP 200 on an authentication or permission failure. That
-does not create the failure, but it hides it from any alerting keyed on 4xx
-rates (`a09-logging-and-alerting.md`, "Log the right security events").
+flag does not create the failure. But it hides the failure from any alert that
+keys on 4xx rates (`a09-logging-and-alerting.md`, "Log the right security
+events").
 
 ```python
 # Wrong: the tool layer inherits nothing and the queryset is unscoped, so the
@@ -250,21 +265,23 @@ class OrderToolViewSet(ModelViewSet):
         return Order.objects.filter(owner=self.request.user)
 ```
 
-**Write-time.** When generating an MCP tool over a Django application, state
+**Write-time.** When you generate an MCP tool over a Django application, state
 `authentication_classes`, `permission_classes`, `filter_backends`,
-`pagination_class`, and `throttle_classes` on the tool path itself rather than
-relying on the viewset they were declared on, because the integration decides
-whether that pipeline runs at all and the one in widest use disables four of
-them by default. Authenticate with a class that validates `aud` against this
-server's own identifier on every invocation, and resolve `request.user` to the
-invoking human rather than to the process credential, so `get_queryset()` can
-be scoped to the intersection of the scope granted to the tool and the
-permissions of that user. Where the tool does anything irreversible, issue and
-consume a server-side confirmation token bound to the action and its
-parameters in the same change, because a `confirmed` flag in the request body
-is the client asserting its own approval.
+`pagination_class`, and `throttle_classes` on the tool path itself. Do not rely
+on the viewset that declared them. The integration decides whether that
+pipeline runs at all, and the integration in widest use disables four of them
+by default.
 
-Severity is Critical where the tool spans tenants: the failure is BOLA at the
+Authenticate with a class that validates `aud` against this server's own
+identifier on every invocation. Resolve `request.user` to the invoking human
+rather than to the process credential. `get_queryset()` can then scope to the
+intersection of the scope granted to the tool and the permissions of that user.
+Where the tool does anything irreversible, issue and consume a server-side
+confirmation token in the same change. Bind that token to the action and its
+parameters. A `confirmed` flag in the request body is only the client's
+assertion of its own approval.
+
+Severity is Critical where the tool spans tenants. The failure is BOLA at the
 scale of the whole table rather than one object
 (`a01-broken-access-control.md`, "IDOR / BOLA"). Maps to CWE-862, CWE-1220;
 API1, API3, and API4:2023; LLM03:2026 Excessive Agency; ASI02 Tool Misuse and
@@ -272,26 +289,29 @@ Exploitation.
 
 ## Inbound token validation and the passthrough prohibition
 
-A bearer token presented by an agent is not a session. Validate it on every
+A bearer token that an agent presents is not a session. Validate it on every
 invocation — signature, algorithm, `iss`, `exp`, and `aud` — and reject any
 token whose audience does not name this server. The MCP authorization
 specification (revision 2026-07-28, which superseded 2025-11-25 on 28 July
-2026) requires both, unchanged across the two revisions: a server accepts only
+2026) requires both, unchanged across the two revisions. A server accepts only
 tokens issued for itself, and it must not pass through the token it received
-from the client. Audience binding follows RFC 8707. The current revision adds
-one duty the previous one did not place on the resource server: publishing
-RFC 9728 protected-resource metadata — the document a client reads to discover
-the authorization server and the audience to ask for — is now mandatory rather
-than optional. A token that is insufficient rather than invalid is refused
-with a 403 naming the scope required and where that metadata lives, and scope
-hierarchies count when deciding whether a token is sufficient.
+from the client. Audience binding follows RFC 8707.
+
+The current revision adds one duty the previous one did not place on the
+resource server. RFC 9728 protected-resource metadata is now mandatory rather
+than optional. That metadata is the document a client reads to discover the
+authorization server and the audience to ask for. Refuse a token that is
+insufficient rather than invalid with a 403. Name the required scope and the
+location of that metadata in the refusal. Scope hierarchies count when you
+decide whether a token is sufficient.
 
 Passthrough is a confused-deputy vulnerability (CWE-441). The downstream
-service sees a valid token, cannot tell that the caller is an intermediary, and
-applies the token's full authority to a request the intermediary shaped.
-Replace it with a separately issued downstream credential — RFC 8693 token
-exchange, a stored service credential, or a platform-managed identity — scoped
-to the downstream resource and to the acting principal.
+service sees a valid token and cannot detect that the caller is an
+intermediary. It applies the token's full authority to a request the
+intermediary shaped. Replace the passthrough with a separately issued
+downstream credential, scoped to the downstream resource and to the acting
+principal. That credential comes from RFC 8693 token exchange, a stored service
+credential, or a platform-managed identity.
 
 ```python
 # Wrong: audience unchecked, the principal cached for the session, and the
@@ -317,27 +337,28 @@ downstream = exchange_token(
 billing.get("/invoices", headers={"Authorization": f"Bearer {downstream}"})
 ```
 
-Algorithm pinning, key rotation, lifetimes, claim staleness, and revocation are
-in `a07-authentication-failures.md`, "JWT"; the ordered claim-by-claim
-verification, JWKS caching and rotation, and the RFC 8693 exchange mechanics
-are in `service-identity-and-secrets.md`. Both apply unchanged. What is
-specific here is the audience check on every call and the passthrough
-prohibition. Maps to CWE-287, CWE-345, CWE-441; API2:2023; ASI03 Identity and
-Privilege Abuse; MCP01 Token Mismanagement and Secret Exposure, MCP07
-Insufficient Authentication and Authorization.
+`a07-authentication-failures.md`, "JWT" owns algorithm pinning, key rotation,
+lifetimes, claim staleness, and revocation. `service-identity-and-secrets.md`
+owns the ordered claim-by-claim verification, JWKS caching and rotation, and
+the RFC 8693 exchange mechanics. Both apply unchanged. What is specific here is
+the audience check on every call and the passthrough prohibition. Maps to
+CWE-287, CWE-345, CWE-441; API2:2023; ASI03 Identity and Privilege Abuse; MCP01
+Token Mismanagement and Secret Exposure, MCP07 Insufficient Authentication and
+Authorization.
 
 ## Effective authority: tool scope intersected with user permissions
 
 The authority of a tool call is the intersection of the scope granted to the
-agent and the permissions of the user it acts for — never the union, and never
-whichever is larger. Two checks are required on every invocation, and neither
-substitutes for the other:
+agent and the permissions of the user it acts for. It is never the union, and
+never the larger of the two. Every invocation requires two checks, and neither
+one substitutes for the other:
 
-1. does the tool hold the scope for this operation, and
-2. may this user perform it on this object?
+1. whether the tool holds the scope for this operation, and
+2. whether this user may perform it on this object.
 
-Dropping the first turns a narrowly-scoped integration into a general-purpose
-one. Dropping the second is BOLA with an agent in front of it.
+If you drop the first check, a narrowly-scoped integration becomes a
+general-purpose one. If you drop the second check, the result is BOLA with an
+agent in front of it.
 
 ```python
 # Correct: both halves, in order, before any object is touched.
@@ -349,36 +370,36 @@ def get_queryset(self):
     return Order.objects.filter(owner=self.request.user)
 ```
 
-Queryset scoping covers list and detail alike, and the object hook does not run
-on list or create paths at all (`authorization-architecture.md`, "DRF: where
-the object check actually runs"). Default-deny for the tool surface belongs
-where the rest of it lives: a URLconf audit test that treats a tool route with
-no explicit decision as a failure, and an authorization matrix that carries the
-tool path as its own row rather than assuming it inherits the HTTP route's
-coverage (`authorization-architecture.md`, "Default-deny architecture" and
-"Authorization test suites").
+Queryset scoping covers list and detail alike. The object hook does not run on
+list or create paths at all (`authorization-architecture.md`, "DRF: where the
+object check actually runs"). Default-deny for the tool surface belongs where
+the rest of it lives. That place is a URLconf audit test that treats a tool
+route with no explicit decision as a failure. It is also an authorization
+matrix that carries the tool path as its own row. Do not assume that the tool
+path inherits the HTTP route's coverage (`authorization-architecture.md`,
+"Default-deny architecture" and "Authorization test suites").
 
-This is the impersonation invariant with a machine delegate: the human remains
+This is the impersonation invariant with a machine delegate. The human remains
 the accountable identity, the delegated capability is narrower than that
-human's own account, and the episode is reconstructable afterwards. The
-machinery for scope embedding, time-boxing, and audit identity is in
+human's own account, and the episode is reconstructable afterwards.
 `privileged-access-and-impersonation.md`, "Impersonation: design requirements"
-and is not restated here. Maps to CWE-862, CWE-863; API1 and API5:2023; ASI03
+owns the machinery for scope embedding, time-boxing, and audit identity. This
+file does not restate it. Maps to CWE-862, CWE-863; API1 and API5:2023; ASI03
 Identity and Privilege Abuse; LLM03:2026 Excessive Agency.
 
 ## Model output as an injection source
 
 Model-generated text is untrusted input. Every rule in `a05-injection.md`
 applies unchanged when the string came from a model rather than a request body.
-The only new thing is the source, and the only new risk is a reviewer treating
-"our own model wrote it" as provenance.
+The only new thing is the source, and the only new risk is a reviewer who
+treats "our own model wrote it" as provenance.
 
-The sink inventory that file keeps — every interpreter a request can reach, and
-which reference owns each one — is in `a05-injection.md`, "Tracing input to a
-sink". An agent design is the case that most needs it whole, because a model
-can emit input for any row in it from a single tool call.
+`a05-injection.md`, "Tracing input to a sink" keeps the sink inventory: every
+interpreter a request can reach, and which reference owns each one. An agent
+design is the case that most needs that inventory whole. A model can emit input
+for any row in it from a single tool call.
 
-Applying unchanged from `a05-injection.md`:
+These rules apply unchanged from `a05-injection.md`:
 
 - parameterized queries only — never `.raw()`, `.extra()`, `RawSQL`, or
   `cursor.execute()` with model output interpolated in ("SQL and the ORM");
@@ -410,50 +431,51 @@ LLM10:2026 Improper Output Handling; ASI05 Unexpected Code Execution.
 
 When a backend pulls a document, ticket, email, or web page into a model's
 context, that content can carry instructions. This is indirect prompt
-injection, and a backend cannot fix it at the model layer: "separate
-instructions from data" is a model-layer aspiration, not a server-side control,
-and should not be written up as one.
+injection, and a backend cannot fix it at the model layer. "Separate
+instructions from data" is a model-layer aspiration, not a server-side control.
+Do not report it as one.
 
-What a backend can actually enforce, in order of leverage:
+A backend can actually enforce four controls, in order of leverage:
 
 1. **The intersection rule above.** Injected instructions reach only what the
    invoking user could already reach, which turns a context-exfiltration attack
-   into a caller reading their own data.
+   into a caller who reads their own data.
 2. **Egress allowlisting.** An exfiltration URL assembled from context still
    has to resolve and connect. Allowlist outbound destinations from the
    tool-executing process and treat every model-influenced fetch as SSRF
    (`a01-broken-access-control.md`, "SSRF").
-3. **Provenance labeling.** Record the trust level of retrieved content and
+3. **Provenance labeling.** Record the trust level of retrieved content, and
    refuse to let low-trust content trigger a high-privilege tool. A ticket body
-   submitted by an anonymous reporter is not the same input class as a record
-   written by the tenant's own administrator.
+   that an anonymous reporter submitted is not the same input class as a record
+   that the tenant's own administrator wrote.
 4. **Sink controls.** Everything in "Model output as an injection source" above
    applies to retrieved content as well as generated content.
 
-EchoLeak (CVE-2025-32711) is the reference incident: instructions hidden in a
+EchoLeak (CVE-2025-32711) is the reference incident. Instructions hidden in a
 retrieved email caused zero-click exfiltration of the user's context through an
-outbound link, with no user action beyond receiving the message. It was fixed
-by the vendor server-side. The exfiltration path, not the injection, is where a
-backend has leverage.
+outbound link. The user took no action other than receipt of the message. The
+vendor fixed it server-side. The exfiltration path, not the injection, is where
+a backend has leverage.
 
-RAG and vector-store internals are out of scope; only the authorization
-boundary around retrieval is in scope. The general form of that boundary —
-authorization metadata written onto each indexed document, a mandatory
-server-derived filter at query time, and reindexing when permissions change —
-is in `authorization-architecture.md`, "Search indexes and denormalized
-copies". What is agent-specific here is that a tool republishing retrieval must
-also intersect the tool's scope with the invoking user's own permissions.
-Maps to CWE-77; A01:2025; LLM01:2026 Prompt Injection; ASI06 Memory and
-Context Poisoning. Assign severity by what the injected instruction can reach —
+RAG and vector-store internals are out of scope. Only the authorization
+boundary around retrieval is in scope. `authorization-architecture.md`, "Search
+indexes and denormalized copies" holds the general form of that boundary. That
+form is authorization metadata on each indexed document, a mandatory
+server-derived filter at query time, and a reindex when permissions change.
+What is agent-specific here is that a tool that republishes retrieval must also
+intersect the tool's scope with the invoking user's own permissions.
+
+Maps to CWE-77; A01:2025; LLM01:2026 Prompt Injection; ASI06 Memory and Context
+Poisoning. Assign severity by what the injected instruction can reach —
 Critical when it can reach a privileged tool or an unrestricted egress path.
 
 ## Cost and concurrency limits, not only request rate
 
 A request-per-minute cap and a cost cap are different controls, and an agent
-defeats the first without ever breaching it. A retry loop runs for hours under
-any per-user rate limit; a denial-of-wallet attack stays comfortably inside one
-while exhausting an inference or export budget. Bound the resource actually
-consumed:
+defeats the first without a breach of it. A retry loop runs for hours under any
+per-user rate limit. A denial-of-wallet attack stays comfortably inside one
+limit while it exhausts an inference budget or an export budget. Bound the
+resource that the caller actually consumes:
 
 - **cost or spend** per agent identity per window — model tokens, inference
   spend, exported rows, database work;
@@ -461,27 +483,27 @@ consumed:
   identity, enforced before the expensive work starts; and
 - **request rate**, which remains necessary and is not sufficient.
 
-Key all three on the resolved agent or principal identity. **A throttle keyed
-on IP is ineffective here**: an agent fleet behind one egress address shares a
-single key, so either one caller consumes the whole allowance or the limit is
-set high enough to protect nothing. A `SimpleRateThrottle` subclass on a tool
-path should return an identity-derived cache key. The general position on DRF
-throttling — a quota tool, not a security control — is unchanged
-(`api-drf-specific.md`, "Throttling as quota, not security (API4)" and
-`a06-insecure-design.md`, "Rate limiting and anti-automation").
+Key all three on the resolved agent identity or principal identity. **A
+throttle keyed on IP is ineffective here.** An agent fleet behind one egress
+address shares a single key. One caller then consumes the whole allowance, or
+the limit is high enough to protect nothing. A `SimpleRateThrottle` subclass on
+a tool path should return an identity-derived cache key. The general position
+on DRF throttling is unchanged: a quota tool, not a security control. See
+`api-drf-specific.md`, "Throttling as quota, not security (API4)" and
+`a06-insecure-design.md`, "Rate limiting and anti-automation".
 
-Return HTTP 429 with `Retry-After` when a limit is hit, and fail closed on the
-cost check specifically: a cache outage must not silently remove a spend cap.
-Maps to CWE-770, CWE-400; API4:2023; LLM06:2026 Unbounded Consumption; ASI08
-Cascading Failures.
+Return HTTP 429 with `Retry-After` when a caller hits a limit. Fail closed on
+the cost check specifically: a cache outage must not silently remove a spend
+cap. Maps to CWE-770, CWE-400; API4:2023; LLM06:2026 Unbounded Consumption;
+ASI08 Cascading Failures.
 
 ## Server-enforced confirmation for irreversible actions
 
 "Ask the user before doing this" is a server-side state machine, not a prompt
 instruction and not a client courtesy. A tool that performs an irreversible or
-high-impact action — issuing a refund, deleting a dataset, messaging on a
-customer's behalf, changing a permission — returns a pending state and runs
-only against a second, separately authorized step.
+high-impact action returns a pending state. Such an action is a refund, a
+dataset deletion, a message on behalf of a customer, or a permission change.
+The tool runs only against a second, separately authorized step.
 
 ```python
 # Wrong: the client asserts that a human approved, and the server believes it.
@@ -512,22 +534,22 @@ Human-Agent Trust Exploitation.
 ## Runtime-discovered tools and servers
 
 The gate in `a03-software-supply-chain.md`, "Third-party dependency vetting"
-assumes the dependency set is fixed when the artifact is built. An agent can
-discover and load a tool or a server at call time, which moves the trust
-decision to a point none of the build-time machinery reaches.
+assumes that the dependency set is fixed when the build produces the artifact.
+An agent can discover and load a tool or a server at call time. That moves the
+trust decision to a point none of the build-time machinery reaches.
 
-- Pin the servers and tools a backend will connect to. A discovery mechanism
-  that connects to whatever it finds has no gate at all.
-- Require signed provenance or an explicit allowlist entry before a
-  runtime-discovered server is used. Treat an unknown server the way the gate
-  treats an unvetted package: refuse, rather than warn and proceed.
-- **Treat tool descriptions as untrusted input.** A tool's name, description,
-  and parameter documentation are attacker-influenced text that reaches a
-  model's context. They are content, not configuration.
-- Connecting outward is itself a code-execution surface. CVE-2025-6514
-  (CWE-78, fixed in `mcp-remote` 0.1.16) was OS command execution triggered by
-  a crafted response from the server being connected to, not by anything the
-  connecting client sent.
+- Pin the servers and tools a backend connects to. A discovery mechanism that
+  connects to every server it finds has no gate at all.
+- Require signed provenance or an explicit allowlist entry before you use a
+  runtime-discovered server. Treat an unknown server the way the gate treats an
+  unvetted package: refuse it, rather than warn and proceed.
+- **Treat tool descriptions as untrusted input.** The name, the description,
+  and the parameter documentation of a tool are attacker-influenced text that
+  reaches a model's context. They are content, not configuration.
+- An outward connection is itself a code-execution surface. CVE-2025-6514
+  (CWE-78, fixed in `mcp-remote` 0.1.16) was OS command execution. A crafted
+  response from the server at the far end triggered it, and not anything the
+  client sent.
 
 Maps to CWE-1357; A03:2025; LLM04:2026 Supply Chain; ASI04 Agentic Supply
 Chain Vulnerabilities; MCP04 Software Supply Chain Attacks, MCP09 Shadow MCP
@@ -535,27 +557,32 @@ Servers.
 
 ## Tool-call audit records
 
-A tool invocation must be reconstructable afterwards: agent identity and acting
-human, which tool, the shape of the arguments, the scope granted, the decision,
-a result summary, and start and stop timestamps — written where the caller
-cannot rewrite it. This is the audit guarantee in
-`privileged-access-and-impersonation.md`, "Impersonation: design requirements",
-applied to a machine delegate; the durability requirements are identical.
+A tool invocation must be reconstructable afterwards. Record the agent
+identity, the acting human, and which tool ran. Record also the shape of the
+arguments, the scope granted, the decision, a result summary, and the start and
+stop timestamps. Write that record where the caller cannot rewrite it. This is
+the audit guarantee in `privileged-access-and-impersonation.md`,
+"Impersonation: design requirements", applied to a machine delegate. The
+durability requirements are identical.
 
-The tension specific to this surface is that reconstructability pulls toward
-logging arguments and results verbatim, and arguments and results routinely
-carry credentials and personal data. Resolve it in favor of
-`a09-logging-and-alerting.md`, "Don't log secrets": record argument shape,
-field names, and digests rather than values, redact known-sensitive fields, and
-neutralize control characters in any model-supplied string before it reaches a
-log line ("Log injection and integrity"). Denials are the more valuable half of
-the record — log the refused call, not only the executed one. Maps to CWE-778,
-CWE-532; A09:2025; ASI10 Rogue Agents; MCP08 Lack of Audit and Telemetry.
+One tension is specific to this surface. Reconstructability asks for verbatim
+arguments and results, and arguments and results routinely carry credentials
+and personal data. Resolve that tension in favor of
+`a09-logging-and-alerting.md`, "Don't log secrets". Record the argument shape,
+the field names, and digests rather than values. Redact known-sensitive fields,
+and neutralize control characters in any model-supplied string before it
+reaches a log line ("Log injection and integrity"). Denials are the more
+valuable half of the record, so log the refused call and not only the executed
+one.
+
+Maps to CWE-778, CWE-532; A09:2025; ASI10 Rogue Agents; MCP08 Lack of Audit and
+Telemetry.
 
 ## Out of backend scope
 
-Mirroring `00-methodology-and-severity.md`, "What to exclude" — do not search
-backend code for these, and do not report their absence as a backend finding:
+This list mirrors `00-methodology-and-severity.md`, "What to exclude". Do not
+search backend code for these items, and do not report their absence as a
+backend finding:
 
 - rogue-agent behavioral monitoring, kill switches, and agent-fleet governance,
   which are operational controls rather than server-side code;
@@ -570,41 +597,43 @@ backend code for these, and do not report their absence as a backend finding:
 
 ### Stack-neutral
 
-- [ ] Every tool call resolves the human principal from a validated token and
-      applies the tool's scope *and* that principal's own permissions; neither
-      is inferred from the other.
-- [ ] Inbound tokens are validated on every invocation for signature, issuer,
-      expiry, audience against this server's own resource identifier, and
-      scope; no inbound token is forwarded to a downstream service.
-- [ ] The server publishes RFC 9728 protected-resource metadata, and a token
-      that is insufficient rather than invalid is refused with a 403 naming
-      the required scope and that metadata location.
-- [ ] Every control the equivalent HTTP endpoint carried is explicitly
-      re-applied on the tool path, and the enumeration was done against the
-      republishing layer's source rather than its documentation.
+- [ ] Every tool call resolves the human principal from a validated token. It
+      applies the tool's scope *and* that principal's own permissions, and
+      infers neither from the other.
+- [ ] The server validates inbound tokens on every invocation for signature,
+      issuer, expiry, audience, and scope. The audience check names this
+      server's own resource identifier. No inbound token reaches a downstream
+      service.
+- [ ] The server publishes RFC 9728 protected-resource metadata. A 403 refuses
+      a token that is insufficient rather than invalid, and names the required
+      scope and that metadata location.
+- [ ] The tool path explicitly re-applies every control the equivalent HTTP
+      endpoint carried. The enumeration ran against the republishing layer's
+      source rather than its documentation.
 - [ ] Model-generated and retrieved text passes the same sink controls as any
-      other untrusted input, including generated paths, URLs, and serialized
-      data.
+      other untrusted input, and that covers generated paths, URLs, and
+      serialized data.
 - [ ] Low-trust retrieved content cannot trigger a privileged tool, and
       outbound destinations are allowlisted from the tool-executing process.
 - [ ] Cost, spend, and concurrency caps exist per agent identity alongside
       request-rate limits, and the cost check fails closed.
 - [ ] Irreversible actions require a server-issued, single-use confirmation
-      token bound to the action and its parameters; no client-supplied
-      confirmation flag is trusted.
+      token bound to the action and its parameters. The server trusts no
+      client-supplied confirmation flag.
 - [ ] Runtime-discovered servers and tools require signed provenance or an
-      allowlist entry, and tool descriptions are treated as untrusted input.
-- [ ] Invocations and denials are recorded reconstructably in a store the
+      allowlist entry, and the review treats tool descriptions as untrusted
+      input.
+- [ ] The server records invocations and denials reconstructably in a store the
       caller cannot rewrite, with values reduced to shapes and digests.
 
 ### Django & DRF
 
 - [ ] The tool surface does not run under a service account or superuser token
       that makes `request.user` something other than the invoking human.
-- [ ] For every viewset exposed as a tool, `authentication_classes`,
-      `permission_classes`, `filter_backends`, `pagination_class`,
-      `throttle_classes`, and the serializer field sets are each set
-      explicitly on the tool path.
+- [ ] For every viewset exposed as a tool, the tool path sets six items
+      explicitly. These are `authentication_classes`, `permission_classes`,
+      `filter_backends`, `pagination_class`, `throttle_classes`, and the
+      serializer field sets.
 - [ ] If `django-mcp-server` is installed, all four of its default-disabled
       controls are re-enabled and `self.paginator` is not `None` on a list tool.
 - [ ] If `django-rest-framework-mcp` is installed,
@@ -613,6 +642,6 @@ backend code for these, and do not report their absence as a backend finding:
 - [ ] No admin-exposing or shell-exposing MCP package is installed in
       production.
 - [ ] Tool routes appear in the URLconf audit test and in the authorization
-      test matrix as their own rows, not as assumed inheritance from the HTTP
-      route.
+      test matrix as their own rows. The matrix does not assume that they
+      inherit from the HTTP route.
 - [ ] Throttles on tool paths key on the resolved identity, never on IP.

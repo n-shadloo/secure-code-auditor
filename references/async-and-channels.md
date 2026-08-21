@@ -1,20 +1,24 @@
 # Async, ASGI, and Channels
 
-Concurrency and long-lived connection security for Django, DRF, and Channels.
-Covers sync/async boundaries, request-context isolation, event-loop blocking,
-WebSocket origin checks, and per-connection authentication and authorization.
-Maps primarily to CWE-362, CWE-400, CWE-488, and CWE-862; relevant OWASP
-categories include A01:2025 and API1, API4, and API5:2023.
+This file covers concurrency security and long-lived connection security for
+Django, DRF, and Channels. The controls in scope are sync/async boundaries,
+request-context isolation, the blocked event loop, WebSocket origin checks, and
+per-connection authentication and authorization. Maps primarily to CWE-362,
+CWE-400, CWE-488, and CWE-862. Relevant OWASP categories include A01:2025 and
+API1, API4, and API5:2023.
 
-This file owns the **long-lived or concurrent connection** — the sync/async
-boundary and what crosses it, per-request context that must not become
-per-process state, the blocked event loop, and the WebSocket from handshake to
-close, including the origin check, the authentication, and the per-message
-authorization and limits that no HTTP middleware runs on its behalf. The rules
-those controls express belong elsewhere: `authorization-architecture.md` owns
-the privilege model, `a01-broken-access-control.md` owns the access-control
-failure itself, `api-drf-specific.md` owns the ordinary request/response
-surface, `a10-exceptional-conditions.md` owns the race mechanics, and
+This file owns the **long-lived or concurrent connection**. That scope is the
+sync/async boundary and what crosses it, per-request context that must not
+become per-process state, and the blocked event loop. It also covers the
+WebSocket from handshake to close. That scope holds the origin check, the
+authentication, and the per-message authorization and limits that no HTTP
+middleware runs on its behalf.
+
+The rules those controls express belong elsewhere.
+`authorization-architecture.md` owns the privilege model.
+`a01-broken-access-control.md` owns the access-control failure itself.
+`api-drf-specific.md` owns the ordinary request/response surface.
+`a10-exceptional-conditions.md` owns the race mechanics.
 `deployment-and-runtime.md` owns the ASGI server and the proxy in front of it.
 
 ## Contents
@@ -30,45 +34,48 @@ surface, `a10-exceptional-conditions.md` owns the race mechanics, and
 
 ## Principle
 
-Concurrent requests and long-lived connections break the assumption that one
-thread, global, or connection-local value belongs to one principal for the
-duration of work. Execution can interleave, migrate between workers, or outlive
-the request that created it. The invariant is: **identity, tenant, and
-authorization context must be bound to the current unit of work, propagated
-deliberately, and re-checked whenever a long-lived channel acts on a resource.**
+Concurrent requests and long-lived connections break one assumption. That
+assumption is that one thread, global, or connection-local value belongs to one
+principal for the duration of the work. Execution can interleave, migrate
+between workers, or outlive the request that created it. The invariant is:
+**identity, tenant, and authorization context must be bound to the current unit
+of work and propagated deliberately. They must be re-checked whenever a
+long-lived channel acts on a resource.**
 
 General defenses:
 
-- Pass security context explicitly. If ambient context is unavoidable, use the
-  runtime's task-local mechanism, set and reset it in a `finally` block, and do
-  not let detached tasks inherit a request object or stale principal.
+- Pass security context explicitly. If you cannot avoid ambient context, use
+  the runtime's task-local mechanism. Set it and reset it in a `finally` block.
+  Do not let a detached task inherit a request object or a stale principal.
 - Keep blocking I/O and synchronous libraries off an event loop. Use a bounded
-  adapter or worker pool, preserve transaction boundaries, and apply
-  backpressure rather than creating unbounded tasks.
-- Treat connection establishment as authentication, not permanent
-  authorization. Authorize the requested object before accepting where
-  possible, and authorize every message or operation against current state.
+  adapter or a worker pool, preserve transaction boundaries, and apply
+  backpressure. Do not create unbounded tasks.
+- Treat the establishment of a connection as authentication, not as permanent
+  authorization. Authorize the requested object before you accept, where
+  possible. Authorize every message or operation against current state.
 - Validate browser connection origins even when the protocol is not ordinary
-  HTTP. Cookies are sent during a cross-site WebSocket handshake and therefore
-  create a cross-site hijacking risk.
+  HTTP. The browser sends cookies during a cross-site WebSocket handshake,
+  which creates a cross-site hijack risk.
 - Bound connection count, handshake rate, message size and frequency, queued
-  work, group fan-out, idle time, and total lifetime. Clean up subscriptions and
+  work, group fan-out, idle time, and total lifetime. Remove subscriptions and
   tasks on disconnect.
 
 ## Django, DRF & Channels implementation
 
-Django supports async views and async ORM query methods, but not every subsystem
-is async-safe. Running under ASGI does not make synchronous code non-blocking,
-and suppressing Django's safety guard does not make unsafe code safe. DRF 3.18.0
-does not turn its standard synchronous `APIView`, authentication, permission,
-serializer, and renderer pipeline into a native async pipeline merely because
-the deployment uses ASGI. Keep ordinary DRF views synchronous unless the project
-has deliberately selected and audited an async integration.
+Django supports async views and async ORM query methods, but not every
+subsystem is async-safe. A deployment under ASGI does not make synchronous code
+non-blocking. Suppression of Django's safety guard does not make unsafe code
+safe. DRF 3.18.0 does not turn its standard synchronous pipeline into a native
+async pipeline merely because the deployment uses ASGI. That pipeline is
+`APIView`, authentication, permission, serializer, and renderer. Keep ordinary
+DRF views synchronous unless the project has deliberately selected and audited
+an async integration.
 
-**Package decision (9 Aug 2026):** Channels `4.3.2` passes the maintained-
-package gate, is maintained by the Django project, and supports Django 6.0.
-Installing it does not supply origin validation, per-message authorization,
-backpressure, quotas, or disconnect cleanup; retain every control below.
+**Package decision (9 Aug 2026):** Channels `4.3.2` passes the
+maintained-package gate, is maintained by the Django project, and supports
+Django 6.0. An installation of it does not supply origin validation,
+per-message authorization, backpressure, quotas, or disconnect cleanup. Retain
+every control below.
 
 Channels has its own connection scope and consumer lifecycle. HTTP middleware
 and DRF permission classes do not automatically authorize WebSocket messages.
@@ -86,14 +93,15 @@ perform object and action authorization in the consumer.
   work. It also performs database-connection cleanup around the call.
 - Do not pass a cursor, connection, unevaluated queryset, model manager bound to
   mutable request state, or other thread-affine object across the boundary.
-- Set `CONN_MAX_AGE = 0` for async-mode database access and use database/backend
-  pooling designed for the deployment when pooling is needed. Django's own
-  native pooling requires the same setting and raises `ImproperlyConfigured`
-  alongside persistent connections, so the two rules agree rather than conflict;
-  pool sizing and statement timeouts are in `data-layer-and-database.md`.
-- Never set `DJANGO_ALLOW_ASYNC_UNSAFE` in a server, worker, notebook handling
-  concurrent work, or test configuration that is meant to model production. It
-  only disables `SynchronousOnlyOperation`; it does not add isolation.
+- Set `CONN_MAX_AGE = 0` for async-mode database access. Where you need
+  pooling, use database or backend pooling designed for the deployment.
+  Django's own native pooling requires the same setting, and it raises
+  `ImproperlyConfigured` alongside persistent connections. The two rules
+  therefore agree rather than conflict. `data-layer-and-database.md` owns pool
+  sizing and statement timeouts.
+- Never set `DJANGO_ALLOW_ASYNC_UNSAFE` in a server, a worker, a notebook that
+  handles concurrent work, or a test configuration that models production. It
+  only disables `SynchronousOnlyOperation`, and it does not add isolation.
 
 Keep a transaction and its invariants together:
 
@@ -148,11 +156,11 @@ async def run_for_tenant(tenant_id, operation):
         current_tenant_id.reset(token)
 ```
 
-Context variables can be copied into child tasks. Do not spawn request-derived
-background work and assume the context will remain valid after the response;
-pass immutable identifiers to the job and re-load and re-authorize state there.
-Never cache a request, user object, mutable token claims, or tenant-bearing
-queryset in process-global state.
+A child task can copy context variables. Do not spawn request-derived
+background work and assume that the context stays valid after the response.
+Pass immutable identifiers to the job, and re-load and re-authorize the state
+there. Never cache a request, a user object, mutable token claims, or a
+tenant-bearing queryset in process-global state.
 
 ## WebSocket authentication and origin validation
 
@@ -185,23 +193,23 @@ application = ProtocolTypeRouter(
 ```
 
 `AuthMiddlewareStack` populates `scope["user"]` from Django's session. It does
-not prove that the user may access the room, tenant, or object named in the URL.
-`AllowedHostsOriginValidator` protects deployments that maintain
-`ALLOWED_HOSTS`; use `OriginValidator` with an explicit origin allowlist when
+not prove that the user may access the room, tenant, or object named in the
+URL. `AllowedHostsOriginValidator` protects deployments that maintain
+`ALLOWED_HOSTS`. Use `OriginValidator` with an explicit origin allowlist when
 the accepted browser origins differ. Do not disable origin checks because the
 handshake endpoint is otherwise authenticated.
 
 For custom bearer-token middleware, validate signature, algorithm, issuer,
-audience, expiry, and revocation before constructing a principal. Avoid tokens
-in query strings because URLs reach logs, history, and monitoring systems. If a
-client cannot set a header, exchange a normal authenticated HTTP request for a
-short-lived, single-purpose connection ticket rather than reusing a long-lived
-API token in the URL. The server must delete the ticket at the first
-redemption, because a URL in a log stays replayable.
+audience, expiry, and revocation before you construct a principal. Avoid tokens
+in query strings, because URLs reach logs, history, and monitoring systems. If
+a client cannot set a header, exchange a normal authenticated HTTP request for
+a short-lived, single-purpose connection ticket. Do not reuse a long-lived API
+token in the URL. The server must delete the ticket at the first redemption,
+because a URL in a log stays replayable.
 
 ## Per-connection authorization
 
-Authenticate before accepting and scope every object lookup to the principal.
+Authenticate before you accept, and scope every object lookup to the principal.
 Re-check authorization for each privileged message:
 
 ```python
@@ -250,31 +258,33 @@ class ProjectConsumer(AsyncJsonWebsocketConsumer):
         return {"id": project.pk, "status": project.status}
 ```
 
-Validate message schemas and allowlist actions; never map arbitrary client
-method names to consumer methods. A channel-layer group name is routing
-metadata, not an authorization boundary. Check authorization before adding a
-connection to a sensitive group, exclude secrets from broadcast payloads, and
-handle revocation for connections already joined.
+Validate message schemas and allowlist actions. Never map an arbitrary client
+method name to a consumer method. A channel-layer group name is routing
+metadata, not an authorization boundary. Check authorization before you add a
+connection to a sensitive group. Exclude secrets from broadcast payloads, and
+handle revocation for connections that already joined.
 
-**Write-time.** When generating a consumer, authenticate and authorize in
-`connect()` and `close()` before `accept()` rather than after it, because an
-accepted socket is already a channel the client can send on. Re-check the same
-authorization inside `receive_json()` for every privileged message and
-allow-list the actions by name, since a connection outlives the grant that
-opened it and a revocation lands mid-session. Scope each lookup to the
-principal inside the `database_sync_to_async` call instead of fetching by the
-id the URL supplied, and wrap the routing in `AllowedHostsOriginValidator` and
-`AuthMiddlewareStack` in the edit that publishes the consumer, because the
-handshake is a cross-origin request that no CSRF token covers.
+**Write-time.** When you generate a consumer, authenticate and authorize in
+`connect()`, and `close()` before `accept()` rather than after it. An accepted
+socket is already a channel the client can send on. Re-check the same
+authorization inside `receive_json()` for every privileged message, and
+allow-list the actions by name. A connection outlives the grant that opened it,
+and a revocation lands mid-session.
+
+Scope each lookup to the principal inside the `database_sync_to_async` call. Do
+not fetch by the id the URL supplied. Wrap the routing in
+`AllowedHostsOriginValidator` and `AuthMiddlewareStack` in the edit that
+publishes the consumer. The handshake is a cross-origin request that no CSRF
+token covers.
 
 ## Long-lived consumers and resource limits
 
-Session or permission state can change while a socket remains open. For
-sensitive operations, refresh the user with Channels' `get_user(scope)` and
-query current membership/permission state; close the connection after logout,
-deactivation, tenant removal, credential revocation, or an application-defined
-maximum lifetime. Do not trust the user object captured at connect time
-indefinitely.
+Session state or permission state can change while a socket remains open. For
+sensitive operations, refresh the user with Channels' `get_user(scope)`, and
+query current membership and permission state. Close the connection after
+logout, deactivation, tenant removal, credential revocation, or an
+application-defined maximum lifetime. Do not trust the user object from connect
+time indefinitely.
 
 Async consumers should call `aclose_old_connections()` periodically before ORM
 bursts on long-lived, low-traffic connections. Cancel per-connection tasks in
@@ -291,56 +301,57 @@ Use bounded queues and reject or shed load when full. Do not create one
 untracked task per message or allow a slow client to retain unbounded outbound
 data.
 
-Those caps are this file's instance of a general rule — every caller-controlled
-value that multiplies work carries a server-enforced ceiling — stated with the
-table of surfaces it spans in `a06-insecure-design.md`, "Algorithmic resource
-exhaustion".
+Those caps are this file's instance of a general rule: every caller-controlled
+value that multiplies work carries a server-enforced ceiling.
+`a06-insecure-design.md`, "Algorithmic resource exhaustion" states that rule
+with the table of surfaces it spans.
 
 ## Subscriptions as long-lived queries
 
-A subscription is a query the client registers once and the server answers
-many times, so every rule above applies to it without amendment. The mapping
-is worth stating because the code doing the subscribing is usually a GraphQL
-or messaging library rather than a consumer someone wrote, and that library's
-documentation covers its protocol rather than this boundary.
+A subscription is a query the client registers once and the server answers many
+times. Every rule above therefore applies to it without amendment. The mapping
+is worth a statement. A GraphQL library or a messaging library usually holds
+the subscribe code, rather than a consumer that somebody wrote. The
+documentation of that library covers its protocol rather than this boundary.
 `graphql-and-alternative-api-surfaces.md` owns the schema, the resolver, and
-the document limits; the socket underneath belongs here.
+the document limits. The socket underneath belongs here.
 
 - **Origin.** The handshake is a cross-origin request that no CSRF token
   covers, and the browser sends cookies with it. A subscription route takes
   the same origin allowlist as any other socket route.
 - **Connection authentication.** Subscription protocols typically carry
-  credentials in an initialization message sent after the socket opens.
-  Validate it before acknowledging the connection and close on failure, rather
-  than acknowledging first and checking when the first operation arrives; the
-  ticket rule above applies, so no long-lived token in the query string.
-- **Authorize the subscribe, not only the connect.** The operation names a
-  root field and its arguments — a channel, a document, a tenant — and that is
-  an object-level decision made at registration. An authenticated connection
-  is not a subscription to anything in particular.
+  credentials in an initialization message that the client sends after the
+  socket opens. Validate that message before you acknowledge the connection,
+  and close on failure. Do not acknowledge first and check when the first
+  operation arrives. The ticket rule above applies, so put no long-lived token
+  in the query string.
+- **Authorize the subscribe, not only the connect.** The operation names a root
+  field and its arguments: a channel, a document, a tenant. That is an
+  object-level decision at registration. An authenticated connection is not a
+  subscription to anything in particular.
 - **Authorize every published event.** The grant that existed at registration
-  may be gone by the time event N is produced, and a stream is precisely the
-  shape a revocation lands in the middle of. Re-check current state before each
-  publish and build the payload for the receiving principal, rather than
-  broadcasting one payload to a group: a group name is routing metadata, not
-  an authorization boundary.
-- **Revocation ends the subscription.** Logout, deactivation, tenant removal,
-  a permission change, and an application-defined maximum lifetime each close
-  the socket rather than merely withholding the next event.
-- **Limits are per subscription, not per connection.** One socket can hold
-  many subscriptions, and one write can fan out to every subscriber of a
-  channel, so cap subscriptions per connection and per principal, event rate
-  and payload size per subscription, and total fan-out per publish. Unsubscribe
-  and cancel the backing tasks on disconnect, or a client that reconnects in a
-  loop leaves server-side state behind that nothing is reading.
+  may be gone when the server produces event N. A stream is precisely the shape
+  a revocation lands in the middle of. Re-check current state before each
+  publish, and build the payload for the receiving principal. Do not broadcast
+  one payload to a group. A group name is routing metadata, not an
+  authorization boundary.
+- **Revocation ends the subscription.** Logout, deactivation, tenant removal, a
+  permission change, and an application-defined maximum lifetime each close the
+  socket. They do not merely withhold the next event.
+- **Limits are per subscription, not per connection.** One socket can hold many
+  subscriptions, and one write can fan out to every subscriber of a channel.
+  Cap subscriptions per connection and per principal, event rate and payload
+  size per subscription, and total fan-out per publish. Unsubscribe and cancel
+  the backing tasks on disconnect. Without that step, a client that reconnects
+  in a loop leaves server-side state that nothing reads.
 
-**Write-time.** When generating a subscription, put the object-level check on
-the subscribe path, where the root field's arguments are first known, and
-repeat it on the publish path before each event, because the two run at
-different moments under different grants and only the first one is visible in
-the schema. Register the unsubscribe and the task cancellation in the same
-edit that registers the subscription, since a stream that outlives its client
-is both a disclosure path and a fan-out cost no limit is counting.
+**Write-time.** When you generate a subscription, put the object-level check on
+the subscribe path, where the root field's arguments are first known. Repeat
+that check on the publish path before each event. The two run at different
+moments under different grants, and only the first one is visible in the
+schema. Register the unsubscribe and the task cancellation in the same edit
+that registers the subscription. A stream that outlives its client is both a
+disclosure path and a fan-out cost that no limit counts.
 
 ## Review checklist
 
@@ -348,28 +359,29 @@ is both a disclosure path and a fan-out cost no limit is counting.
 
 - [ ] Identity and tenant state are explicit or task-local, reset reliably, and
       never stored in process-global or thread-only context.
-- [ ] Blocking work is off the event loop through bounded adapters; transactions
-      and authorization-sensitive operations are not split across unsafe awaits.
+- [ ] Bounded adapters keep blocking work off the event loop. No transaction
+      and no authorization-sensitive operation splits across an unsafe await.
 - [ ] Every long-lived connection validates origin, authenticates once, and
       re-authorizes each object/action against current state.
-- [ ] Revocation, logout, disconnect cleanup, backpressure, and connection,
-      message, fan-out, idle, and lifetime limits are designed and tested.
+- [ ] The design and the tests cover revocation, logout, disconnect cleanup,
+      backpressure, and the connection, message, fan-out, idle, and lifetime
+      limits.
 - [ ] Connection tokens are short-lived and purpose-bound and do not leak in
       URLs or logs.
-- [ ] A subscription is authorized when it is registered and again before each
-      published event, is closed by revocation, and is counted against
-      per-principal subscription, fan-out, and lifetime limits.
+- [ ] The server authorizes a subscription when the client registers it, and
+      again before each published event. Revocation closes it. It counts
+      against per-principal subscription, fan-out, and lifetime limits.
 
 ### Django, DRF & Channels
 
-- [ ] Async ORM methods or `database_sync_to_async` /
-      thread-sensitive `sync_to_async` are used correctly; no DB handles cross
-      the boundary and async transactions stay inside one sync function.
-- [ ] `DJANGO_ALLOW_ASYNC_UNSAFE` is absent and `CONN_MAX_AGE` is disabled for
-      async DB access, with a size-capped pool doing the connection reuse;
-      standard DRF views are not assumed to be native async.
+- [ ] The code uses async ORM methods, `database_sync_to_async`, or
+      thread-sensitive `sync_to_async` correctly. No DB handle crosses the
+      boundary, and async transactions stay inside one sync function.
+- [ ] `DJANGO_ALLOW_ASYNC_UNSAFE` is absent, and `CONN_MAX_AGE` is disabled for
+      async DB access. A size-capped pool does the connection reuse. The review
+      does not assume that standard DRF views are native async.
 - [ ] `AllowedHostsOriginValidator` or an explicit `OriginValidator` wraps
-      browser WebSockets, and `AuthMiddlewareStack` is not mistaken for object
+      browser WebSockets, and nobody mistakes `AuthMiddlewareStack` for object
       authorization.
 - [ ] Consumer URL parameters, messages, group joins, and broadcasts use
       requester-scoped queries and explicit action schemas.

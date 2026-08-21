@@ -554,11 +554,11 @@ its source. Materialise it only with an invalidation path beside it.
       authenticated event drives each one. The flow states which direction a
       partial failure fails in, and what reconciles it.
 - [ ] Refunds and other compensating actions are modeled as forward
-      transactions with their own identifiers rather than as a status change
+      transactions with their own identifiers. They are not a status change
       back to the prior state.
-- [ ] Every entitlement grant has a revocation path with a named trigger, and
-      the caches, tokens, sessions, and denormalized copies it has to reach
-      are enumerated.
+- [ ] Every entitlement grant has a revocation path with a named trigger. The
+      caches, tokens, sessions, and denormalized copies it has to reach are
+      enumerated.
 
 #### Django & DRF
 
@@ -754,8 +754,8 @@ integrity are covered in A08; sensitive log handling is covered in A09.
 - [ ] Reset, magic-link, invite, share, and messaging endpoints return a
       non-enumerating response and follow a materially uniform request path.
 - [ ] Atomic limits cover source, actor, tenant, destination, target, action,
-      cooldown, outstanding state, and global volume without enabling a trivial
-      denial of service against one destination.
+      cooldown, outstanding state, and global volume. They do not enable a
+      trivial denial of service against one destination.
 - [ ] Recipients, roles, objects, templates, senders, and link destinations are
       server-authorized and allowlisted; retries and duplicate requests are
       idempotent.

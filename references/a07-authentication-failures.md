@@ -50,9 +50,9 @@ Never infer authorization merely because authentication succeeded.
 ### Principle layer
 
 Authentication compares a submitted identifier against a stored one. Three
-answers make up the identity model: which field is the identifier, what
-transformation runs before the store writes it, and what the store treats as
-equal. None of the three is visible at the login view. Two accounts are the
+answers make up the identity model. They are which field is the identifier,
+what transformation runs before the store writes it, and what the store treats
+as equal. None of the three is visible at the login view. Two accounts are the
 same principal exactly when those three answers agree.
 
 They disagree in one of two directions, and each direction has its own
@@ -247,13 +247,13 @@ somebody adds later. When the model does not inherit `AbstractUser`, declare
 
 NIST SP 800-63B-4 states the password-verifier requirements normatively, and
 most projects fail the first of them without notice. Section 3.1.1.2,
-requirement 1: a password used as a **single-factor** authentication mechanism
-SHALL be a minimum of **15 characters**; a password used only as part of a
-multi-factor process MAY be shorter but SHALL still be a minimum of **eight**.
-Both halves of that split are SHALL-level. The 15-character floor governs the
-ordinary case of a site where a password alone logs a user in. The revision
-matters here. The 2017 edition asked only for eight, so guidance and
-validators inherited from it are a tier low.
+requirement 1 states two floors. A password used as a **single-factor**
+authentication mechanism SHALL be a minimum of **15 characters**. A password
+used only as part of a multi-factor process MAY be shorter, but SHALL still be
+a minimum of **eight**. Both halves of that split are SHALL-level. The
+15-character floor governs the ordinary case of a site where a password alone
+logs a user in. The revision matters here. The 2017 edition asked only for
+eight, so guidance and validators inherited from it are a tier low.
 
 The rest of the section, in its own grammar:
 
@@ -266,15 +266,15 @@ The rest of the section, in its own grammar:
 - on every request to establish or change a password, the prospective secret
   SHALL be compared against a blocklist of known commonly used, expected, or
   compromised values. The **entire** password is compared rather than
-  substrings, and the list is expected to draw on previous breach corpuses,
-  dictionary words, and context-specific words such as the name of the
-  service and the username. A password found on it SHALL be rejected and the
-  reason SHALL be given;
+  substrings. The list is expected to draw on previous breach corpuses,
+  dictionary words, and context-specific words such as the name of the service
+  and the username. A password found on it SHALL be rejected and the reason
+  SHALL be given;
 - password managers SHALL be allowed and the paste function SHOULD be
   permitted;
-- a password hint reachable by an unauthenticated claimant SHALL NOT be
-  stored, and knowledge-based authentication or security questions SHALL NOT
-  be used when choosing a password; and
+- a password hint reachable by an unauthenticated claimant SHALL NOT be stored.
+  Knowledge-based authentication or security questions SHALL NOT be used when
+  choosing a password; and
 - failed-attempt rate limiting SHALL be implemented — the control this file
   covers under "Brute force and enumeration".
 
@@ -414,14 +414,14 @@ denies every password change during an outage nobody in the project controls.
 SHA-1 appears here as a lookup key for the range API and nowhere else. Storage
 remains whatever `PASSWORD_HASHERS` selects.
 
-An outbound call is unacceptable in some deployments: an air-gapped
-deployment, a privacy review that will not clear it, or a flow that cannot
-take the latency. The offline alternative there is `CommonPasswordValidator`
-pointed at a much larger local list through `password_list_path`. It needs no
-network, and it discloses nothing. The trade is that somebody has to obtain
-the file, review its license, ship it with the image, and refresh it on a
-schedule they own. A list nobody refreshed is the failure it was added to
-prevent.
+An outbound call is unacceptable in some deployments. Those are an air-gapped
+deployment, a privacy review that will not clear it, or a flow that cannot take
+the latency. The offline alternative there is `CommonPasswordValidator` pointed
+at a much larger local list through `password_list_path`. It needs no network,
+and it discloses nothing. The trade is that somebody has to obtain the file and
+review its license. That person also has to ship it with the image, and refresh
+it on a schedule they own. A list nobody refreshed is the failure it was added
+to prevent.
 
 **Write-time.** When you generate `AUTH_PASSWORD_VALIDATORS`, or any flow that
 sets or changes a password, put `min_length` at 15. The exception is a flow
@@ -564,11 +564,11 @@ limits from "Brute force and enumeration".
 
 Treat log-out-everywhere as a stated requirement, rather than as a side effect
 of this behavior. A password change already delivers it. A product that needs
-the same effect without a password change needs either a stored session record
-to delete, or a per-user credential version the session-load path reads.
-`get_user()` also tries `SECRET_KEY_FALLBACKS` before it fails. A fallback
-match cycles the key and re-stamps the hash in place, which is what makes a
-key rotation survivable at all.
+the same effect without a password change needs one of two things. It needs a
+stored session record to delete, or a per-user credential version the
+session-load path reads. `get_user()` also tries `SECRET_KEY_FALLBACKS` before
+it fails. A fallback match cycles the key and re-stamps the hash in place,
+which is what makes a key rotation survivable at all.
 
 **Write-time.** When you generate a settings module, leave `SESSION_ENGINE` at
 `db`, unless the request asked for a different trade. Never generate
@@ -773,9 +773,9 @@ code to the wrong token endpoint. The attacker can also induce it to accept an
 assertion from one issuer as though it came from the intended one.
 
 A binding of the authorization response to the issuer that produced it is what
-closes the attack. That binding is `state` bound to the provider, the code
-exchanged only at that provider's token endpoint, and an exact issuer check on
-the ID token. Each of the three is already required above.
+closes the attack. That binding is `state` bound to the provider, and the code
+exchanged only at that provider's token endpoint. It also carries an exact
+issuer check on the ID token. Each of the three is already required above.
 
 Keep provider client secrets, signing keys, authorization codes, and tokens
 out of source and logs. Request minimal scopes. Store a refresh or access
@@ -792,10 +792,10 @@ for when to cite one at all.
 ### Django & DRF implementation layer
 
 Trace the full flow. It covers the login-start view, the session and state
-store, the provider configuration, the callback, the code exchange, the token
-verification, the adapter or pipeline, the local-account lookup and link, the
-token persistence, the logout or disconnect, and the logs. Test
-swapped-provider, state replay, nonce replay, redirect confusion, wrong
+store, the provider configuration, the callback, and the code exchange. It also
+covers the token verification, the adapter or pipeline, the local-account
+lookup and link, the token persistence, the logout or disconnect, and the logs.
+Test swapped-provider, state replay, nonce replay, redirect confusion, wrong
 issuer, wrong audience, expired token, unverified email, duplicate email, and
 account-linking takeover.
 
@@ -828,11 +828,12 @@ removes them.
 **django-oauth-toolkit.** `django-oauth-toolkit==3.4.0` passes the gate where
 the application is an OAuth authorization or resource server. `>=3.4.0` is a
 floor rather than a preference. 3.4.0 fixed an unauthenticated open redirect
-from the authorization endpoint under `prompt=none`, HS256 ID tokens signed
-with the hashed client secret instead of the plaintext one, cleartext tokens
-and codes rendered in the admin, client secrets written to debug logs,
-predictable device-flow `user_code` values, and four redirect-URI matching
-deviations from RFC 9700. Treat an install at 3.3.0 or earlier as a finding.
+from the authorization endpoint under `prompt=none`. It fixed HS256 ID tokens
+signed with the hashed client secret instead of the plaintext one, and
+cleartext tokens and codes rendered in the admin. It fixed client secrets
+written to debug logs, predictable device-flow `user_code` values, and four
+redirect-URI matching deviations from RFC 9700. Treat an install at 3.3.0 or
+earlier as a finding.
 
 PKCE is required by default. Keep it required. Use authorization code rather
 than an implicit or password grant. Register exact redirect URIs. Hash the
@@ -852,13 +853,12 @@ a new recommendation. It does not advertise Django 6 support, and
 `OIDC_USE_PKCE` defaults to false. Open issue #340 documents missing exact
 issuer and audience validation in the default verification path.
 
-An existing use must set `OIDC_USE_PKCE = True`. It must keep
-`OIDC_USE_NONCE`, `OIDC_VERIFY_JWT`, `OIDC_VERIFY_KID`, and TLS verification
-enabled. It must use `S256`, and keep unsecured JWTs and token storage
-disabled. It must provide a reviewed `verify_token` override or replacement
-that enforces the exact issuer and the audience or client ID, as well as the
-signature, the algorithm, the expiry, and the nonce. Otherwise, replace the
-integration.
+An existing use must set `OIDC_USE_PKCE = True`. It must keep `OIDC_USE_NONCE`,
+`OIDC_VERIFY_JWT`, `OIDC_VERIFY_KID`, and TLS verification enabled. It must use
+`S256`, and keep unsecured JWTs and token storage disabled. It must provide a
+reviewed `verify_token` override or replacement. That code enforces the exact
+issuer and the audience or client ID, as well as the signature, the algorithm,
+the expiry, and the nonce. Otherwise, replace the integration.
 
 Service-to-service mutual TLS **is** in scope, and it lives in
 `service-identity-and-secrets.md`. That file also holds certificate-bound
@@ -979,9 +979,10 @@ failure. Do not disclose whether a prefix exists.
 Implement authentication separately from the permission classes and the
 tenant-scoped querysets. Never use a raw API key as a database lookup value. A
 small local model may store `prefix`, `digest`, the owner or service account,
-the tenant, the scopes, the created, expiry, revoked, and last-used fields,
-and the rotation lineage. Centralize the parse and the verification in one
-authentication class, and cache only revocation-safe metadata.
+the tenant, and the scopes. It may also store the created, expiry, revoked, and
+last-used fields, and the rotation lineage. Centralize the parse and the
+verification in one authentication class, and cache only revocation-safe
+metadata.
 
 `djangorestframework-api-key==3.1.0` is existing-install audit only. It does
 not pass the current Django 6 and maintenance gate, and it explicitly is not
@@ -1032,9 +1033,9 @@ controls where signed webhooks are in scope.
 - [ ] Login, reset, signup, invite, MFA, and linking resist enumeration,
       replay, brute force, distributed automation, and attacker-induced
       permanent lockout.
-- [ ] OAuth and OIDC use code plus PKCE, exact redirects, a bound one-time
-      state and nonce, full ID-token validation, stable `(issuer, sub)`
-      identity, and safe linking.
+- [ ] OAuth and OIDC use code plus PKCE, exact redirects, and a bound one-time
+      state and nonce. They use full ID-token validation, stable
+      `(issuer, sub)` identity, and safe linking.
 - [ ] The allauth, dj-rest-auth, OAuth Toolkit, and social-auth settings,
       adapters, and pipelines preserve the controls above. mozilla-django-oidc
       is rejected or explicitly hardened.

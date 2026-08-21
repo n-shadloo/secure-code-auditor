@@ -1,23 +1,26 @@
 # Deployment and Runtime
 
-The layer the backend owns in production: TLS/headers, reverse proxy and
-forwarded-header trust, operational endpoint exposure, Gunicorn/systemd
-hardening, the container image as a build artifact, static/media serving, the
-database connection, and caching/queue exposure. Nginx + Gunicorn + systemd,
-optionally containerized, optionally behind Cloudflare.
+This file covers the layer the backend owns in production. That layer is TLS
+and headers, the reverse proxy and forwarded-header trust, operational endpoint
+exposure, and Gunicorn and systemd hardening. It also covers the container
+image as a build artifact, static and media serving, the database connection,
+and cache and queue exposure. The stack is Nginx, Gunicorn, and systemd,
+optionally containerized, and optionally behind Cloudflare.
 
 This file and `a02-security-misconfiguration.md` split the configuration
 surface by where the setting lives rather than by topic. This file owns what
-the proxy, the process, and the image **do** with a request once it arrives:
-TLS termination and which layer owns each header, forwarded-header trust and
-the client IP that every rate limit and audit record depends on, operational
-endpoints left reachable in production, and the Gunicorn or systemd unit that
-runs the code. A02 owns what a settings module or a DNS zone declares. On the
-container this file stops at the artifact the repository produces — base
-image, `USER`, `.dockerignore`, and secrets baked into layers — with
-orchestrator enforcement named as a cross-team recommendation rather than a
-repository finding, and `service-identity-and-secrets.md` owning where a
-secret comes from at run time.
+the proxy, the process, and the image **do** with a request once it arrives.
+That scope is TLS termination, and which layer owns each header. It covers
+forwarded-header trust and the client IP that every rate limit and audit record
+depends on. It also covers operational endpoints left reachable in production,
+and the Gunicorn or systemd unit that runs the code. A02 owns what a settings
+module or a DNS zone declares.
+
+On the container this file stops at the artifact the repository produces: the
+base image, `USER`, `.dockerignore`, and secrets baked into layers. It names
+orchestrator enforcement as a cross-team recommendation rather than a
+repository finding. `service-identity-and-secrets.md` owns where a secret comes
+from at run time.
 
 ## Contents
 - [Principle](#principle)
@@ -36,51 +39,53 @@ secret comes from at run time.
 
 ## Principle
 
-The app can be perfect and still be exposed by how it runs: plaintext transport,
-a proxy that lets clients forge their apparent IP or scheme, a worker running as
-root, or user uploads served as executable code. The principle is **least
-privilege and least exposure at runtime**: encrypt transport, trust only what the
-proxy actually sets, drop privileges, and serve untrusted content inertly.
+The app can be perfect, and how it runs can still expose it. The exposures are
+plaintext transport, and a proxy that lets clients forge their apparent IP or
+scheme. They are also a worker that runs as root, and user uploads that the
+server delivers as executable code. The principle is **least privilege and
+least exposure at runtime**. Encrypt transport, trust only what the proxy
+actually sets, drop privileges, and serve untrusted content inertly.
 
 ## TLS and HSTS
 
-- Terminate TLS with modern protocols/ciphers; redirect HTTP→HTTPS. If Cloudflare
-  or the proxy already redirects, set `SECURE_SSL_REDIRECT = False` in Django to
-  avoid redirect loops.
-- Set HSTS (see A02). Roll it out with a short max-age first; it's hard to undo.
+- Terminate TLS with modern protocols and ciphers, and redirect HTTP→HTTPS. If
+  Cloudflare or the proxy already redirects, set `SECURE_SSL_REDIRECT = False`
+  in Django. That setting prevents a redirect loop.
+- Set HSTS (see A02). Deploy it with a short max-age first, because it is hard
+  to undo.
 
 ### Hybrid post-quantum key exchange
 
 Hybrid key exchange is the one post-quantum change that is already deployed
-rather than pending, and it is what answers the harvest-now-decrypt-later
-exposure that `a04-cryptographic-failures.md`, "Post-quantum posture", tells
-you to inventory. It runs X25519 and ML-KEM-768 together and derives the
-session key from both, so a recorded handshake stays secret unless *both*
-halves fall — which is why adopting it costs nothing in confidence rather than
-being a bet on the newer primitive.
+rather than pending. It answers the harvest-now-decrypt-later exposure that
+`a04-cryptographic-failures.md`, "Post-quantum posture", tells you to
+inventory. It runs X25519 and ML-KEM-768 together, and derives the session key
+from both. A recorded handshake therefore stays secret unless *both* halves
+fall. An adoption of it costs nothing in confidence, and it is not a bet on the
+newer primitive.
 
 The state of it as of 8 Aug 2026:
 
 - **OpenSSL 3.5.0, April 2025, is the line that turns it on**, and it turned it
-  on by default in the same release that added it: the default supported-groups
-  list changed to include and prefer hybrid PQC KEM groups, and the default
+  on by default in the same release that added it. The default supported-groups
+  list changed to include and prefer hybrid PQC KEM groups. The default
   keyshares offered became `X25519MLKEM768` and `X25519`. An edge linked
   against 3.5 or later negotiates the hybrid with no configuration at all.
 - **The client side is already there.** Chrome 131 and Firefox 132 each enabled
-  ML-KEM hybrid key exchange by default, so a current browser reaching a
-  current OpenSSL negotiates `X25519MLKEM768` today whether or not anyone
-  decided that it should.
+  ML-KEM hybrid key exchange by default. A current browser that reaches a
+  current OpenSSL therefore negotiates `X25519MLKEM768` today, whether or not
+  anyone decided that it should.
 - **The group name is settled; the specification is not finished.** The TLS
   hybrid document is an IESG-approved Internet-Draft in the RFC Editor queue,
-  not yet an RFC. Its IANA codepoint is permanent — 4588 for `X25519MLKEM768`,
-  now marked Recommended — and the pre-standard `X25519Kyber768Draft00` at
-  25497 is obsolete. So a config still pinning the Kyber draft group is stale,
-  and a report calling the hybrid a finished standard is overclaiming.
+  not yet an RFC. Its IANA codepoint is permanent: 4588 for `X25519MLKEM768`,
+  now marked Recommended. The pre-standard `X25519Kyber768Draft00` at 25497 is
+  obsolete. A config that still pins the Kyber draft group is therefore stale,
+  and a report that calls the hybrid a finished standard overclaims.
 
-Nginx expresses the group list through `ssl_ecdh_curve`, which despite the name
-sets every key-exchange group the server offers rather than only ECDH curves.
-It has accepted a colon-separated list since 1.11.0 and defaults to `auto`,
-meaning OpenSSL's own built-in list:
+Nginx expresses the group list through `ssl_ecdh_curve`. Despite the name, that
+directive sets every key-exchange group the server offers, not only ECDH
+curves. It has accepted a colon-separated list since 1.11.0, and it defaults to
+`auto`, which means OpenSSL's own built-in list:
 
 ```nginx
 # `auto` on OpenSSL 3.5 already prefers the hybrid, so pin the order only when
@@ -89,33 +94,35 @@ ssl_ecdh_curve X25519MLKEM768:X25519:prime256v1:secp384r1;
 ```
 
 Two placement rules travel with that line. Set it in the `http` context or on
-the `default_server`: nginx ticket #2542 records that under TLS 1.3 the
-directive is silently ignored in a non-default `server` block sharing an
-address and port, so a value written into one virtual host does nothing and
-says nothing about having done nothing. And write a single colon-separated
-list — nginx rejects OpenSSL's space-separated multi-tier prioritization syntax
-as an invalid argument count.
+the `default_server`. Nginx ticket #2542 records that under TLS 1.3 the
+directive is silently ignored in a non-default `server` block that shares an
+address and port. A value written into one virtual host therefore does nothing,
+and reports nothing. Write a single colon-separated list. Nginx rejects
+OpenSSL's space-separated multi-tier prioritization syntax as an invalid
+argument count.
 
-**The finding is a group list that excludes the hybrid, not its absence.**
-A modern edge already negotiates it, so this is rarely a change anyone has to
-make; it is a change someone made years ago and never revisited. A hardening
+**The finding is a group list that excludes the hybrid, not its absence.** A
+modern edge already negotiates it, so this is rarely a change anyone has to
+make. It is a change someone made years ago and never revisited. A hardening
 snippet copied from a pre-2025 guide pins
-`ssl_ecdh_curve X25519:prime256v1:secp384r1;` and, on an OpenSSL that would
-otherwise have offered ML-KEM, turns the default back off — the config looks
-more secure than the default it replaced and is less. Confirm what is actually
-negotiated against the deployed host rather than reading the file, because the
-effective list depends on which OpenSSL the edge is linked against and, per the
-ticket above, on which server block the value landed in.
+`ssl_ecdh_curve X25519:prime256v1:secp384r1;`. On an OpenSSL that would
+otherwise have offered ML-KEM, that line turns the default off. The config then
+looks more secure than the default it replaced, and is less secure.
 
-**Write-time.** When generating an nginx TLS block, either leave
-`ssl_ecdh_curve` out entirely and let `auto` stand, or write a list with
-`X25519MLKEM768` first — never a curve list carried over from an older
-hardening template, because on OpenSSL 3.5 that line is a downgrade and the
-config reads as though it were an improvement. Put it in the `http` context in
-the same edit, so the value is not silently dropped by the virtual-host rule
-above. CWE-327 (broken or risky cryptographic algorithm) is the mapping when a
-pinned list excludes what the platform would have offered. Severity: low today
-and rising with the retention period of whatever the connection carries.
+Confirm what the deployed host actually negotiates, rather than read the file.
+The effective list depends on which OpenSSL the edge links against, and, per
+the ticket above, on which server block holds the value.
+
+**Write-time.** When you generate an nginx TLS block, leave `ssl_ecdh_curve`
+out entirely and let `auto` stand, or write a list with `X25519MLKEM768` first.
+Never write a curve list carried over from an older hardening template. On
+OpenSSL 3.5 that line is a downgrade, and the config reads as an improvement.
+Put it in the `http` context in the same edit, so that the virtual-host rule
+above does not silently drop the value.
+
+CWE-327 (broken or risky cryptographic algorithm) is the mapping when a pinned
+list excludes what the platform would have offered. Severity: low today, and
+rising with the retention period of whatever the connection carries.
 
 ## Reverse proxy and forwarded headers
 
@@ -124,21 +131,22 @@ This is the subtle one. Behind Nginx/Cloudflare:
 - Set `SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")` **only** if
   the proxy sets that header unconditionally and strips any client-supplied copy.
   Otherwise a client can claim HTTPS.
-- Trust `X-Forwarded-For`/`X-Forwarded-Proto` **only** from your proxy. Client-IP
-  used for lockout/rate limiting must come from a trusted hop, or attackers spoof
-  it (relevant to `django-axes` and allauth, which now distrusts `X-Forwarded-For`
-  by default). Configure the proxy count / trusted header explicitly.
-- Nginx: `underscores_in_headers off;` (default) — the Django 6.0.4
-  underscore-header spoofing CVE is a reminder not to enable it. Validate `Host`
-  and consider a default server returning 444 for unknown hosts, complementing
-  `ALLOWED_HOSTS`.
-- A header carrying a *verified client certificate* — `X-Forwarded-Client-Cert`,
-  or RFC 9440's `Client-Cert` — obeys the same rule at a higher penalty:
-  spoofing it is an authentication bypass, not a client-IP trust problem. The
-  proxy must strip or overwrite any inbound copy, and the application must not
-  be reachable except through it. The application side is in
+- Trust `X-Forwarded-For` and `X-Forwarded-Proto` **only** from your proxy. The
+  client IP that lockout and rate limiting use must come from a trusted hop, or
+  attackers spoof it. This applies to `django-axes` and to allauth, which now
+  distrusts `X-Forwarded-For` by default. Configure the proxy count or the
+  trusted header explicitly.
+- Nginx: `underscores_in_headers off;` (default). The Django 6.0.4
+  underscore-header spoofing CVE is a reminder not to enable it. Validate
+  `Host`, and consider a default server that returns 444 for unknown hosts, as
+  a complement to `ALLOWED_HOSTS`.
+- A header that carries a *verified client certificate* obeys the same rule at
+  a higher penalty. That header is `X-Forwarded-Client-Cert`, or RFC 9440's
+  `Client-Cert`. A spoof of it is an authentication bypass, not a client-IP
+  trust problem. The proxy must strip or overwrite any inbound copy, and the
+  application must not be reachable except through it.
   `service-identity-and-secrets.md`, "Client-certificate identity behind a
-  proxy".
+  proxy" owns the application side.
 - `USE_X_FORWARDED_HOST = True` moves host trust to the proxy. It is safe only
   when the proxy sets `X-Forwarded-Host` on every request and strips the
   client's copy. Every absolute URL Django builds from `get_host()` trusts that
@@ -158,11 +166,11 @@ client_max_body_size 10m;   # cap uploads at the edge
 
 ### Reading the client IP
 
-`X-Forwarded-For` is `client, proxy1, proxy2` read left to right: each hop
+`X-Forwarded-For` is `client, proxy1, proxy2`, read left to right. Each hop
 appends the address it received the connection from. The snippet above uses
 `$proxy_add_x_forwarded_for`, which **appends** to whatever the caller sent
-rather than replacing it, so the left of that list is attacker-supplied in
-exactly the way a request body is. Only the entries your own infrastructure
+rather than replaces it. The left of that list is therefore attacker-supplied,
+in exactly the way a request body is. Only the entries your own infrastructure
 appended are trustworthy, and those are on the right.
 
 The rule: **count the proxies you actually operate and take the address that
@@ -207,16 +215,17 @@ def client_ip(request):
 ```
 
 A wrong client IP is not one finding. It voids rate limiting, login lockout, IP
-allowlists, and the attribution in every audit record at once, and each of those
-failures looks exactly like the control working. DRF's throttle classes have
-their own setting for this; see `api-drf-specific.md`, "Throttling as quota, not
-security (API4)". Do not reach for a client-IP package — the logic is the few
+allowlists, and the attribution in every audit record at once. Each of those
+failures looks exactly like the control at work. DRF's throttle classes have
+their own setting for this; see `api-drf-specific.md`, "Throttling as quota,
+not security (API4)". Do not use a client-IP package. The logic is the few
 lines above, and the maintained-package gate rejects the usual candidate in
 `security-hardening-libraries.md`.
 
-A related trap: a duplicated `proxy_set_header X-Forwarded-Proto`, typically an
-ingress-controller default plus a hand-written snippet, yields `http,https`
-rather than failing loudly. Set each forwarded header exactly once.
+A related trap is a duplicated `proxy_set_header X-Forwarded-Proto`, typically
+an ingress-controller default with a hand-written snippet. It yields
+`http,https` rather than a loud failure. Set each forwarded header exactly
+once.
 
 CWE-348 (Use of Less Trusted Source), CWE-290 (Authentication Bypass by
 Spoofing), CWE-807 (Reliance on Untrusted Inputs in a Security Decision).
@@ -224,118 +233,124 @@ Severity: high.
 
 ### Request smuggling and the parser chain
 
-Request smuggling is not a defect in application code and there is no Django
-line that causes or prevents it. It exists when two components in front of the
-same request disagree about where that request ends — an edge proxy honoring
-`Content-Length` where the origin honors `Transfer-Encoding`, or either one
-accepting a malformed framing header the other rejects — so that bytes the
-first treats as the tail of one request the second treats as the head of the
-next. The consequence lands on the application anyway: a smuggled prefix is
-attributed to whoever's connection it was appended to, which forges
-authentication and poisons any cache in the path.
+Request smuggling is not a defect in application code, and no Django line
+causes or prevents it. It exists when two components in front of the same
+request disagree about where that request ends. An edge proxy can honor
+`Content-Length` where the origin honors `Transfer-Encoding`. Either one can
+accept a malformed framing header that the other rejects. Bytes the first
+treats as the tail of one request the second treats as the head of the next.
+
+The consequence lands on the application anyway. A smuggled prefix is
+attributed to the owner of the connection it was appended to. That forges
+authentication, and poisons any cache in the path.
 
 Treat it the way this file treats orchestrator enforcement: **record it as a
 recommendation to whoever operates the proxy chain, not as a repository
-finding.** What a review can say from the tree is which components are in the
-chain and what versions they are pinned to, and the question addressed outward
-is whether every hop parses framing identically and rejects a request carrying
-both framing headers rather than choosing between them. A repository containing
-no proxy configuration cannot answer that, and asserting either way is the
-phase 0 error in `01-audit-workflow.md`, "Phase 0 — scope, mode, and what the
-repository cannot tell you". `01-audit-workflow.md`, "Mapping to the OWASP
-Testing Guide" declares the corresponding WSTG test a non-goal on the same
-reasoning.
+finding.** From the tree, a review can say which components are in the chain
+and what versions they are pinned to. The question addressed outward is whether
+every hop parses framing identically. It also asks whether each hop rejects a
+request that carries both framing headers, rather than chooses between them. A
+repository that holds no proxy configuration cannot answer that. An assertion
+either way is the phase 0 error in `01-audit-workflow.md`, "Phase 0 — scope,
+mode, and what the repository cannot tell you". `01-audit-workflow.md`,
+"Mapping to the OWASP Testing Guide" declares the corresponding WSTG test a
+non-goal on the same reasoning.
 
-One half of it does resolve to a repository finding, and it is the half most
-reviews skip because the exposure above is not one: the pinned version of the
-application server and of its worker dependencies, which sit in the
+One half of it does resolve to a repository finding, and most reviews skip that
+half because the exposure above is not one. That half is the pinned version of
+the application server and of its worker dependencies, which sit in the
 requirements file the tree does hold. Gunicorn validated `Transfer-Encoding`
-loosely enough to permit TE.CL smuggling twice over: CVE-2024-1135, fixed in
-**22.0.0**, and CVE-2024-6827, disclosed January 2025 against 22.0.0 itself and
-fixed in **23.0.0** — so 22.0.0 closes the first advisory while remaining
-vulnerable to the second, and a floor quoting both CVEs has to sit at 23.0.0.
+loosely enough to permit TE.CL smuggling twice over. CVE-2024-1135 was fixed in
+**22.0.0**. CVE-2024-6827 was disclosed in January 2025 against 22.0.0 itself,
+and fixed in **23.0.0**. So 22.0.0 closes the first advisory and remains
+vulnerable to the second, and a floor that quotes both CVEs has to sit at
+23.0.0.
+
 The two bodies that scored the first agree rather than diverge, which is worth
-stating because divergence is the usual case: the GitHub Advisory Database
-rates CVE-2024-1135 7.5 HIGH on
-`CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:H/A:N`, and IBM X-Force publishes the
-identical vector and score. Treat 23.0.0 as the floor and the 2026 line as the
-target: it refuses a request carrying both `Transfer-Encoding` and
-`Content-Length` rather than choosing between them, rejects empty transfer
-codings, and tightened chunk-extension parsing to reject a bare CR per
-RFC 9112 alongside its keepalive and PROXY-protocol handling.
+a statement because divergence is the usual case. The GitHub Advisory Database
+rates CVE-2024-1135 7.5 HIGH on `CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:H/A:N`,
+and IBM X-Force publishes the identical vector and score. Treat 23.0.0 as the
+floor and the 2026 line as the target. That line refuses a request that carries
+both `Transfer-Encoding` and `Content-Length` rather than chooses between them.
+It rejects empty transfer codings, and it tightened chunk-extension parsing to
+reject a bare CR per RFC 9112, alongside its keepalive and PROXY-protocol
+handling.
 
-The async workers carry their own floors, and those are the ones a dependency
-review misses, because a worker arrives through a `-k` flag on the command line
-rather than as a package anybody chose for its security properties:
-`eventlet>=0.40.3` for CVE-2025-58068, `gevent>=23.9.0` for CVE-2023-41419,
-and `tornado>=6.5.0` for CVE-2025-47287. Read the worker class the deployment
-actually names and check the floor belonging to that one, rather than all three.
+The async workers carry their own floors, and a dependency review misses those.
+A worker arrives through a `-k` flag on the command line, rather than as a
+package anybody chose for its security properties. The floors are
+`eventlet>=0.40.3` for CVE-2025-58068, `gevent>=23.9.0` for CVE-2023-41419, and
+`tornado>=6.5.0` for CVE-2025-47287. Read the worker class the deployment
+actually names, and check the floor that belongs to that one rather than all
+three.
 
-For uvicorn and Daphne this file records **no advisory found**, which is not the
-same claim as none existing — the search behind that phrase was not exhaustive,
-and reporting an absence as a clean result is the error
+For uvicorn and Daphne this file records **no advisory found**. That is not the
+same claim as none existing. The search behind that phrase was not exhaustive.
+A report of an absence as a clean result is the error
 `a02-security-misconfiguration.md`, "check --deploy" describes in its own
-domain. Report the pinned version and say what was and was not looked for.
+domain. Report the pinned version, and say what the search covered and what it
+did not.
 
 CWE-444 (Inconsistent Interpretation of HTTP Requests). Severity: not rated as
-a repository finding; where a chain is confirmed vulnerable by whoever operates
-it, the impact is authentication bypass and cache poisoning together. The
-version floors above are ordinary A03 findings and are rated there.
+a repository finding. Where whoever operates the chain confirms it vulnerable,
+the impact is authentication bypass and cache poisoning together. The version
+floors above are ordinary A03 findings, and they are rated there.
 
-**Write-time.** When generating or editing a proxy configuration this
-repository actually holds, keep the chain to one edge parser in front of the
-application server and do not introduce a third component that re-parses the
-request body, because the vulnerability is created by two parsers disagreeing
-rather than by either one being wrong on its own. In the same edit, pin the
-application server at or above its floor — `gunicorn>=23.0.0`, and the floor
-for whichever async worker the command line selects — because the worker is
-chosen for throughput in one file and never revisited in the requirements file
-where its version is actually decided.
+**Write-time.** When you generate or edit a proxy configuration this repository
+actually holds, keep the chain to one edge parser in front of the application
+server. Do not introduce a third component that re-parses the request body. Two
+parsers that disagree create the vulnerability, and not one parser that is
+wrong on its own. In the same edit, pin the application server at or above its
+floor: `gunicorn>=23.0.0`, and the floor for whichever async worker the command
+line selects. One file selects the worker for throughput, and nobody revisits
+the requirements file where its version is actually decided.
 
 ## Security headers at the edge
 
-Set HSTS, `X-Frame-Options`/frame-ancestors, `X-Content-Type-Options: nosniff`,
-`Referrer-Policy`, and CSP either in Django (A02; CSP built-in on 6.0+) or at
-Nginx — but define them in one place to avoid conflicting/duplicated headers.
-Hide version banners (`server_tokens off`, and don't advertise Gunicorn's).
+Set HSTS, `X-Frame-Options` or frame-ancestors,
+`X-Content-Type-Options: nosniff`, `Referrer-Policy`, and CSP. Set them either
+in Django (A02; CSP built-in on 6.0+) or at Nginx. Define them in one place, to
+prevent conflicting or duplicated headers. Hide version banners with
+`server_tokens off`, and do not advertise Gunicorn's.
 
 Ownership is the part that goes wrong. Split it by what each layer can actually
 compute:
 
 - **Django owns anything that varies per request or per view.** A nonce-based
-  CSP is the clear case — the nonce has to be minted for the response that
-  carries it, and a proxy cannot mint one, so a CSP with `CSP.NONCE` must come
-  from Django, where `a02-security-misconfiguration.md` owns the setting that
-  declares it. Cookie flags, `X-Frame-Options` where it differs by view, and
-  `Referrer-Policy` belong here for the same reason.
+  CSP is the clear case. The nonce has to be minted for the response that
+  carries it, and a proxy cannot mint one. A CSP with `CSP.NONCE` must
+  therefore come from Django, where `a02-security-misconfiguration.md` owns the
+  setting that declares it. Cookie flags, `X-Frame-Options` where it differs by
+  view, and `Referrer-Policy` belong here for the same reason.
 - **The edge owns what is uniform across the site and what has to happen before
-  Django sees the request.** Stripping and re-setting inbound `X-Forwarded-*` is
-  the important one: it is the precondition for everything in the previous
-  section, and Django cannot do it, because by the time Django runs, a forged
-  header is indistinguishable from a real one.
+  Django sees the request.** The important one is to strip and re-set inbound
+  `X-Forwarded-*`. It is the precondition for everything in the previous
+  section, and Django cannot do it. By the time Django runs, a forged header is
+  indistinguishable from a real one.
 - **HSTS belongs wherever TLS terminates** — one place, not both.
 
-A header set in two places is a real failure, not untidiness: duplicated
-`X-Frame-Options` and two `Content-Security-Policy` headers are resolved by the
-browser taking the *intersection* of the policies for CSP and, for
-`X-Frame-Options`, potentially ignoring both. Pick one owner per header, and
-assert the response headers in a test so the second owner is caught when someone
-adds it. CWE-693 (Protection Mechanism Failure). Severity: medium.
+A header set in two places is a real failure, not untidiness. For CSP, the
+browser takes the *intersection* of the two policies. For a duplicated
+`X-Frame-Options`, it may ignore both. Pick one owner per header, and assert
+the response headers in a test, so that the test catches a second owner when
+someone adds one. CWE-693 (Protection Mechanism Failure). Severity: medium.
 
 ## Operational and development endpoints
 
-Anything that renders internal state is an exposure surface unless it is
-authenticated or genuinely unreachable from outside: profilers, metrics, health
-checks that echo versions and dependency status, the admin, and above all
-development tooling that was never meant to leave a laptop.
+Anything that renders internal state is an exposure surface, unless it is
+authenticated or genuinely unreachable from outside. Such a surface is a
+profiler, metrics, or a health check that echoes versions and dependency
+status. The admin is one, and above all so is development tooling that was
+never meant to leave a laptop.
 
-The severe cases are development tools reachable in production. The Django Debug
-Toolbar renders SQL, settings, and request internals, and CVE-2021-30459 — CVSS
-9.8, fixed in 1.11.1, 2.2.1, and 3.2.1 — allowed an attacker to execute SQL
-through the SQL panel's own form, so an exposed toolbar sits closer to remote
-code execution than to information disclosure. `django-silk` publishes a request
-and SQL profiling UI. `runserver_plus`, from `django-extensions`, carries the
-Werkzeug interactive debugger, which is arbitrary code execution by design.
+The severe cases are development tools reachable in production. The Django
+Debug Toolbar renders SQL, settings, and request internals. CVE-2021-30459 —
+CVSS 9.8, fixed in 1.11.1, 2.2.1, and 3.2.1 — allowed an attacker to execute
+SQL through the SQL panel's own form. An exposed toolbar therefore sits closer
+to remote code execution than to information disclosure. `django-silk`
+publishes a request and SQL profiling UI. `runserver_plus`, from
+`django-extensions`, carries the Werkzeug interactive debugger, which is
+arbitrary code execution by design.
 
 The durable rule is not "patch the toolbar". It is that development tooling must
 not be *importable* in production:
@@ -358,24 +373,24 @@ if DEBUG:
 
 Review technique, from outside and from the repository:
 
-- Request the well-known paths against the deployed host and record what
-  answers rather than what should: `/admin/`, `/__debug__/`, `/silk/`,
-  `/metrics`, `/health`, `/api/schema`, `/swagger/`, `/redoc/`, `/.env`,
-  `/.git/config`.
+- Request the well-known paths against the deployed host, and record what
+  answers rather than what should. Those paths are `/admin/`, `/__debug__/`,
+  `/silk/`, `/metrics`, `/health`, `/api/schema`, `/swagger/`, `/redoc/`,
+  `/.env`, and `/.git/config`.
 - Trigger a deliberate 500 and confirm no traceback renders.
 - Grep `INSTALLED_APPS`, `MIDDLEWARE`, and the URLconf for `debug_toolbar`,
-  `silk`, and `django_extensions`, and confirm each is both guarded by `DEBUG`
-  and missing from the production dependency set.
+  `silk`, and `django_extensions`. Confirm that `DEBUG` guards each one, and
+  that each is missing from the production dependency set.
 - Read what a health endpoint actually returns. One that reports dependency
-  versions and database reachability is a reconnaissance aid; keep the detailed
-  variant authenticated and leave a bare liveness endpoint public.
+  versions and database reachability is a reconnaissance aid. Keep the detailed
+  variant authenticated, and leave a bare liveness endpoint public.
 
-Metrics deserve their own line: `django-prometheus` and its equivalents publish
+Metrics deserve their own line. `django-prometheus` and its equivalents publish
 per-endpoint request counts and latencies, which disclose the URL inventory and
-the traffic shape. Bind them to an internal interface or require
-authentication; an unguessable path is not a control. Schema and browsable-API
-exposure is owned by `api-drf-specific.md`, "Schema and browsable-API
-exposure", and the `DEBUG` error page itself by A02.
+the traffic shape. Bind them to an internal interface, or require
+authentication. An unguessable path is not a control. `api-drf-specific.md`,
+"Schema and browsable-API exposure" owns schema and browsable-API exposure, and
+A02 owns the `DEBUG` error page itself.
 
 CWE-215 (Insertion of Sensitive Information Into Debugging Code), CWE-489
 (Active Debug Code), and CWE-287 (Improper Authentication) for an operational
@@ -384,28 +399,28 @@ console or Debug Toolbar, medium for metrics and health disclosure.
 
 ## Gunicorn hardening
 
-- Run as a dedicated non-root user. Bind to a local socket/loopback, not a public
-  interface; let Nginx face the internet.
-- Set sensible `--timeout`, worker count, and `--max-requests`/`--max-requests-jitter`
-  to recycle workers. Don't run Gunicorn with `--reload` or Django's `runserver`
-  in production.
+- Run as a dedicated non-root user. Bind to a local socket or loopback, not to
+  a public interface. Let Nginx face the internet.
+- Set a sensible `--timeout`, worker count, and
+  `--max-requests`/`--max-requests-jitter` to recycle workers. Do not run
+  Gunicorn with `--reload` or Django's `runserver` in production.
 - `forwarded_allow_ips` decides whether Gunicorn honors `X-Forwarded-*` at all,
   and it defaults to `127.0.0.1,::1`. In a container the proxy is a different
-  host, so that default ignores the headers — and the fix copied from most
+  host, so that default ignores the headers. The fix copied from most
   deployment guides is `--forwarded-allow-ips="*"`, which accepts the forwarded
   headers of *any* client that can open a connection. Gunicorn's own
   documentation is explicit that the front-end proxy must ensure these headers
-  cannot be passed directly from the client. Name the proxy's address, and use
-  `*` only where the port is unreachable except through the proxy as a network
+  cannot be passed directly from the client. Name the proxy's address. Use `*`
+  only where the port is unreachable except through the proxy, as a network
   guarantee rather than an assumption.
-- `secure_scheme_headers` defaults to treating `X-Forwarded-Proto: https`,
-  `X-Forwarded-Protocol: ssl`, and `X-Forwarded-Ssl: on` as proof of TLS, and it
-  sets `wsgi.url_scheme` before Django runs. A permissive `forwarded_allow_ips`
-  therefore makes `request.is_secure()` client-controlled no matter what
-  `SECURE_PROXY_SSL_HEADER` says — the setting is not the only thing deciding
-  that answer.
+- `secure_scheme_headers` by default treats `X-Forwarded-Proto: https`,
+  `X-Forwarded-Protocol: ssl`, and `X-Forwarded-Ssl: on` as proof of TLS, and
+  it sets `wsgi.url_scheme` before Django runs. A permissive
+  `forwarded_allow_ips` therefore makes `request.is_secure()`
+  client-controlled, whatever `SECURE_PROXY_SSL_HEADER` says. That setting is
+  not the only thing that decides the answer.
 - The request-size limits are an edge control the application cannot apply for
-  itself: `--limit-request-line` (default 4094), `--limit-request-fields`
+  itself. `--limit-request-line` (default 4094), `--limit-request-fields`
   (default 100), and `--limit-request-field-size` (default 8190) bound the
   request line and headers before any Django code runs.
 
@@ -437,22 +452,21 @@ Grant write access only to the paths the app genuinely needs.
 
 ### Principle layer
 
-An image is a build artifact with a security posture of its own, and the split
-of responsibility is what keeps the findings actionable: **the backend owns
-everything reproducible from the repository; the platform owns everything
-enforced by the orchestrator.** A missing `USER` line is a defect in a file the
-reader can edit. A missing `runAsNonRoot` is a recommendation to another team.
-Audit the first and record the second as a cross-team note, or the review fills
-with findings nobody reading it can fix.
+An image is a build artifact with a security posture of its own. The split of
+responsibility keeps the findings actionable: **the backend owns everything
+reproducible from the repository; the platform owns everything enforced by the
+orchestrator.** A missing `USER` line is a defect in a file the reader can
+edit. A missing `runAsNonRoot` is a recommendation to another team. Audit the
+first, and record the second as a cross-team note. Without that split, the
+review fills with findings nobody who reads it can fix.
 
 Backend-owned, and all of it visible in the Dockerfile:
 
 - A pinned, minimal, currently maintained base image — a digest or a specific
   slim or distroless tag, never a floating `latest`.
 - A non-root `USER`. The default is root, so without that line the application
-  runs as root inside the container, which is what turns a container-escape
-  weakness in the runtime below into a host-root problem rather than an
-  unprivileged one.
+  runs as root inside the container. That turns a container-escape weakness in
+  the runtime below into a host-root problem rather than an unprivileged one.
 - A multi-stage build, so compilers, package caches, and any build-time
   credential stay out of the shipped stage.
 - A `.dockerignore` that excludes `.env`, `.git`, `*.pem`, `*.key`, local
@@ -461,16 +475,17 @@ Backend-owned, and all of it visible in the Dockerfile:
   to `/tmp` or an explicitly mounted volume. This is the backend's half of a
   control the platform switches on.
 
-Platform-owned, and worth naming once rather than auditing: `runAsNonRoot`,
+Name these platform-owned items once, rather than audit them: `runAsNonRoot`,
 `readOnlyRootFilesystem`, `allowPrivilegeEscalation: false`, dropped
 capabilities, seccomp profiles, resource limits, and egress policy. A non-root
-`USER` is necessary but not sufficient — the platform is what enforces it.
+`USER` is necessary but not sufficient, because the platform is what enforces
+it.
 
-CWE-250 (Execution with Unnecessary Privileges).
-Severity: medium on its own, high in combination with a runtime escape. runc's
-CVE-2024-21626 is the reference case, a working-directory and leaked-descriptor
-breakout fixed in runc 1.1.12, against which a non-root container with
-capabilities dropped is the difference between an escape and a contained one.
+CWE-250 (Execution with Unnecessary Privileges). Severity: medium on its own,
+high in combination with a runtime escape. runc's CVE-2024-21626 is the
+reference case. It is a working-directory and leaked-descriptor breakout, fixed
+in runc 1.1.12. Against it, a non-root container with capabilities dropped is
+the difference between an escape and a contained one.
 
 ### Django & DRF implementation layer
 
@@ -503,27 +518,28 @@ ENV PYTHONDONTWRITEBYTECODE=1
 CMD ["gunicorn", "app.wsgi", "--bind", "0.0.0.0:8000"]
 ```
 
-The numeric `USER` is deliberate: `runAsNonRoot` compares a UID, and it cannot
-tell whether a user *name* resolves to zero. `collectstatic` output and any
-writable cache directory belong in a build stage or a mounted volume, not in a
-path the running process has to create for itself.
+The numeric `USER` is deliberate. `runAsNonRoot` compares a UID, and it cannot
+determine whether a user *name* resolves to zero. `collectstatic` output and
+any writable cache directory belong in a build stage or a mounted volume. They
+do not belong in a path the running process has to create for itself.
 
-**Write-time.** When generating a Dockerfile, write the pinned base image, the
-multi-stage split, the numeric non-root `USER`, and a `.dockerignore` with a
-scoped `COPY` as the first version of the file rather than as a later
-hardening pass, because a layer is immutable and additive: an image that once
-carried `.env`, `.git`, or a build credential still carries it after the line
-that copied it is gone. Keep the running process writing only to `/tmp` or a
-mounted volume in that same edit, so the platform can switch on a read-only
-root filesystem without the application having to be rewritten for it.
+**Write-time.** When you generate a Dockerfile, write the pinned base image,
+the multi-stage split, the numeric non-root `USER`, and a `.dockerignore` with
+a scoped `COPY`. Write them as the first version of the file, not as a later
+hardening pass. A layer is immutable and additive. An image that once carried
+`.env`, `.git`, or a build credential still carries it after the line that
+copied it is gone. In that same edit, keep the running process writing only to
+`/tmp` or a mounted volume. The platform can then switch on a read-only root
+filesystem, and nobody has to rewrite the application for it.
 
 ### Secrets in image layers
 
 Layers are immutable and additive. A file written in one layer stays in that
-layer's archive even when a later layer deletes it — `RUN rm` removes it from
+layer's archive, even when a later layer deletes it. `RUN rm` removes it from
 the merged filesystem the container sees, not from the image. `docker history`,
 `docker save`, and anyone who can pull the image still reach it. Build
-arguments are worse still: `ARG` values are recorded in image metadata outright.
+arguments are worse still, because the image metadata records `ARG` values
+outright.
 
 Four ways a secret arrives:
 
@@ -549,7 +565,7 @@ RUN --mount=type=secret,id=pip_token \
     pip install --no-cache-dir -r requirements.txt
 ```
 
-The audit technique matters as much as the rule, because **a scan of the running
+The audit technique matters as much as the rule. **A scan of the running
 container passes while the secret sits in a lower layer in the registry.** Scan
 the image and its layers, not a container started from it:
 
@@ -559,47 +575,48 @@ docker image inspect IMAGE --format '{{range .Config.Env}}{{println .}}{{end}}'
 docker save IMAGE -o image.tar   # then scan each layer archive inside
 ```
 
-Where secrets should come from at run time, and why an environment variable is
-the floor rather than the target, is in `service-identity-and-secrets.md`,
-"Where secrets live and how they reach the process"; this section covers only
-the image as a leak vector. Treat a secret found in a published layer as
-disclosed — rotate first, then fix the build. CWE-522 (Insufficiently Protected
+`service-identity-and-secrets.md`, "Where secrets live and how they reach the
+process" owns where secrets come from at run time. It also owns why an
+environment variable is the floor rather than the target. This section covers
+only the image as a leak vector. Treat a secret found in a published layer as
+disclosed. Rotate first, then fix the build. CWE-522 (Insufficiently Protected
 Credentials), CWE-540 (Inclusion of Sensitive Information in Source Code), and
 A03:2025 where the value is a registry or build credential. Severity: high to
 critical by blast radius.
 
 ### Scanning the built image
 
-Scanning the image answers a question the Dockerfile cannot: not what the
-build was instructed to assemble, but what is actually present in the layers
-that shipped. Trivy (v0.73.0, 3 Aug 2026) scans OS packages and language
-dependencies for known advisories, and also covers IaC misconfiguration,
-secrets, and licenses. Grype (v0.116.1, 28 July 2026) matches OS and language
-packages against its own vulnerability database, and will read an SBOM in
-place of the image. Syft (v1.50.0, 28 July 2026) generates the SBOM those
-tools consume, in CycloneDX, SPDX, or its own format. All three are
-Apache-2.0, and all three ship as single Go binaries rather than as Python
-packages — which is why they are documented as CI patterns and hold no row in
-`security-hardening-libraries.md`. That index gates pip-installable
-dependencies, and a binary a workflow invokes is not one.
+A scan of the image answers a question the Dockerfile cannot. It reports what
+is actually present in the layers that shipped, not what the build was
+instructed to assemble. Trivy (v0.73.0, 3 Aug 2026) scans OS packages and
+language dependencies for known advisories, and it also covers IaC
+misconfiguration, secrets, and licenses. Grype (v0.116.1, 28 July 2026) matches
+OS and language packages against its own vulnerability database, and it reads
+an SBOM in place of the image. Syft (v1.50.0, 28 July 2026) generates the SBOM
+those tools consume, in CycloneDX, SPDX, or its own format.
 
-Where those scanners run, what their exit codes gate, which file the SBOM is
-generated from, and what provenance the build carries are the pipeline's
-questions rather than the image's. They are owned by
-`a03-software-supply-chain.md`, "SBOM, scan gate, and provenance", together
-with the reason to pin a scanner's own action to a commit SHA rather than to
-a tag. This file stops at the artifact: what the image contains, who it runs
-as, and what stays readable in a layer after a later layer deleted it.
+All three are Apache-2.0, and all three ship as single Go binaries rather than
+as Python packages. This file therefore documents them as CI patterns, and they
+hold no row in `security-hardening-libraries.md`. That index gates
+pip-installable dependencies, and a binary a workflow invokes is not one.
+
+Four questions belong to the pipeline rather than to the image. They are where
+those scanners run, what their exit codes gate, which file the SBOM comes from,
+and what provenance the build carries. `a03-software-supply-chain.md`, "SBOM,
+scan gate, and provenance" owns them. It also gives the reason to pin a
+scanner's own action to a commit SHA rather than to a tag. This file stops at
+the artifact. That is what the image contains, who it runs as, and what a layer
+still holds after a later layer deleted it.
 
 ## Static and media
 
-- Keep user uploads outside application/static roots or in object storage, with
-  no execute behavior and no write path into deployed code. Public user content
-  should use an isolated origin; private media must not have a permanent,
-  directly browsable URL. Full validation, SVG/image/archive handling, generated
-  names, and download authorization are in `file-uploads.md`. A CDN placed in
-  front of private objects must either not cache them or include the signing
-  parameters in its cache key; the same file carries that rule and the
+- Keep user uploads outside application and static roots, or in object storage,
+  with no execute behavior and no write path into deployed code. Public user
+  content should use an isolated origin. Private media must not have a
+  permanent, directly browsable URL. `file-uploads.md` owns full validation,
+  SVG, image and archive handling, generated names, and download authorization.
+  A CDN in front of private objects must either not cache them, or include the
+  signing parameters in its cache key. The same file carries that rule and the
   internal-redirect pattern that pairs with it.
 - Serve static assets from the proxy or from WhiteNoise, never through Django
   in production. When Nginx serves them, end both the `location` prefix and the
@@ -621,107 +638,112 @@ prefix that is correct alone still exposes the parent directory.
 
 ## Database and secrets
 
-- Enforce TLS on the DB connection; don't expose the DB port publicly; firewall
-  it to the app hosts. "Enforced" means *verified* — `sslmode=verify-full` with
-  a pinned root certificate, not `require`. The application-side data layer —
-  migration versus runtime roles, row-level security, pool sizing, statement
-  timeouts — is in `data-layer-and-database.md`.
-- Load secrets with `os.environ` from an injected environment or through the
-  official, maintained SDK for the deployment's secrets manager; keep `.env` out
-  of the repository and production artifact. Which delivery mechanism suits
-  which runtime, and why an environment variable is the floor rather than the
-  target for a production credential, are in
+- Enforce TLS on the DB connection. Do not expose the DB port publicly, and
+  firewall it to the app hosts. "Enforced" means *verified*:
+  `sslmode=verify-full` with a pinned root certificate, not `require`.
+  `data-layer-and-database.md` owns the application-side data layer: migration
+  versus runtime roles, row-level security, pool sizing, and statement
+  timeouts.
+- Load secrets with `os.environ` from an injected environment, or through the
+  official, maintained SDK for the deployment's secrets manager. Keep `.env`
+  out of the repository and out of the production artifact.
   `service-identity-and-secrets.md`, "Where secrets live and how they reach the
-  process". Do not add a generic helper merely
-  to parse environment variables. `python-decouple` does not pass the current
-  maintenance gate; existing use should be re-vetted. Validate required settings
-  and types at startup and fail closed without printing secret values.
+  process" owns which delivery mechanism suits which runtime. It also owns why
+  an environment variable is the floor rather than the target for a production
+  credential. Do not add a generic helper merely to parse environment
+  variables. `python-decouple` does not pass the current maintenance gate, and
+  existing use needs a re-vet. Validate required settings and types at startup,
+  and fail closed without a print of secret values.
 
 ## Caching security
 
-- Treat reverse proxies, CDNs, Django's site/per-view cache, and shared Redis or
-  Memcached as data-serving infrastructure. Keep cache services authenticated,
-  private, least-privileged, and separated by environment; do not expose cache
-  ports publicly.
+- Treat reverse proxies, CDNs, Django's site and per-view cache, and shared
+  Redis or Memcached as data-serving infrastructure. Keep cache services
+  authenticated, private, least-privileged, and separated by environment. Do
+  not expose cache ports publicly.
 - Never shared-cache authenticated or personalized responses by default. Audit
   `cache_page`, `UpdateCacheMiddleware`, proxy/CDN rules, `Vary`, `Set-Cookie`,
   and `Cache-Control` together, and test with two users and two tenants.
-- Keep Django at the current patch level in the supported line — 6.1, 6.0.8,
-  or 5.2.17 as of 9 Aug 2026; the 2026 cache fixes themselves landed in 6.0.7
-  and 5.2.16. See A01 for audience-safe keys, authorization ordering,
-  invalidation, and private-response policy; infrastructure configuration
-  cannot repair a key that omits security context.
+- Keep Django at the current patch level in the supported line: 6.1, 6.0.8, or
+  5.2.17 as of 9 Aug 2026. The 2026 cache fixes themselves landed in 6.0.7 and
+  5.2.16. See A01 for audience-safe keys, authorization order, invalidation,
+  and private-response policy. Infrastructure configuration cannot repair a key
+  that omits security context.
 
 ### Cache deception at the edge
 
-Cache deception is the mirror image of the leak A01 owns. There, an application
-key omits an authorization dimension and one principal is served another's
-cached bytes. Here the application key is irrelevant, because the edge decided
-on its own that the response was static — the URL ends in something that looks
-like a file extension, or sits under a prefix a CDN rule marks cacheable — and
-stored a personalized response under a path any anonymous caller can request.
-Two things have to be true at once, which is why it splits across two teams:
-the edge caches by what the URL looks like rather than by what the origin said,
-and the application answers a decorated URL with the same personalized response
-it gives the undecorated one.
+Cache deception is the opposite case to the leak A01 owns. There, an
+application key omits an authorization dimension, and one principal receives
+another's cached bytes. Here the application key is irrelevant, because the
+edge decided on its own that the response was static. The URL ends in something
+that looks like a file extension, or it sits under a prefix a CDN rule marks
+cacheable. The edge then stored a personalized response under a path any
+anonymous caller can request.
+
+Two things have to be true at once, which is why it splits across two teams.
+The edge caches by what the URL looks like rather than by what the origin said.
+The application answers a decorated URL with the same personalized response it
+gives the undecorated one.
 
 The second half is the one this repository can act on, and it is a routing
-question rather than a caching one. A route ending in a catch-all segment, a
-loose `re_path`, or a resolver that tolerates a trailing suffix is what makes
-the decorated URL reach the authenticated view at all; a route that matches
-exactly returns 404 and there is nothing to cache. The first half — which paths
-and extensions the CDN treats as static, and whether it honors the origin's
-`Cache-Control` — is a recommendation to whoever operates the edge, in the same
-register as orchestrator enforcement above, and the question to send them is
-whether any cache rule can override a `private` or `no-store` response.
+question rather than a caching one. Three things make the decorated URL reach
+the authenticated view at all. They are a route that ends in a catch-all
+segment, a loose `re_path`, and a resolver that tolerates a trailing suffix. A
+route that matches exactly returns 404, and there is nothing to cache.
+
+The first half is a recommendation to whoever operates the edge, in the same
+register as orchestrator enforcement above. That half is which paths and
+extensions the CDN treats as static, and whether it honors the origin's
+`Cache-Control`. The question to send them is whether any cache rule can
+override a `private` or `no-store` response.
 
 CWE-524 (Use of Cache Containing Sensitive Information). Severity: rated on
 what the cached response holds, per A01's cache section rather than separately
 here.
 
-**Write-time.** When generating a route that serves authenticated or
+**Write-time.** When you generate a route that serves authenticated or
 personalized content, match the path exactly rather than with a trailing
-catch-all, and put `never_cache` or an explicit `Cache-Control: private,
-no-store` on the response in the same edit, because an edge rule keyed on what
-a URL looks like will cache anything the origin did not mark private, and the
-decorated URL is one an attacker chooses.
+catch-all. Put `never_cache` or an explicit `Cache-Control: private, no-store`
+on the response in the same edit. An edge rule keyed on what a URL looks like
+caches anything the origin did not mark private, and the attacker chooses the
+decorated URL.
 
 ## Queue and broker exposure
 
-- Redis/RabbitMQ brokers must be authenticated and firewalled, never
-  internet-reachable. A public broker plus a pickle serializer is Critical RCE
-  (A08). Don't put secrets in task args/results (A09).
-- Treat a reachable, unauthenticated Redis as Critical on its own, not merely as
-  a broker-hygiene issue. CVE-2025-49844 is a use-after-free in the embedded Lua
-  interpreter that lets a caller able to run a script escape the sandbox and
-  execute code, and CVE-2022-0543 was an equivalent sandbox escape introduced by
-  Debian/Ubuntu packaging. Patch, require authentication, and keep the instance
-  off any routable network. Application-side use of Redis and other key-value
-  stores is in `data-layer-and-database.md`.
+- Redis and RabbitMQ brokers must be authenticated and firewalled, and never
+  internet-reachable. A public broker with a pickle serializer is Critical RCE
+  (A08). Do not put secrets in task arguments or results (A09).
+- Treat a reachable, unauthenticated Redis as Critical on its own, not merely
+  as a broker-hygiene issue. CVE-2025-49844 is a use-after-free in the embedded
+  Lua interpreter. It lets a caller who can run a script escape the sandbox and
+  execute code. CVE-2022-0543 was an equivalent sandbox escape that Debian and
+  Ubuntu packaging introduced. Patch, require authentication, and keep the
+  instance off any routable network. `data-layer-and-database.md` owns
+  application-side use of Redis and other key-value stores.
 
 ## Review checklist
 
 - [ ] TLS enforced; HSTS set; no redirect loop with the proxy.
-- [ ] Any pinned key-exchange group list includes `X25519MLKEM768` rather than
-      overriding a current OpenSSL's hybrid default with a classical-only list
+- [ ] Any pinned key-exchange group list includes `X25519MLKEM768`. It does not
+      override a current OpenSSL's hybrid default with a classical-only list
       inherited from an older hardening template.
 - [ ] Forwarded headers trusted only from the proxy; client IP for lockout is
-      correct; `SECURE_PROXY_SSL_HEADER` not client-spoofable; any forwarded
-      client-certificate identity is stripped inbound and the application port
-      cannot be reached without traversing the proxy.
-- [ ] Client IP is read a known number of hops from the right of
-      `X-Forwarded-For`, never the leftmost entry, and the hop count matches the
+      correct; `SECURE_PROXY_SSL_HEADER` not client-spoofable. Any forwarded
+      client-certificate identity is stripped inbound, and the application port
+      cannot be reached without a traversal of the proxy.
+- [ ] The code reads the client IP a known number of hops from the right of
+      `X-Forwarded-For`, never the leftmost entry. The hop count matches the
       deployed topology.
 - [ ] Security headers defined once; server/version banners hidden.
-- [ ] No development tooling is reachable or importable in production; a
-      deliberate 500 renders no traceback; metrics and detailed health
+- [ ] No development tooling is reachable or importable in production, and a
+      deliberate 500 renders no traceback. Metrics and detailed health
       endpoints are authenticated or internal-only.
 - [ ] Gunicorn non-root on a local socket; systemd unit hardened;
       `forwarded_allow_ips` names the proxy rather than `*`.
-- [ ] The application server is pinned at or above `23.0.0` for Gunicorn, and
-      whichever async worker the command line selects is pinned at its own
-      floor; the smuggling exposure itself is sent outward as a question about
-      the proxy chain rather than written up as a repository finding.
+- [ ] The application server is pinned at or above `23.0.0` for Gunicorn.
+      Whichever async worker the command line selects is pinned at its own
+      floor. The review sends the smuggling exposure itself outward as a
+      question about the proxy chain, rather than a repository finding.
 - [ ] The image pins a maintained base, declares a numeric non-root `USER`,
       builds in stages, and writes nothing outside `/tmp` or a mounted volume.
 - [ ] `.dockerignore` excludes `.env`, `.git`, keys, and local settings, and no
