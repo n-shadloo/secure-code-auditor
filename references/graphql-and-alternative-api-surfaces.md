@@ -193,6 +193,22 @@ class InvoiceType(DjangoObjectType):
         # The nested edge needs its own scope. The parent type's scope does
         # not carry down to it.
         return queryset.filter(account__members=info.context.user)
+
+
+class UserType(DjangoObjectType):
+    class Meta:
+        model = User
+        fields = ("id", "display_name")
+
+    @classmethod
+    def get_queryset(cls, queryset, info):
+        # `OrganizationType` publishes `members`, so this type is reachable
+        # and needs a scope of its own. The scope is the set this caller may
+        # read, and not the one row this caller is.
+        user = info.context.user
+        if not user.is_authenticated:
+            return queryset.none()
+        return queryset.filter(organizations__members=user).distinct()
 ```
 
 Three graphene-django specifics decide whether this actually holds:
@@ -235,10 +251,16 @@ no-op by default" applies unchanged there. `user.has_perm(perm, obj)` behaves
 identically from a resolver and from a viewset.
 
 **Write-time.** When you generate a type or a resolver, override
-`get_queryset` on every type that reaches an object. Scope it to
-`info.context.user`. Do not authorize the entry point and then trust the edges
-below it. The default implementation returns the queryset unchanged, and the
-client chooses the nested selection.
+`get_queryset` on every type that reaches an object. Scope it to the set that
+`info.context.user` may read, and not to the one row that `info.context.user`
+is. A scope on a shared collection that returns only the caller empties that
+collection for everyone. The repair that follows is deletion of the override,
+which leaves the type unscoped. Refuse an unauthenticated principal in the
+scope as well. `AnonymousUser` carries no primary key, so
+`filter(owner_id=user.id)` compiles to `owner_id IS NULL` and returns every
+unowned row. Do not authorize the entry point and then trust the edges below
+it. The default implementation returns the queryset unchanged, and the client
+chooses the nested selection.
 
 Enumerate `fields` on the type in that same edit. Use an allow-list. Never use
 `exclude`, and never use `"__all__"`. A deny-list publishes whatever the next
@@ -267,6 +289,8 @@ Detection is at the type, not the view:
   production nobody reads it.
 - Any `exclude` list. A deny-list fails open: the next migration adds a field
   and the schema publishes it.
+- `Meta.fields = "__all__"` or `Meta.exclude` on a Django Ninja `ModelSchema`
+  — the same two failures, on the surface that is not a DRF route.
 
 The correct pattern is an explicit `fields` allow-list, and server-controlled
 attributes must be absent from input types rather than merely absent from
@@ -329,45 +353,57 @@ from graphql.validation import ASTValidationRule
 MAX_COST = 1000
 FIELD_COST = {"search": 50}      # anything unlisted costs 1
 PAGE_ARGUMENTS = ("first", "last", "limit")
-ASSUMED_PAGE_SIZE = 100          # when the size arrives in a variable
+MAX_PAGE_SIZE = 100              # the ceiling the paginator enforces
+LIST_FIELDS = frozenset({"authors", "books", "members", "search"})
 
 
 def page_multiplier(field):
     for argument in field.arguments:
         if argument.name.value in PAGE_ARGUMENTS:
             if isinstance(argument.value, IntValueNode):
-                return int(argument.value.value)
-            return ASSUMED_PAGE_SIZE
-    return 1
+                # A number the caller sent never lowers the multiplier.
+                return max(1, int(argument.value.value))
+            return MAX_PAGE_SIZE
+    # An absent page argument does not mean one object.
+    return MAX_PAGE_SIZE if field.name.value in LIST_FIELDS else 1
 
 
 class CostLimitRule(ASTValidationRule):
     def enter_operation_definition(self, node, *_args):
-        cost = self.cost_of(node.selection_set, 1)
+        cost = self.cost_of(node.selection_set, 1, frozenset())
         if cost > MAX_COST:
             self.report_error(GraphQLError(
                 f"Operation cost {cost} exceeds the limit {MAX_COST}.", node
             ))
 
-    def cost_of(self, selection_set, multiplier):
+    def cost_of(self, selection_set, multiplier, spreads):
         total = 0
         for selection in selection_set.selections:
             if isinstance(selection, FragmentSpreadNode):
-                # An unfollowed spread is a free bypass of the budget.
-                fragment = self.context.get_fragment(selection.name.value)
+                # An unfollowed spread is a free bypass of the budget, and a
+                # spread already open on this path is a cycle.
+                name = selection.name.value
+                if name in spreads:
+                    self.report_error(GraphQLError(
+                        "Cyclic fragment spread.", selection
+                    ))
+                    continue
+                fragment = self.context.get_fragment(name)
                 if fragment is not None:
-                    total += self.cost_of(fragment.selection_set, multiplier)
+                    total += self.cost_of(
+                        fragment.selection_set, multiplier, spreads | {name}
+                    )
                 continue
             factor = multiplier
             if isinstance(selection, FieldNode):
                 factor *= page_multiplier(selection)
                 total += FIELD_COST.get(selection.name.value, 1) * factor
             if selection.selection_set is not None:
-                total += self.cost_of(selection.selection_set, factor)
+                total += self.cost_of(selection.selection_set, factor, spreads)
         return total
 ```
 
-Three details decide whether a rule of this shape is worth anything. The
+Five details decide whether a rule of this shape is worth anything. The
 multiplier must **compound down the tree**, and must not apply per field.
 `authors(first: 100) { books(first: 100) { ... } }` is ten thousand objects,
 and not two hundred.
@@ -377,10 +413,28 @@ moves the expensive selection into a fragment, and the budget then reads as
 zero. The rule therefore resolves a spread through the validation context, and
 does not skip a non-field selection.
 
-A page size that arrives **in a variable is not in the AST**. The rule must
-therefore assume a ceiling, and must not fall through to a multiplier of one.
-Validation runs before the coercion of the variables. The assumed value should
-therefore be the maximum that the paginator serves.
+A **spread that is already open on the path is a cycle**. Every validation
+rule runs in one pass over the document, so this rule does not run after
+`NoFragmentCycles`. Two fragments that spread each other therefore drive the
+recursion into `RecursionError`, and the whole request fails on the stack
+rather than on the budget. Carry the open spread names down the recursion, and
+report an error on a repeat.
+
+**The multiplier comes from the server ceiling, and never from the number the
+caller sent.** The GraphQL grammar signs an integer, so `first: -100000`
+parses into a valid `IntValueNode`. The field then carries a negative cost,
+which pays for an expensive field beside it and brings the document under
+budget. Clamp the parsed value up to one.
+
+**A page size that arrives in a variable is not in the AST**, because
+validation runs before the coercion of the variables. An absent page argument
+is the same case, and it is the worse one. A list field with no page argument
+scores one, whatever the number of rows it returns. Assume the ceiling for
+both, and name the list fields of the schema so that the rule can recognize
+one. The constant is a contract with the paginator, so set it to the maximum
+that the paginator serves. A list field whose resolver enforces no maximum
+cannot be costed at all. Add pagination to that field before you tune a cost
+number for it.
 
 Strawberry takes such a rule through `AddValidationRules`. Supply it as a
 factory rather than a shared instance, for the reason above. graphene takes it
@@ -418,11 +472,21 @@ resolver exception returns the exception string to the client, which routinely
 carries model and column names, file paths, and SQL fragments.
 
 Strawberry provides a `MaskErrors` extension; graphene requires a formatter
-that replaces messages for non-allowlisted exception types. The rules
-underneath are unchanged. `a10-exceptional-conditions.md`, "Don't leak on
-error" and `a09-logging-and-alerting.md`, "Scrub error reports" own them. Log
-the detail server-side. Return an opaque reference to the client. Maps to
-CWE-209 and A05:2025.
+that replaces messages for non-allowlisted exception types.
+
+Never allow-list `GraphQLError` by its class. graphql-core wraps a resolver
+exception in a `GraphQLError`, and copies the string of that exception into
+the message. A formatter keyed on the class therefore passes every internal
+exception straight through. Key it on `error.original_error` instead. That
+attribute is `None` on an error a developer raised, and it holds the caught
+exception on an error the library wrapped. Mask the second kind. Never write
+an exception value into a `GraphQLError` message either, because that moves
+the leak into the first kind.
+
+The rules underneath are unchanged. `a10-exceptional-conditions.md`, "Don't
+leak on error" and `a09-logging-and-alerting.md`, "Scrub error reports" own
+them. Log the detail server-side. Return an opaque reference to the client.
+Maps to CWE-209 and A05:2025.
 
 ## Mutations: allow-listed inputs and nested writes
 
@@ -449,6 +513,9 @@ def mutate(self, info, input):
         description=input.description,
         owner=user,
     )
+    # A list input is a multiplier that the document cost rule never reads.
+    if len(input.member_ids) > MAX_MEMBERS_PER_MUTATION:
+        raise GraphQLError("Too many members in one operation.")
     for member_id in input.member_ids:
         # Adding a member to a project is a second authorization decision,
         # not a side effect of being allowed to create the project.
@@ -461,6 +528,12 @@ Two rules, both surface-independent: an input type is an allow-list of
 writable fields, and every nested write inside a mutation is authorized
 individually. A mutation that creates a parent and attaches children performs
 one authorization decision per object, not one for the operation.
+
+A third rule belongs to the budget rather than to the input. The cost rule
+above multiplies by a pagination argument on a field the operation returns. It
+reads no input value, so a list of ten thousand identifiers costs the same as
+a list of one. Give every list input a maximum length, and enforce that length
+before the loop that reads the list.
 
 ## Batching and throttling: the unit of measurement changes
 
@@ -556,6 +629,10 @@ def resolve_document(body):
     """`body` is the decoded JSON request body. Nothing here writes to
     REGISTRY: an implementation that registers whatever a client sends on
     first use is a cache, not an allowlist, and gates nothing."""
+    if not isinstance(body, dict):
+        # A JSON array is the batch shape, and a guard that reads a key
+        # never runs against it.
+        raise PermissionDenied("This endpoint accepts one operation object.")
     if "query" in body:
         raise PermissionDenied("This endpoint accepts operation ids only.")
     document = REGISTRY.get(body.get("operationId"))
@@ -572,10 +649,12 @@ build this control wrong.
 
 A request that carries a `query` key is **refused rather than executed**. An
 endpoint that falls back to the arbitrary document when the id is absent has
-an allowlist that any client can leave. Hook it where the view decodes the
-body, and before the view hands a document to the schema. That place is
-`GraphQLView.parse_body` in graphene, or the Django view in Strawberry. It is
-the gateway where one sits in front.
+an allowlist that any client can leave. The gate reads the shape of the body
+before it reads a key. A guard that tests for a key does not run against a
+JSON array, and a JSON array is the batch shape. Hook the gate where the view
+decodes the body, and before the view hands a document to the schema. That
+place is `GraphQLView.parse_body` in graphene, or the Django view in
+Strawberry. It is the gateway where one sits in front.
 
 Everything downstream is unchanged. An allowlisted operation still runs its
 own resolver authorization, and still validates its inputs. Where it takes an
@@ -632,11 +711,18 @@ def get_invoice(request, invoice_id: int):
 
 ```python
 # Correct: authentication set once at the API object so it applies to every
-# operation, and the queryset scoped to the caller rather than looked up by
-# raw id.
+# operation, the queryset scoped to the caller rather than looked up by raw
+# id, and the response an explicit field allow-list.
 api = NinjaAPI(auth=JWTAuth())
 
-@api.get("/invoices/{invoice_id}")
+
+class InvoiceOut(Schema):
+    id: int
+    number: str
+    amount: Decimal
+
+
+@api.get("/invoices/{invoice_id}", response=InvoiceOut)
 def get_invoice(request, invoice_id: int):
     return get_object_or_404(
         Invoice.objects.filter(account=request.auth.account), pk=invoice_id
@@ -647,14 +733,23 @@ Set `auth=` on the `NinjaAPI` object so it is inherited, and treat a route
 that overrides it to `None` as a deliberate, reviewed exception. Route-level
 `auth=` scattered across a codebase is a deny-list.
 
-Three more Ninja-specific checks:
+Four more Ninja-specific checks:
 
 - Authentication is not authorization. A resolved `request.auth` says who is
   calling, and nothing about which object they may reach; scope the queryset
   as in `a01-broken-access-control.md`.
-- CSRF is off by default, which is correct for token and bearer auth and wrong
-  the moment `django_auth` (session cookies) is used. Enable it explicitly on
-  cookie-authenticated operations.
+- An operation with no `response=` returns whatever the handler built, and
+  nothing filters it. The response schema is the field allow-list on this
+  surface. A handler that returns `model_to_dict(obj)` publishes every column.
+- **Every Django Ninja view is CSRF-exempt at the Django middleware level.**
+  `CsrfViewMiddleware` therefore protects no operation on the API. In
+  django-ninja 1.6.2 the cookie authentication class runs the check instead,
+  and `APIKeyCookie` defaults `csrf` to `True`, so `django_auth` is protected.
+  The hole is the operation that carries no cookie authentication class and
+  still reads `request.user`. `AuthenticationMiddleware` resolves the session
+  cookie for it, and no CSRF check runs at all. Treat `auth=None` on a
+  state-changing operation as a CSRF finding. Treat `csrf=False` on a cookie
+  authentication class the same way.
 - `django-ninja-jwt` defaults its `SIGNING_KEY` to Django's `SECRET_KEY`,
   which couples token forgery to every other use of that key and makes
   rotation an all-or-nothing event. Set an independent signing key; see
@@ -676,10 +771,11 @@ project-wide default to inherit. An un-annotated operation is public from the
 moment of its routing.
 
 Scope the queryset to `request.auth` at the same time. Authentication resolves
-who is calling, and decides nothing about which object they may reach. Enable
-CSRF explicitly on any operation that authenticates from a session cookie.
-CSRF is off by default there, and that default is correct only for a bearer
-credential.
+who is calling, and decides nothing about which object they may reach. Declare
+`response=` in that same edit, because it is the field allow-list on this
+surface. Give every cookie-authenticated operation a cookie authentication
+class, because that class runs the CSRF check. `CsrfViewMiddleware` does not
+run on a Django Ninja view.
 
 ## gRPC: nothing from the DRF request cycle applies
 
@@ -745,8 +841,17 @@ class ServiceTokenInterceptor(grpc.ServerInterceptor):
         )
 
     def intercept_service(self, continuation, handler_call_details):
-        metadata = dict(handler_call_details.invocation_metadata)
-        if verify_service_token(metadata.get("authorization", "")) is None:
+        # Metadata is a sequence of pairs, and a key repeats. `dict()` keeps
+        # the last value, so one component authorizes a credential that
+        # another component never reads.
+        credentials = [
+            value
+            for key, value in handler_call_details.invocation_metadata
+            if key == "authorization"
+        ]
+        if len(credentials) != 1:
+            return self._deny
+        if verify_service_token(credentials[0]) is None:
             return self._deny
         return continuation(handler_call_details)
 
@@ -771,7 +876,7 @@ server.add_secure_port("[::]:50051", credentials)
 server.start()
 ```
 
-Three things about that shape are the review rather than the example.
+Four things about that shape are the review rather than the example.
 
 - **Interceptors are given control in the order they are specified**, per
   `grpc.server`'s own documentation, so the first in the list is outermost. An
@@ -786,6 +891,14 @@ Three things about that shape are the review rather than the example.
   scoped-queryset terms in `a01-broken-access-control.md`, "IDOR / BOLA". An
   interceptor that authorizes by service name lets every method on that
   service through.
+- **gRPC metadata is a multimap, and `dict()` reads only the last value.**
+  A caller sends `authorization` twice. A `dict()` built from
+  `invocation_metadata` keeps the second value, and the interceptor
+  authorizes that one. A logger, an audit record, or a handler that reads
+  `context.invocation_metadata()` in order reads the first. The credential
+  that passed the check and the credential in the record are then different
+  values. Grep for `dict(` applied to metadata. Read the pairs as a list, and
+  refuse a request that carries a sensitive key more than one time.
 - **Transport identity is not application authorization either.** Mutual TLS
   through `ssl_server_credentials(..., require_client_auth=True)` and a
   metadata bearer token are two mechanisms. They match a proxy-verified client
@@ -916,8 +1029,12 @@ backend code for these, and do not report their absence as a backend finding:
 - [ ] Depth, alias, token, and cost limits are all applied as validation rules
       that run before execution. A document over budget is tested and rejected.
 - [ ] The cost rule compounds its multiplier down the tree. It follows a
-      fragment spread, and does not skip one. It assumes a ceiling for a page
-      size supplied in a variable.
+      fragment spread, and does not skip one. It stops on a spread already
+      open on the path, because it does not run after `NoFragmentCycles`.
+- [ ] The cost rule takes its multiplier from the server ceiling. A page
+      argument that is zero or negative never lowers a cost. A page size in a
+      variable, and an absent page argument on a list field, both assume that
+      ceiling. Every list field carries a paginator maximum to assume.
 - [ ] An execution or wall-clock timeout exists underneath the limits.
 - [ ] Array batching is bounded or disabled, and aliases and operations count
       toward the document budget.
@@ -927,19 +1044,27 @@ backend code for these, and do not report their absence as a backend finding:
 - [ ] Introspection and the in-browser query interface are disabled in
       production, and nothing depends on the schema being secret.
 - [ ] Production errors are masked; no exception strings, SQL, model names, or
-      file paths reach the client.
+      file paths reach the client. The mask keys on `original_error` and not
+      on the `GraphQLError` class, which every wrapped resolver exception
+      also carries.
 - [ ] Mutation inputs are allow-lists, ownership is set server-side, and each
-      nested write is authorized on its own terms.
+      nested write is authorized on its own terms. Every list input carries a
+      maximum length, because the document cost rule reads no input value.
 - [ ] N+1 is mitigated and verified by query count under a nested document.
 - [ ] For a first-party-only API, the operations are allowlisted or persisted.
       The mechanism is not a register-on-first-use cache. No request path
       writes to the registry. A body that carries a raw document is refused,
-      and not executed.
+      and not executed. The gate checks the shape of the body before it reads
+      a key.
 - [ ] Cookie-authenticated endpoints are not CSRF-exempt.
 - [ ] A gRPC server installs an authenticating interceptor, and that
       interceptor is first in the list. A call that arrives without a valid
       credential is refused with `UNAUTHENTICATED`, and does not reach a
       handler.
+- [ ] The interceptor reads gRPC metadata as a sequence of pairs, and not
+      through `dict()`. A request that carries a credential key more than one
+      time is refused, so the authorized value and the recorded value cannot
+      differ.
 - [ ] Authorization is decided per method and per object inside the handler.
       It is not decided one time by the interceptor that established who is
       calling. An interceptor keyed on the service name is tested against a
@@ -963,6 +1088,10 @@ backend code for these, and do not report their absence as a backend finding:
 - [ ] Every `DjangoObjectType` that is reachable overrides `get_queryset` and
       scopes from `info.context.user`; the default implementation returns the
       queryset unchanged.
+- [ ] A scope on a type reachable as a shared collection returns the set the
+      caller may read, and not the single row the caller is. An
+      unauthenticated principal is refused rather than filtered by, because
+      `AnonymousUser` has no primary key.
 - [ ] No resolver carries `graphene_django.utils.bypass_get_queryset` without
       a written justification — it disables type-level scoping on foreign-key
       and one-to-one traversal.
@@ -983,6 +1112,12 @@ backend code for these, and do not report their absence as a backend finding:
       install on 5.2 or 6.0 is therefore a supply-chain finding.
 - [ ] Every Django Ninja `NinjaAPI`, router, and route has an explicit
       `auth=`, and any `auth=None` override is a reviewed exception.
+- [ ] Every Django Ninja operation declares `response=`. A `ModelSchema` uses
+      a `fields` allow-list, and never `"__all__"` and never `exclude`.
+- [ ] A state-changing Django Ninja operation that reads `request.user` runs
+      behind a cookie authentication class with `csrf` left at `True`. Every
+      Django Ninja view is CSRF-exempt at the Django middleware level, so no
+      middleware covers it.
 - [ ] Ninja routes appear as their own rows in the URLconf audit test.
 - [ ] `django-ninja-jwt`'s `SIGNING_KEY` is independent of `SECRET_KEY`.
 - [ ] A gRPC servicer that reuses a DRF serializer gets no credit for the DRF
