@@ -84,7 +84,10 @@ Each model has a characteristic decay:
   decays into attributes taken from request input rather than from server
   state, which is worse.
 - **ReBAC** decays into relationship drift and stale membership. The usual
-  cause is that each feature writes its own recursive membership query.
+  cause is that each feature writes its own recursive membership query. A
+  revocation that removes one edge is the second cause. A reshare below that
+  edge keeps its own access. Recompute reachability for every descendant on an
+  edge removal, or do not offer a reshare at all.
 
 Code smells to grep for during review, each a lead rather than a finding:
 
@@ -261,9 +264,17 @@ a create against another owner.
 
 Two defaults compound this:
 
-- `BasePermission.has_object_permission` **returns `True`**. A custom
-  permission class that implements only `has_permission` therefore grants
-  object access to every principal that clears the view-level check.
+- **Both `BasePermission` hooks return `True`.** A custom class that
+  implements only `has_permission` therefore grants object access to every
+  principal that clears the view-level check. A custom class that implements
+  only `has_object_permission` is the same defect reversed, and it is the
+  worse one: `has_permission` then answers `True` for every caller, and the
+  list and create paths never reach the object hook at all. A
+  `permission_classes` list on the view also *replaces* the default list, so
+  the restrictive project default is gone as well. Such a viewset answers an
+  unauthenticated list and an unauthenticated create, while the code reads as
+  ownership enforcement. Implement both hooks on every custom permission
+  class, even where one of them returns a deliberate `True`.
 - No provided class except `DjangoObjectPermissions` implements an
   object-permission method. `IsAuthenticated` authorizes the view, and never
   the object.
@@ -309,6 +320,10 @@ class ViewDjangoObjectPermissions(DjangoObjectPermissions):
         "OPTIONS": ["%(app_label)s.view_%(model_name)s"],
     }
 ```
+
+The same `perms_map` override closes the GET gap on `DjangoModelPermissions`
+itself, for a project that uses that class with no object-permission backend.
+Without it a safe method asks for authentication and nothing else.
 
 With a map that requires a view permission, the response codes are deliberate
 and frequently "corrected" by mistake:
@@ -356,7 +371,12 @@ Other admin surfaces:
 
 - Custom actions gate on `@admin.action(permissions=[...])`, checked against the
   **model-level** `has_*_permission`. Any per-object rule must be enforced inside
-  the action body against the queryset. An action that declares no
+  the action body against the `queryset` argument. Signal: `self.model.objects`,
+  `Model.objects`, or `_selected_action` inside an action body. Each one reads
+  the rows again from the table, and drops the scope that `get_queryset()`
+  applied to the changelist. A staff user of one tenant then posts the primary
+  keys of another tenant and the action acts on them. Consume the `queryset`
+  argument, and read nothing else. An action that declares no
   `permissions` is filtered by nothing. `_filter_actions_by_permissions()`
   keeps it for any staff user who reaches the changelist, on the POST path as
   well as in the dropdown. From Django 6.1 the `location` argument of
@@ -367,9 +387,19 @@ Other admin surfaces:
   `location`.
 - `readonly_fields` prevents edits in the form. It is not an authorization
   control and does nothing for other write paths.
-- `autocomplete_fields` and `ForeignKeyRawIdWidget` lookups expose related-object
-  querysets. Scope them with `get_search_results()` or `limit_choices_to` where
-  the related data is sensitive.
+- `autocomplete_fields` and `ForeignKeyRawIdWidget` expose the related model
+  twice, and the two exposures need different fixes. The **lookup** answers a
+  search with matching rows, and `AutocompleteJsonView` reads it from the
+  `get_queryset()` and `get_search_results()` of the **related** model's
+  `ModelAdmin`, never from those of the one you are editing. Scope that other
+  `ModelAdmin`, or the suggestions stay a cross-tenant search. The **write**
+  accepts whatever primary key the form posts, because
+  `formfield_for_foreignkey()` builds the field from the default manager of
+  the related model. `get_search_results()` narrows the suggestions only, and
+  never the accepted value. Bind the write with `limit_choices_to`, which
+  Django applies at validation, or pass a scoped `queryset` from
+  `formfield_for_foreignkey()`. Verified against Django 5.2.15 source on
+  27 Aug 2026.
 - `is_staff` grants admin login only; `is_superuser` short-circuits every check.
 
 **Custom admin views.** A view that an overridden `get_urls()` returns runs
@@ -400,7 +430,9 @@ In order of leverage:
    `scripts/entrypoint_inventory.py` enumerates the same surface read-only.
    That is what an audit has before a test exists to run.
 3. Middleware that asserts a view was authorized. Effective, but it fights
-   third-party views.
+   third-party views. The marker it reads must sit on the view at import time.
+   A marker that a request sets is a marker that any earlier code sets, and
+   the assert then reports every request as authorized.
 4. `django-decorator-include` to apply a decorator across an included URLconf.
 
 ```python
@@ -409,8 +441,8 @@ from django.urls import URLPattern, URLResolver, get_resolver
 from rest_framework.permissions import AllowAny
 
 # Every entry is a deliberate decision, reviewed when it changes.
-PUBLIC_ROUTE_PREFIXES = ("admin/", "accounts/", "health/", "static/")
-PUBLIC_VIEWS = {"api.views.SignupView", "api.views.WebhookView"}
+PUBLIC_ROUTE_PREFIXES = ("admin/", "health/", "static/")
+REVIEWED_VIEWS = {"api.views.SignupView", "api.views.WebhookView"}
 
 
 def iter_routes(resolver=None, prefix=""):
@@ -423,11 +455,29 @@ def iter_routes(resolver=None, prefix=""):
             yield route, entry.callback
 
 
-def identify(callback):
-    target = getattr(callback, "cls", None) or getattr(
+def view_target(callback):
+    return getattr(callback, "cls", None) or getattr(
         callback, "view_class", callback
     )
+
+
+def identify(callback):
+    target = view_target(callback)
     return f"{target.__module__}.{target.__qualname__}"
+
+
+def declared_permissions(callback):
+    # The router copies the @action keyword arguments into initkwargs, and DRF
+    # applies them to the instance at dispatch. They beat the class attribute.
+    initkwargs = getattr(callback, "initkwargs", {})
+    if "permission_classes" in initkwargs:
+        return initkwargs["permission_classes"]
+    return getattr(view_target(callback), "permission_classes", None)
+
+
+def opens_the_route(permission):
+    # AllowAny itself, and every subclass of it.
+    return isinstance(permission, type) and issubclass(permission, AllowAny)
 
 
 class EveryEndpointHasAnAuthorizationDecision(SimpleTestCase):
@@ -437,24 +487,45 @@ class EveryEndpointHasAnAuthorizationDecision(SimpleTestCase):
             if route.startswith(PUBLIC_ROUTE_PREFIXES):
                 continue
             name = identify(callback)
-            if name in PUBLIC_VIEWS:
+            if name in REVIEWED_VIEWS:
                 continue
-            permissions = getattr(
-                getattr(callback, "cls", None), "permission_classes", None
-            )
-            if not permissions or AllowAny in permissions:
+            if getattr(view_target(callback), "authorization_reviewed", False):
+                continue
+            permissions = declared_permissions(callback)
+            if not permissions or any(map(opens_the_route, permissions)):
                 undecided.append((route, name))
         self.assertEqual(undecided, [], f"Undecided endpoints: {undecided}")
 ```
+
+Three properties of that test carry it, and each one is easy to lose:
+
+- **A per-action override beats the class attribute.**
+  `@action(detail=True, permission_classes=[AllowAny])` opens one route while
+  `permission_classes` on the viewset stays restrictive. The router merges the
+  `@action` keyword arguments into `initkwargs`, and `ViewSetMixin.as_view()`
+  passes them to the constructor, so the instance attribute wins at dispatch.
+  A test that reads the class attribute alone therefore reports the whole
+  viewset as decided, and the new route answers everyone. Read `initkwargs`
+  first, and treat each per-action override as its own review entry rather
+  than as a property of the viewset. Verified by execution against DRF 3.17.1
+  on 27 Aug 2026.
+- **`AllowAny` is a class, and so is every subclass of it.** Compare with
+  `issubclass`, and not with `in`. A permission class that opens the route
+  under a setting or a flag still opens it.
+- **The set names a reviewed view, and not a public one.** A protected plain
+  Django view has nothing for the test to read, so it is driven into the set
+  to make the suite green. Where the set is named for public access, the name
+  stops describing the contents. A later reader then removes the view's own
+  guard, because the list says the view is public. Name the set for the
+  review, and prefer the marker on the view itself.
 
 Where it breaks: third-party URLs (admin, allauth, health checks),
 static/media, Django's own auth views, and DRF's browsable-API and schema
 endpoints all need explicit allow-listing. The cost is a maintained allow-list;
 the benefit is that adding a public endpoint becomes a conscious, reviewable act
-rather than an omission. A non-DRF view has no `permission_classes`, so either
-allow-list it or give it a project-specific marker the test can read. Never put
-a first-party prefix in `PUBLIC_ROUTE_PREFIXES`. A prefix also exempts each
-route that someone adds below it later.
+rather than an omission. Never put a first-party prefix in
+`PUBLIC_ROUTE_PREFIXES`. A prefix also exempts each route that someone adds
+below it later.
 
 **Write-time.** When you generate a new route, write its authorization
 decision in the same edit that adds it to the URLconf. Extend the allow-list
@@ -489,16 +560,17 @@ Prefer allow-listing writable fields per role over deny-listing them:
 
 ```python
 class InvoiceSerializer(serializers.ModelSerializer):
+    # `account` is the tenant, so no role writes it. See the rule below.
     WRITABLE_BY_ROLE = {
         "viewer": set(),
         "editor": {"title", "notes"},
-        "admin": {"title", "notes", "status", "account"},
+        "admin": {"title", "notes", "status"},
     }
 
     class Meta:
         model = Invoice
         fields = ["id", "title", "notes", "status", "account", "total"]
-        read_only_fields = ["id", "total"]
+        read_only_fields = ["id", "account", "total"]
 
     def get_fields(self):
         fields = super().get_fields()
@@ -514,6 +586,30 @@ class InvoiceSerializer(serializers.ModelSerializer):
 
 Setting `read_only` on the field instance covers declared and generated fields
 alike, and applies to `PUT` and `PATCH` equally.
+
+**A field that an authorization decision reads is never in a writable set.**
+Signal: `account`, `tenant`, `owner`, `role`, `groups`, or an `is_*` flag
+inside `fields`, with no matching `read_only_fields` entry. The unsafe pattern
+gives the top role a write to the field that selects the tenant, or a write to
+the field that selects its own role. A `PATCH` of `account` moves the row to
+another tenant, where the scoped list of that tenant reads it, and a `PATCH`
+of `role` promotes the caller for every request after it. The self-service
+serializer matters most here, because signup, profile, and `/me` all write the
+identity that the next decision reads. Put each of these fields in
+`read_only_fields`, and change a grant or a tenant only through a separately
+permissioned path.
+
+**The allow-list must govern every serializer that the route can build.** It
+lives on one class, and one route reaches several. Three signals: a
+`get_serializer_class()` with a branch per action, format, or version; a
+writable nested serializer declared on the parent; and a field set that the
+caller names in the query string. The unsafe pattern puts the allow-list on
+the default class alone, so a caller reaches the export, the bulk, or the
+versioned class, writes the nested payload, or asks for the properties the
+role must not read. Put the allow-list in one base class, and let every
+serializer that the route can instantiate inherit it. Intersect a
+caller-named field set with the set of the role, and never let the caller
+replace that set.
 
 The same failure appears in a GraphQL schema, as a type that publishes every
 model field. The deny-list version there fails open as the model grows. See
@@ -549,7 +645,12 @@ The design that prevents it rather than patching it:
    built in trusted backend code from the authenticated principal and never
    accepted from the caller. One search-service choke point is far easier to
    audit than per-view query construction, because a mandatory clause cannot
-   be omitted by forgetting it.
+   be omitted by forgetting it. A matched record is not the only result the
+   copy returns. A count, an aggregate, a facet, a suggestion, and a
+   similarity search each read the copy on a path of their own, and each one
+   needs the same clause. A clause that the engine applies *after* the
+   aggregate stage does not scope the aggregate. A caller then asks for zero
+   records and reads the other tenants out of the facet counts.
 3. **Reindex on authorization change**, not only on content change. Treat an
    ACL or membership edit as an index-invalidating event and bound staleness
    with a periodic reconcile.
@@ -559,12 +660,17 @@ The design that prevents it rather than patching it:
    application enforces it where the engine does not. This middle holds only
    where nothing can bypass the filter.
 
-Audit it in four steps. Enumerate every site that builds a search query, and
-confirm that trusted code adds the principal-derived filter. Authenticate as
-tenant A, search a term that exists only in tenant B, and assert zero hits.
-Revoke access to a document, re-run the search *before* any content edit, and
-assert that the document disappears. Confirm that the indexing pipeline writes
-the authorization metadata and fires on a permission change.
+Audit it in four steps. Enumerate every client that holds the engine
+credential rather than only the query-building sites, because a second
+service, a scheduled job, or a notebook with that credential reaches the copy
+without the clause; confirm that trusted code adds the principal-derived
+filter on each path. Authenticate as tenant A, search a term that exists only
+in tenant B, and assert zero hits; repeat that probe for a count, a facet, and
+a suggestion, because each one returns the data of tenant B with no matched
+record at all. Revoke access to a document, re-run the search *before* any
+content edit, and assert that the document disappears. Confirm that the
+indexing pipeline writes the authorization metadata and fires on a permission
+change.
 
 The same reasoning covers a read that a decision depends on. An authorization
 read covers role, membership, and revocation state. A route of that read to a
@@ -689,7 +795,13 @@ Two controls, and neither substitutes for the other:
    a handler that already returned does not hide it. That record is the same
    shape as the erasure ledger in `data-lifecycle-and-privacy.md`, "Erasure as
    a fan-out with a completion ledger". Reuse that ledger, and do not build a
-   second one.
+   second one. **A target is done when a read-back confirms the effect.** A
+   handler that queues the work and returns proves nothing, and a lost message
+   then reads as a clean offboarding. Signal: the ledger write sits beside the
+   call that queues the work. Mark the target dispatched there, and mark it
+   done only where the code reads the target again and finds the session
+   record gone, the token revoked, or the grant row absent. Retry until that
+   read succeeds.
 2. **A periodic reconciliation job that produces a report.** It compares every
    local identity and grant against the provider. It compares every machine
    identity against a named owner. It writes the difference down. The fan-out
@@ -748,15 +860,18 @@ path. The offboarding job never revokes a credential that it cannot find.
 - [ ] Joiner, mover, and leaver each have a path, and a mover's previous
       grants are replaced rather than added to.
 - [ ] A disable at the identity provider fans out to sessions, tokens, keys,
-      and locally made grants. A periodic reconciliation reports what the
-      fan-out missed.
+      and locally made grants. Each target is marked done from a read-back,
+      and not from a handler that returned. A periodic reconciliation reports
+      what the fan-out missed.
 - [ ] Every machine identity has a named owner whose own identity is still
       active. Those identities are the service account, the bot user, and the
       integration token.
 - [ ] Every denormalized copy applies a server-derived authorization filter
       again at its own query path. Those copies are the search index, the
-      report table, the export, and the replica. Each one refreshes on a
-      permission change, and not only on a content change.
+      report table, the export, and the replica. That filter reaches the
+      count, the aggregate, and the suggestion, and not the matched record
+      alone. Each copy refreshes on a permission change, and not only on a
+      content change.
 
 ### Django & DRF
 
@@ -769,19 +884,27 @@ path. The offboarding job never revokes a credential that it cannot find.
       `PermissionRequiredMixin` already 403s that user and needs it (or
       `LoginRequiredMiddleware`) only for anonymous requests; object scoping
       comes from the queryset.
-- [ ] Custom DRF permissions implement `has_object_permission` explicitly;
-      list and create paths are secured by queryset and `perform_create`.
+- [ ] Custom DRF permissions implement both `has_permission` and
+      `has_object_permission` explicitly; list and create paths are secured by
+      queryset and `perform_create`.
 - [ ] `DjangoObjectPermissions` 404 behavior is preserved, not "fixed" to 403.
 - [ ] Admin `get_queryset()` scopes the changelist. Per-object delete logic is
       verified against the deployed Django version, or the bulk action is
       removed. Every custom admin action enforces its per-object rules in the
       action body.
+- [ ] Every admin related field that names a scoped model binds its write
+      with `limit_choices_to` or a scoped `formfield_for_foreignkey()`
+      queryset; the related model's own `ModelAdmin` scopes the lookup.
 - [ ] Every view an overridden `get_urls()` adds is wrapped in
       `admin_site.admin_view()` and re-checks the named model permission
       inside; every custom action declares `permissions=[...]`.
 - [ ] `DEFAULT_PERMISSION_CLASSES` is restrictive and a URLconf audit test
-      asserts every endpoint has an explicit decision.
+      asserts every endpoint has an explicit decision. That test reads the
+      `@action` override in `initkwargs`, and not the class attribute alone.
 - [ ] Writable fields are allow-listed per role; declared fields use
-      `read_only=True` rather than relying on `Meta.read_only_fields`.
+      `read_only=True` rather than relying on `Meta.read_only_fields`. No
+      serializer makes the tenant, the owner, the role, the group membership,
+      or an `is_*` flag writable. The allow-list reaches every serializer class
+      the route can build, nested classes included.
 - [ ] Authorization tests use real non-superuser principals across a role ×
       action × object matrix, with `PATCH` covered separately.
