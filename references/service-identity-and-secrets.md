@@ -154,10 +154,12 @@ closed on any missing claim, fetch failure, or exception:
    as `typ: at+jwt`. *Omitted:* an ID token, or a token minted for another
    purpose, passes where an access token was required. An over-scoped token
    also passes for a narrow operation.
-8. **Verify the binding where the token is sender-constrained.** Check
-   `cnf.jkt` against the DPoP proof key, and `cnf.x5t#S256` against the
-   presented client certificate. *Omitted:* you accept a bearer replay of a
-   token that was specifically issued not to be one.
+8. **Verify the binding where the token is sender-constrained.** Match
+   `cnf.x5t#S256` against the client certificate on the connection. For DPoP,
+   match `cnf.jkt` against the proof key, and then validate the proof itself
+   against this request. See "Sender-constrained tokens" below. *Omitted:* you
+   accept a bearer replay of a token that was specifically issued not to be
+   one.
 
 ### Django & DRF implementation layer
 
@@ -183,7 +185,9 @@ def authenticate(token):
 # quietly accepted. The client is module-level; see the JWKS section below.
 import jwt
 
-_jwks = jwt.PyJWKClient(settings.JWKS_URI)
+_jwks = jwt.PyJWKClient(
+    settings.JWKS_URI, timeout=settings.JWKS_TIMEOUT_SECONDS
+)
 
 def authenticate(token):
     signing_key = _jwks.get_signing_key_from_jwt(token)
@@ -236,11 +240,12 @@ never authorization.
 ## JWKS as a rotation-aware trust anchor
 
 **Principle: treat the key set as a cached trust anchor that expects
-rotation.** Discover the JWKS URI from the issuer's own metadata. Cache the
-set process-wide with a bounded lifetime. Refresh once on an unknown `kid`,
-and retry. Pin the algorithm from configuration, and resolve strictly by
-`kid`. Fail closed on a fetch error, and do not discard keys that are still
-valid.
+rotation.** Read the JWKS URI from configuration, and require the `https`
+scheme. Take the value from the issuer's metadata once, when somebody
+configures the service, and pin it. Cache the set process-wide with a bounded
+lifetime. Refresh once on an unknown `kid`, and retry. Pin the algorithm from
+configuration, and resolve strictly by `kid`. Fail closed on a fetch error,
+and do not discard keys that are still valid.
 
 Two failures recur:
 
@@ -267,8 +272,11 @@ def authenticate(token):
 ```
 
 ```python
-# Correct: one client for the process lifetime, so the cache is actually used.
-_jwks = jwt.PyJWKClient(settings.JWKS_URI)
+# Correct: one client for the process lifetime, so the cache is actually
+# used, and a bounded timeout so a hung issuer cannot hold the worker.
+_jwks = jwt.PyJWKClient(
+    settings.JWKS_URI, timeout=settings.JWKS_TIMEOUT_SECONDS
+)
 
 def authenticate(token):
     return _jwks.get_signing_key_from_jwt(token)
@@ -276,12 +284,29 @@ def authenticate(token):
 
 Review notes:
 
+- The URI decides which keys you accept, so treat a runtime source for it as
+  an authentication bypass. Two shapes give it away. The code reads
+  `jwks_uri` from a discovery document that it fetches per request. The code
+  builds the URI from the token's own `iss` claim. Each one lets whoever
+  answers for that host sign tokens you accept.
+- Where several issuers are legitimate, hold one client for each issuer. Keep
+  the clients in a dictionary keyed by the configured issuer identifier.
+  Select one by exact match on `iss`. Reject an `iss` that matches no key.
+- `PyJWKClient` accepts an `http` URI as readily as an `https` one, verified
+  against PyJWT 2.13.0. Anyone on the network path then answers with their own
+  key set. Check that the configured value uses `https`, and that no
+  `ssl_context` turns certificate verification off.
 - The per-request client is the common defect, and it is invisible in review
   unless you look for where the code constructs the client. The minimal
   examples in circulation all build it inline.
 - The unknown-`kid` refresh deliberately bypasses the cache, so a stream of
   bogus `kid` values is one outbound fetch per request. Throttle
   unauthenticated token-bearing endpoints. See `a06-insecure-design.md`.
+- `PyJWKClient` sets `timeout=30` by default, verified against PyJWT 2.13.0.
+  An unknown `kid` against a cold cache costs two fetches, so one request can
+  hold a worker for twice that. Pass a `timeout` short enough that the worker
+  pool survives an issuer that hangs. A throttle bounds how many such requests
+  arrive. It does not shorten a request the worker already started.
 - `cache_keys=True` adds a second, per-key LRU cache with **no** time-based
   expiry. An entry leaves only when the cache fills. A key the issuer withdrew
   stays usable for verification until the cache evicts it. Leave it off unless
@@ -292,6 +317,8 @@ Review notes:
   authentication failure. Treat the version as a finding in its own right.
 - Severity: Medium for the per-request client, on availability and latency.
   Severity: High where a stale or wiped key set fails open rather than closed.
+  Severity: Critical where the URI comes from the token, from the `iss` claim,
+  or from a fetch at request time.
 
 ## Sender-constrained tokens
 
@@ -324,6 +351,19 @@ Review notes:
   binding. A constrained token accepted as a bearer token is worse than one
   nobody constrained. The issuer's threat model now assumes a protection that
   nothing enforces.
+- The `cnf.jkt` check alone is not the DPoP binding. It proves that the caller
+  holds the key, and not that the caller made this proof for this request.
+  RFC 9449 also requires `typ: dpop+jwt` and an asymmetric `alg`. It
+  requires `htm` against the request method, and `htu` against the request URI
+  without the query and the fragment. It requires a recent `iat`, and `ath`
+  against the hash of the access token. Miss those, and one captured proof
+  replays with the token beside it.
+- DPoP also needs a `jti` store, so it makes shared state a dependency of
+  authentication. The store must span the fleet. A per-process store lets the
+  same proof replay against another instance. Size the retention by the `iat`
+  window you accept. Fail closed where the store is unreachable. The mTLS
+  binding carries no such cost, because the connection itself proves
+  possession on every request.
 - Severity: Medium to High by context, driven by where the token travels.
 
 ## Client-certificate identity behind a proxy
@@ -370,6 +410,12 @@ Review notes:
   caller can reach the application port without the proxy. A container port
   published to the node, a service exposed cluster-wide, and a debug listener
   each defeat it.
+- The hop that verifies the certificate and the hop that `REMOTE_ADDR` names
+  must be the same hop. Where a chain of proxies stands in front, the last one
+  passes the peer check while an earlier one set the header. Read the chain.
+  Confirm that the last proxy overwrites the header rather than forwards it. A
+  header that survives an intermediate hop is a header that any caller of that
+  hop can set.
 - Write the trusted-hop assumption down in the settings module, beside the
   header name. A topology assumption that exists only in somebody's memory is
   the one that breaks during a migration.
@@ -552,6 +598,12 @@ Review notes:
 - CI is a credential store. Prefer OIDC federation from the CI provider to the
   cloud account, over a long-lived deployment key held as a repository secret.
   See `a03-software-supply-chain.md`, "Trust and provenance".
+- That federation is only as narrow as the condition on the token's subject.
+  Where the trust policy accepts any subject the provider signs, every
+  workflow in that provider reaches the account. That includes a workflow a
+  pull request adds. Bind the subject to the repository, and to the branch or
+  the environment. The policy usually sits outside the repository, so confirm
+  it with the platform. Name the workflow file that assumes the role.
 - Severity: High to Critical for a committed secret, by blast radius.
   Severity: Medium for a high-value credential delivered by environment
   variable, where the platform offered better.
@@ -670,7 +722,11 @@ harvested the secret.
    is the common and costly inversion.
 2. **Revoke** the old credential at the provider. Rotation and revocation are
    not the same operation. With many providers the old key stays valid until
-   somebody explicitly deletes it.
+   somebody explicitly deletes it. Revocation reaches the credential, and not
+   the tokens already minted from it. A self-contained access token stays
+   valid until `exp`, whatever the provider now says. Treat the longest `exp`
+   in flight as the length of the incident, unless the resource server checks
+   issuer state on each call by introspection (RFC 7662).
 3. **Assess the blast radius.** Establish what the credential granted, what it
    could reach, and whether the project reused the same value anywhere else.
    One leaked secret copied into five services is five incidents.
@@ -718,12 +774,16 @@ backend finding:
       service's own identifier. Verification fails closed on a missing claim,
       rather than skips the check.
 - [ ] `exp` and `nbf` are enforced with minimal clock skew.
+- [ ] The key-set URI comes from configuration and uses `https`. Nothing
+      derives it from the token, from the `iss` claim, or from a fetch at
+      request time.
 - [ ] The key set is cached process-wide, and refreshed once on an unknown key
       identifier. A fetch failure neither opens the gate nor discards keys
       that are still valid.
 - [ ] Where a token carries a sender-constraint claim, the server actually
       verifies the binding. It does not accept the token as a bearer
-      credential.
+      credential. A DPoP proof is also checked against this request, and the
+      server rejects a repeated `jti`.
 - [ ] Any proxy-set identity header is trusted only where the proxy strips
       inbound copies, and where nobody can reach the application directly.
 - [ ] No endpoint relies on network position, source address, or a
@@ -750,7 +810,8 @@ backend finding:
       service-identity mechanism.
 - [ ] `PyJWKClient` is held at module or singleton scope, and not constructed
       per request. `cache_keys` is left off, unless somebody has reasoned its
-      unbounded key lifetime through.
+      unbounded key lifetime through. A `timeout` is passed, rather than left
+      at the 30-second default.
 - [ ] `PyJWT>=2.13.0` where the application validates third-party tokens.
 - [ ] A trusted-proxy check guards any client-certificate header. The code
       indexes the header, rather than reads it with `.get()` and a default.
