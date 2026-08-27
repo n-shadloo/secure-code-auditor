@@ -25,6 +25,7 @@ a request fails.
 - [Cookie prefixes and the subdomain boundary](#cookie-prefixes-and-the-subdomain-boundary)
 - [Signed cookies and the legacy salt fallback](#signed-cookies-and-the-legacy-salt-fallback)
 - [CSRF settings and trusted origins](#csrf-settings-and-trusted-origins)
+- [Wildcard entries in a host or origin allowlist](#wildcard-entries-in-a-host-or-origin-allowlist)
 - [Fetch Metadata as a second wall](#fetch-metadata-as-a-second-wall)
 - [CORS](#cors)
 - [Compression and BREACH](#compression-and-breach)
@@ -59,6 +60,34 @@ check, not from memory.
   poisoning can forge a password-reset link that points at an attacker domain.
 - Load both from the environment. Never hardcode a production `SECRET_KEY`
   (see A04). Never commit a key with the `django-insecure-` prefix.
+- **An environment variable is a string, and every string that is not empty is
+  true.** `DEBUG = os.getenv("DEBUG", "False")` gives `DEBUG` the value
+  `"False"`, and Django reads that value as true. `"false"`, `"0"`, and `"no"`
+  behave the same way. Parse the value into a `bool`. The same trap changes the
+  *shape* of `ALLOWED_HOSTS`. `os.getenv("ALLOWED_HOSTS", "").split(",")`
+  returns `[""]`, which rejects every host. A bare string makes each character
+  a host pattern, because `validate_host()` iterates the value it receives.
+
+```python
+# Wrong: each value keeps the shape the environment gave it. DEBUG is a
+# string that is not empty, so it is true. ALLOWED_HOSTS holds one empty entry.
+DEBUG = os.getenv("DEBUG", "False")
+ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "").split(",")
+```
+
+```python
+# Correct: parse each value into the type the setting needs, and drop the
+# empty entries that the split produces.
+DEBUG = os.getenv("DEBUG", "").lower() in {"1", "true", "yes"}
+ALLOWED_HOSTS = [h for h in os.getenv("ALLOWED_HOSTS", "").split(",") if h]
+```
+
+The two halves reach the deploy gate differently. `check --deploy` reports
+`security.W018` for a `DEBUG` value of any type that is true. The gate catches
+that half wherever it runs on the module and the environment production uses.
+The check reports `security.W020` only for an empty `ALLOWED_HOSTS`, so `[""]`
+passes it. Verified against the Django 6.1
+`django/core/checks/security/base.py` on 27 Aug 2026.
 
 ### Commonly mistaken for a finding
 
@@ -68,7 +97,10 @@ is the common case in Django projects: `settings/base.py`, `settings/dev.py`,
 `settings/test.py`, and `settings/production.py`, selected by
 `DJANGO_SETTINGS_MODULE`. Therefore the deciding question for each item is
 which import chain the production entry point follows. Establish that chain
-once, from `wsgi.py`, `asgi.py`, and `manage.py`. That chain then answers all
+once, and establish it for every process that production runs. `wsgi.py`,
+`asgi.py`, and `manage.py` are the first three. A Celery or an RQ worker, a
+scheduler, and a command that cron starts each name a settings module of their
+own. Each one of them is a production process. That chain then answers all
 three items.
 
 - **`DEBUG = True` in a module only the development or test path imports.**
@@ -137,7 +169,13 @@ Notes and gotchas:
   to this one. `None` and `"unsafe-none"` are the weakened values. OAuth and
   payment popup flows that call `window.opener.postMessage` break under
   `same-origin`. The correct relaxation is `"same-origin-allow-popups"`, not
-  `None` and not `"unsafe-none"`.
+  `None` and not `"unsafe-none"`. The setting is one value for the whole site,
+  so a relaxation for one popup flow weakens every other page. Scope it to the
+  flow instead. `SecurityMiddleware` writes the header with
+  `response.setdefault()`, so a response that already carries the header keeps
+  its own value. Set the relaxed value on the response that opens the popup,
+  and leave the setting at `"same-origin"`. Verified against the Django 6.1
+  and 6.0.7 `django/middleware/security.py` on 27 Aug 2026.
 
 **Write-time.** When you generate or extend a settings module, read every
 secret and per-environment value from the environment. Fail at startup when
@@ -236,7 +274,9 @@ What that forbids, and what it costs:
   secret into the session and emits no CSRF cookie at all.
 - **Cookies already set under the old names are orphaned rather than
   migrated.** They stay in browsers until they expire, and the application
-  ignores them.
+  ignores them. Do not add a reader that accepts the old name beside the new
+  one. Backward compatibility is the correct instinct almost everywhere, and
+  here it restores the subdomain-writable cookie that the prefix removed.
 
 `LANGUAGE_COOKIE_*` is the remaining set, and its defaults are weaker than the
 session's defaults. `LANGUAGE_COOKIE_SECURE` and `LANGUAGE_COOKIE_HTTPONLY`
@@ -307,11 +347,17 @@ both derive from `session_token`. Where no pair collides, the setting is
 hygiene with no behavioral risk. Where one pair does collide, the setting is
 the fix, and you should rename the pair as well.
 
+The audit reads literal values, and it can read nothing else. A `salt` that
+the code computes from a user, a path, or a request supplies no pair to
+collect. The audit cannot answer the question for that call. Read a
+computed `salt` as a collision you cannot rule out. Make it a literal
+constant, and then run the audit.
+
 **Write-time.** When you generate a `set_signed_cookie()` or
 `get_signed_cookie()` call, pass an explicit `salt` that names the purpose the
-cookie serves. Do not repeat the cookie name. The value is then
-domain-separated on the same principle every other signed artifact in the
-project follows.
+cookie serves. Write that `salt` as a literal constant. Do not compute it, and
+do not repeat the cookie name. The value is then domain-separated on the same
+principle every other signed artifact in the project follows.
 
 On a new project that targets 5.2 or 6.0, write
 `SIGNED_COOKIE_LEGACY_SALT_FALLBACK = False` into the same settings module you
@@ -339,6 +385,44 @@ just closed, for every cookie the project signs.
   endpoint is genuinely token-authenticated and not cookie-authenticated. See
   the DRF file for the interaction between CSRF and `SessionAuthentication`.
 
+## Wildcard entries in a host or origin allowlist
+
+**The signal is a leading dot, or a `*`, inside an entry of `ALLOWED_HOSTS` or
+`CSRF_TRUSTED_ORIGINS`.** `ALLOWED_HOSTS = [".example.com"]` matches
+`example.com` and every subdomain of it, present and future.
+`CSRF_TRUSTED_ORIGINS = ["https://*.example.com"]` matches that same set in
+Django's Origin check. Verified against the Django 6.1 `django/utils/http.py`
+and `django/middleware/csrf.py` on 27 Aug 2026.
+
+Each entry therefore admits a name the team does not control. The dangling
+CNAME in "Certificate issuance and dangling DNS" below is one such name. A
+compromised marketing site and an untrusted customer subdomain are two more.
+The attacker sends that host, `ALLOWED_HOSTS` accepts it, and
+`request.get_host()` returns it. Every absolute URL the project builds from
+the request host then points at a name the attacker serves. The password-reset
+link is the one that matters, because it arrives under your own domain.
+
+That same name also passes the CSRF Origin check through the wildcard origin.
+A parent-domain CSRF cookie then hands it the token. That is the second reason
+"Cookie prefixes and the subdomain boundary" above asks for a `__Host-` name
+or for `CSRF_USE_SESSIONS`.
+
+Enumerate the exact hosts instead. A deployment can genuinely serve one
+subdomain for each tenant. Record that wildcard in the exception register
+below. Give it the owner, the reason, and the expiry date that every other
+suppression carries. Build a mail or a reset URL from a configured base URL
+rather than from the request host.
+
+`check --deploy` accepts every one of these entries, because it tests that the
+setting holds a value rather than what the value permits. The assertion is
+therefore a project check. The same holds for each blind spot under
+"check --deploy" below that a settings value alone can decide.
+
+**Write-time.** When you generate `ALLOWED_HOSTS` or `CSRF_TRUSTED_ORIGINS`,
+write one entry for each host the deployment serves. Never write a leading
+dot, and never write a `*`. A wildcard costs almost nothing to write, and it
+admits every subdomain the organization creates after you.
+
 ## Fetch Metadata as a second wall
 
 A modern browser attaches `Sec-Fetch-Site`, `Sec-Fetch-Mode`, and
@@ -351,8 +435,20 @@ forgery, cross-site inclusion, and some XS-Leaks probes before view code runs.
 - This policy sits beside Django's CSRF protection, never instead of it. A
   non-browser client sends no `Sec-Fetch-*` header, so treat an absent header
   as allowed.
-- Exempt the documented cross-site entry points by path: OAuth callbacks,
-  webhook receivers, embedded widgets.
+- **The policy rejects `cross-site` and permits `same-site`.** A request from a
+  sibling subdomain carries `same-site`. Therefore this wall does not see the
+  attacker that "Cookie prefixes and the subdomain boundary" above calls the
+  likely one. Django's Origin check is the control that carries a same-site
+  request. Do not report the wall as coverage for that case.
+- Exempt the documented cross-site entry points: OAuth callbacks, webhook
+  receivers, embedded widgets. **Exempt on the resolved route, and never on a
+  raw path prefix.** A test of `startswith("/oauth")` also matches
+  `/oauth-legacy`, and a percent-encoded or a double-slash form of one path
+  reaches the same view. Middleware that runs before `get_response()` reads
+  `request.resolver_match` as `None`, because Django resolves the route after
+  that point. Read the route after the view resolves, and match it against a
+  list of exact names. Verified against the Django 6.1
+  `django/core/handlers/base.py` on 27 Aug 2026.
 
 **Write-time.** Add the middleware only when the project asks for
 defense-in-depth hardening. Log each rejection with the three header values, so
@@ -387,6 +483,17 @@ defect. It lets an attacker's page make authenticated cross-origin reads. CORS
 is not CSRF protection, and CSRF protection is not CORS. They solve different
 problems. Do not substitute one for the other.
 
+`CORS_ALLOWED_ORIGIN_REGEXES` is the third setting to read, and its name hides
+it. A reviewer sees the word allowlist and stops. The package matches each
+pattern with `re.match()`, which anchors the start of the origin and not the
+end. Therefore a pattern that carries no `$` also matches a longer name.
+`r"^https://\w+\.example\.com"` matches
+`https://app.example.com.attacker.example`, which is a domain the attacker
+registers. Anchor both ends of every pattern. An anchored subdomain pattern
+still admits every subdomain, so the rule in "Wildcard entries in a host or
+origin allowlist" above governs it as well. Verified against
+`django-cors-headers==4.9.0` `corsheaders/middleware.py` on 27 Aug 2026.
+
 ### Commonly mistaken for a finding
 
 **`CORS_ALLOW_ALL_ORIGINS = True` with no `CORS_ALLOW_CREDENTIALS`.** Do not
@@ -417,6 +524,11 @@ mitigation narrows the channel, and it does not remove the channel.
   beside an API key is the serious case.
 - Compress static assets at the proxy instead. A static file carries no
   per-user secret.
+- **An absent `GZipMiddleware` is not evidence that the response arrived
+  uncompressed.** A proxy compresses a dynamic response under most default
+  configurations, which rebuilds this channel outside Django. Confirm which
+  content types the proxy compresses before you close the item.
+  `deployment-and-runtime.md` owns the proxy rule.
 
 **Write-time.** Do not add `GZipMiddleware` by default. Compress static content
 at the proxy. Leave a dynamic response uncompressed unless measurement demands
@@ -432,9 +544,26 @@ from django.utils.csp import CSP
 SECURE_CSP = {
     "default-src": [CSP.SELF],
     "script-src": [CSP.SELF, CSP.NONCE],
-    "img-src": [CSP.SELF, "https:"],
+    "img-src": [CSP.SELF],
+    "base-uri": [CSP.NONE],
+    "object-src": [CSP.NONE],
+    "form-action": [CSP.SELF],
+    "frame-ancestors": [CSP.NONE],
 }
 ```
+
+`base-uri` is the directive a policy omits most often, and its absence undoes
+the rest. One injected `<base href>` element rebases every relative URL on the
+page. A `<script src="app.js">` element that already carries the nonce then
+loads from the attacker, because a nonce authorizes the element rather than
+the host. `frame-ancestors` does in the policy what `X_FRAME_OPTIONS` above
+does in a header, and a browser that reads both obeys `frame-ancestors`.
+`form-action` keeps an injected form from posting the fields a user fills to
+another host.
+
+Name the hosts that serve your images. A source expression as wide as `https:`
+permits every host on the internet. An injection that the policy stops from
+running a script can still send data out in the URL of an image.
 
 Both settings stay inert until you add the dedicated middleware,
 `django.middleware.csp.ContentSecurityPolicyMiddleware`, to `MIDDLEWARE`. As
@@ -545,8 +674,8 @@ v=DMARC1; p=none; pct=50; rua=mailto:dmarc@example.com
 
 ```
 # Correct: enforced, with existing and non-existent subdomains both covered.
-# Drop t=y once the aggregate reports are clean; while it is present, failing
-# mail is quarantined rather than rejected.
+# While t=y is present, failing mail is quarantined rather than rejected.
+# Record t=y in the exception register with an expiry date, and then drop it.
 v=DMARC1; p=reject; sp=reject; np=reject; t=y; rua=mailto:dmarc@example.com
 ```
 
@@ -578,6 +707,13 @@ paths differently:
   aligned SPF or aligned DKIM, so this also survives forwarding, which breaks
   SPF outright. Use 2048-bit RSA. RFC 8301 requires at least 1024 bits,
   recommends 2048, and requires a verifier to reject anything below 1024.
+- **A published selector is a live key. Rotation is therefore the deletion of a
+  DNS record, and not only the creation of one.** A private key that leaks
+  keeps producing DKIM-passing, DMARC-aligned mail for as long as its selector
+  stays in the zone. No receiver can tell that mail from yours. Publish the new
+  selector, move the sender onto it, and then delete the retired selector's TXT
+  record. Give every selector in the zone an owner, because a selector nobody
+  owns is a selector nobody retires.
 
 ```
 # Wrong: five includes, each costing at least one lookup and several expanding
@@ -611,6 +747,14 @@ Compare the sender inventory in the aggregate reports against the systems the
 team believes are sending. The gap between those two lists is usually the
 finding.
 
+Count the records as well as read them. A receiver discards every DMARC record
+at a name where it finds more than one, per RFC 9989. A domain that publishes
+more than one SPF record returns `permerror`, per RFC 7208. Thus a zone edit
+that leaves the old record beside the new one removes the policy. A lookup
+that reports the first record still shows a correct one. Resolve from
+outside the deployment's own network, because an internal resolver can hold a
+different answer than the one the rest of the world receives.
+
 CWE-290 (Authentication Bypass by Spoofing), CWE-345 (Insufficient
 Verification of Data Authenticity); A02:2025. Severity: high for any
 public-facing domain. The reachable consequence is credential phishing and
@@ -618,15 +762,24 @@ business email compromise carried by your own brand.
 
 SPF, DKIM, and DMARC authenticate the message. Transport is a separate gap.
 SMTP sends in cleartext when STARTTLS fails, and an attacker on the network can
-force that failure. MTA-STS (RFC 8461) closes that gap. Publish a policy at
+force that failure. MTA-STS (RFC 8461) closes that gap in one direction only,
+and a reader reverses the direction easily. **The policy you publish declares
+that your domain can receive over TLS. It protects the mail that other systems
+send to you.** Publish a policy at
 `https://mta-sts.<domain>/.well-known/mta-sts.txt` with `mode: enforce` and the
 domain's MX hosts. Publish a `_mta-sts.<domain>` TXT record whose `id` changes
 on every policy change.
 
+Your own outbound mail depends on the MTA that sends it. That MTA has to read
+the recipient's MTA-STS policy, or the recipient's DANE record, and then
+refuse a delivery that fails validation. A password-reset message leaves you
+on that path. Confirm the behavior with the provider that `EMAIL_HOST` names,
+because a DNS query against your own domain never shows it.
+
 TLS-RPT (RFC 8460) adds a `_smtp._tls.<domain>` TXT record with `rua=`, so a
 receiver reports each TLS delivery failure to you. Start in `mode: testing`
 with TLS-RPT enabled. Then change the mode to `enforce`. For a domain that
-sends password-reset mail, rate an absent MTA-STS policy LOW.
+receives mail, rate an absent MTA-STS policy LOW.
 
 Django 6.1 moves the sending configuration into one setting. `MAILERS` maps an
 alias to a `BACKEND` and an `OPTIONS` dictionary. It uses the shape that
@@ -668,6 +821,18 @@ example.com. CAA 0 iodef "mailto:security@example.com"
 for a project that does not use one. Severity: medium. The record costs
 nothing, and the failure it prevents is a valid certificate nobody asked for.
 
+**CAA constrains the issuer, and it does not constrain the requester.**
+Whoever controls a name passes an HTTP-01 challenge for that name at any CA
+the record permits. The subdomain takeover in the next part therefore defeats
+CAA for the name it took. The attacker then holds a publicly trusted
+certificate under your own domain. RFC 8657 adds the `accounturi` and the
+`validationmethods` parameters to the `issue` and `issuewild` properties.
+`accounturi` binds issuance to your own ACME account.
+`validationmethods=dns-01` demands control of the zone rather than control of
+the host, and a takeover gives the attacker the host alone. Publish both on
+the names that matter, and only where your own issuance already validates
+through DNS.
+
 **Dangling DNS is subdomain takeover.** A CNAME can still point at a
 deprovisioned third-party resource: an object-storage bucket, a former hosting
 app, or a documentation or status-page service. Whoever re-creates a resource
@@ -680,10 +845,19 @@ match an OAuth redirect allowlist.
 Detection is a three-step loop. Schedule the loop rather than run it once.
 Enumerate the subdomains that exist, resolve each CNAME chain to its target,
 and flag any target that returns a provider's unclaimed-resource fingerprint
-instead of content. Certificate-transparency logs are the most complete
-enumeration source, since every issued certificate is published. Confirm each
-candidate by hand before you report it. A provider error page is not always a
-claimable name.
+instead of content. The zone is the complete enumeration source, because it
+holds the names that no certificate ever covered. Certificate-transparency
+logs add the names another team created without telling you. Read both.
+Confirm each candidate by hand before you report it. A provider error page is
+not always a claimable name.
+
+State one limit of this loop. A fingerprint appears only while the resource
+stays unclaimed. Whoever claims it first serves ordinary content, and the next
+scan then finds nothing to flag. Therefore watch for a new CNAME that points
+at a third party. Do not watch only for a fingerprint at the end of one. Give
+priority to the names this file already depends on. Those names are
+`mta-sts.<domain>`, each `<selector>._domainkey.<domain>`, and every host in
+an OAuth redirect allowlist.
 
 Teams reverse the decommission order, and that order is the whole control.
 **Remove the DNS record first, wait for the TTL to expire, and only then
@@ -703,8 +877,11 @@ CORS entry with the application.
 RFC 9116 defines `/.well-known/security.txt`. The file tells a security
 reporter where to send a vulnerability report. Serve it over HTTPS with a
 `Contact:` field and an `Expires:` field. An expired file is the common
-failure, so generate the `Expires:` date automatically. This is disclosure
-support, not a control. Rate an absent file INFO.
+failure, so generate the `Expires:` date automatically. Add a `Canonical:`
+field that names the file's own URI. RFC 9116 says a reader should not trust
+the contents where the URI that retrieved the file is absent from that field.
+That field separates your file from a copy on a host somebody else controls.
+This is disclosure support, not a control. Rate an absent file INFO.
 
 ## check --deploy
 
@@ -740,6 +917,15 @@ readers routinely read a clean run as coverage it never provided:
   permanently, and without `--fail-level` the command exits zero regardless.
   Read that list as part of the review. Each entry is a decision somebody made
   once, and nobody has examined it again.
+- **It reports the posture of the module and the environment that ran it.** The
+  pipeline supplies `DJANGO_SETTINGS_MODULE`, and it supplies every value the
+  settings module reads. The rule to fail at startup on a missing value then
+  obliges the pipeline to invent a value for each variable. Thus a run in CI
+  proves that the configuration has the correct shape, and it proves nothing
+  about the values production holds. Print `settings.SETTINGS_MODULE` in the
+  gate, so that the log names the module the run covered. Keep each check that
+  compares a value for the deploy step, which runs inside the target
+  environment.
 
 One property of the command itself changed. `run_checks()` in Django 6.1
 defaults `databases` to every configured alias when `--database` names none,
@@ -788,7 +974,9 @@ almost every project, and no framework check can express any of them.
   here.
 - **A storage bucket, queue, broker, or callback target names a non-production
   resource while the debug flag is off.** The combination is the assertion.
-  Either half alone is ordinary.
+  Either half alone is ordinary. Write the assertion as the set of values this
+  deployment permits. A set of the development values you can remember is a
+  denylist, and a denylist passes every value nobody thought of.
 
 Two boundaries hold for every assertion of this kind. **It reads configuration
 and nothing else.** A check that opens a connection makes the gate depend on
@@ -799,7 +987,10 @@ reason to disable the check.
 **It reports the property, never the value.** Check output lands in a build
 log that is retained, searchable, and readable by more people than the secret
 store is. A message that quotes the secret it objects to has published that
-secret.
+secret. `CheckMessage.__str__()` renders `obj` and `hint` beside the message
+text. A value passed in either argument is published as surely as one written
+into the text. Verified against the Django 6.1
+`django/core/checks/messages.py` on 27 Aug 2026.
 
 ### Django & DRF implementation layer
 
@@ -818,7 +1009,7 @@ accept `**kwargs`.
 from django.conf import settings
 from django.core.checks import Error, Tags, register
 
-DEV_BUCKETS = {"acme-uploads-dev", "acme-uploads-local"}
+PRODUCTION_BUCKETS = {"acme-uploads"}
 
 # Wrong: no deploy=True, so the deploy gate never runs it; a network call
 # inside a configuration assertion; a Django identifier reused as its own;
@@ -830,14 +1021,15 @@ def check_upload_bucket(app_configs, **kwargs):
                       id="security.E001")]
     return []
 
-# Correct: deploy-only, project-prefixed identifier, settings alone, and the
-# setting named rather than its value printed.
+# Correct: deploy-only, project-prefixed identifier, settings alone, an
+# allowlist of the values this deployment permits, and the setting named
+# rather than its value printed.
 @register(Tags.security, deploy=True)
 def check_upload_bucket_is_production(app_configs, **kwargs):
-    if settings.UPLOAD_BUCKET in DEV_BUCKETS:
+    if settings.UPLOAD_BUCKET not in PRODUCTION_BUCKETS:
         return [
             Error(
-                "UPLOAD_BUCKET names a development bucket.",
+                "UPLOAD_BUCKET is not a bucket this deployment may use.",
                 hint="Set UPLOAD_BUCKET from this environment's config.",
                 id="acme.E001",
             )
@@ -848,7 +1040,7 @@ def check_upload_bucket_is_production(app_configs, **kwargs):
 A check registers only when Python imports its module, so the conventional
 wiring is `myapp/checks.py` imported from that app's `AppConfig.ready()`. A
 guardrail nobody imports never runs, and its failure looks exactly like a
-passing gate.
+passing gate. The `--tag` rule below is what catches that.
 
 **`deploy=True` decides whether it runs at all.** `register` files the
 function in a separate deployment set. `run_checks` includes that set only
@@ -860,7 +1052,10 @@ executes every other check, executes none of these, and reports success.
 is `ERROR`. A check that returns `Warning` therefore prints its message and
 exits zero under that default. The flag sets one floor for the whole run
 rather than one floor per check. Thus the level a project can afford is the
-level of its noisiest message. A guardrail meant to block a deploy returns
+level of its noisiest message. Where one message forces that level down,
+silence that one identifier through the register below. Do not lower the
+floor. A floor at `ERROR` stops every `security.W*` message from gating, and
+the noisy message is one of many. A guardrail meant to block a deploy returns
 `Error`, and it fails the run even at the default. An advisory message has to
 sit at `Info` or below, so that it does not dictate the floor.
 
@@ -882,6 +1077,11 @@ or find it either.
 constant rather than a constraint. Any string works, so a project can carry
 its own tag. A tag that no registered check declares raises `CommandError`, so
 a typo in the pipeline fails loudly rather than passes an empty run.
+
+That property is also the answer to the guardrail nobody imports. Give every
+project check one project tag, and name that tag in the gate. Removal of the
+app from `INSTALLED_APPS`, a rename of the module, and an exception inside an
+earlier `ready()` then fail the run. None of them passes an empty one.
 
 **Write-time.** A wrong value in some settings is a security failure rather
 than an outage. A bucket name, a permission default, the source of a signing
@@ -909,19 +1109,24 @@ them against the baseline the review was written against. Anything weaker
 compares two descriptions of a deployment rather than the deployment.
 
 **Every suppression is a decision that decays with time.** A normal Python
-project has four kinds, and they behave identically. They are a silenced system
+project has five kinds, and they behave identically. They are a silenced system
 check, a scanner's ignore list, and a dependency advisory recorded as accepted.
-The fourth is an inline suppression comment on a line of code. Each one was
-defensible the day somebody wrote it. None of them expires. None of them names
-who decided. A reader usually reconstructs the reason years later out of a
-commit message.
+The fourth is an inline suppression comment on a line of code. The fifth is a
+state that a rollout was supposed to leave behind: `SECURE_CSP_REPORT_ONLY` in
+place of `SECURE_CSP`, DMARC `t=y`, MTA-STS `mode: testing`, and a short
+`SECURE_HSTS_SECONDS` chosen to test. Each of those enforces less than the
+setting beside it appears to promise, and no attack is needed to keep it.
+Each one was defensible the day somebody wrote it. None of them expires. None
+of them names who decided. A reader usually reconstructs the reason years
+later out of a commit message.
 
-The control has one shape in all four places. An exception carries an
-**owner**, a **reason**, and an **expiry date**. Executable code then fails
-once that date passes. The executable half is what makes it a control. A
-register that holds the same three fields with no enforcement is a description
-of a policy rather than the policy. A policy that cannot fail a build is
-advice.
+The control has one shape in all five places. An exception carries an
+**owner**, a **reason**, and an **expiry date**. A rollout state carries the
+same three fields, and its identifier is the setting rather than a check id.
+Executable code then fails once that date passes. The executable half is what
+makes it a control. A register that holds the same three fields with no
+enforcement is a description of a policy rather than the policy. A policy that
+cannot fail a build is advice.
 
 That is the whole of policy as code, and the vendor-neutral form is the one
 worth holding. Write the required posture as an assertion the pipeline runs,
@@ -951,7 +1156,9 @@ python manage.py diffsettings --default config.settings.reviewed \
 ```
 
 It reads the running process, so it says nothing about an environment where
-nobody runs it. To learn what production loaded, run it in production.
+nobody runs it. To learn what production loaded, run it in production. Run it
+on a schedule as well. The comparison holds for the moment it ran, and an edit
+in a platform console needs no deploy.
 
 **Its output is secret material.** It renders every upper-case setting through
 `repr()` with no redaction of any kind. Thus `SECRET_KEY`, database passwords,
@@ -960,11 +1167,24 @@ and every API key the module holds appear in full. Verified against the Django
 ticket, or a shared log. Compare it in place, and emit the **names** of the
 settings that differ.
 
+`--default` names a module, and `diffsettings` imports it. Two results follow.
+The baseline runs as code inside the environment where the drift job runs, so
+it must declare values and do nothing else. No environment read, no import of
+the live settings, and no side effect belongs in it. And a change to the
+baseline moves the line the comparison measures against. Read a diff of that
+module as a security-relevant settings change. Verified against the Django 6.1
+`django/core/management/commands/diffsettings.py` on 27 Aug 2026.
+
 `settings_scan.py` answers the other half, and only the other half. It parses
 the settings modules without an import, so it reads what the files declare
 across a whole package. By construction it cannot see a value the environment
-supplies. Use the static scan for the declaration. Use `diffsettings` in the
-environment for the effective value.
+supplies. It also reads only a name that a module assigns in the plain form. A
+module that builds names with `globals().update()`, with `exec`, or in a loop
+over the environment declares nothing the parser can see. The scan then
+under-reports rather than reports nothing, which is the more dangerous of the
+two results. Treat such a module as a module with no readable declaration. Use
+the static scan for the declaration. Use `diffsettings` in the environment for
+the effective value.
 
 The expiry record is a project file, and the assertion over it is one more
 deploy check:
@@ -1020,22 +1240,26 @@ discipline belongs to `a03-software-supply-chain.md`, "SBOM, scan gate, and
 provenance". That section owns what a pipeline does with a scanner result.
 
 **Write-time.** A suppression is a silenced check, a scanner ignore entry, or
-an inline comment that disables a rule. When you generate a suppression of any
-kind, write the owner, the reason, and the expiry date in the same edit. Put
-the entry somewhere an assertion can read it, rather than in a comment beside
-the line. The next reader finds the comment. The assertion is the only part of
-it that can still object.
+an inline comment that disables a rule. A rollout state that enforces less
+than the setting beside it promises is the fifth kind. When you generate a
+suppression of any kind, write the owner, the reason, and the expiry date in
+the same edit. Put the entry somewhere an assertion can read it, rather than
+in a comment beside the line. The next reader finds the comment. The assertion
+is the only part of it that can still object.
 
 ## Review checklist
 
 - [ ] `DEBUG = False` and `ALLOWED_HOSTS` set (not `*`) in production settings.
+      Each one is parsed out of its environment string into the type the
+      setting needs, rather than assigned as the string itself.
 - [ ] Secrets and per-environment values are read from the environment and
       validated at startup, rather than carrying a default in the settings
       module.
 - [ ] HSTS, SSL redirect, nosniff, `X-Frame-Options`, secure session/CSRF cookies set.
-- [ ] `SECURE_CROSS_ORIGIN_OPENER_POLICY` is left at `"same-origin"`, or
-      relaxed to `"same-origin-allow-popups"` for a documented popup flow,
-      rather than to `None` or `"unsafe-none"`.
+- [ ] `SECURE_CROSS_ORIGIN_OPENER_POLICY` is left at `"same-origin"`, and a
+      documented popup flow carries `"same-origin-allow-popups"` on its own
+      response rather than for the whole site. It is never `None` and never
+      `"unsafe-none"`.
 - [ ] `SECURE_PROXY_SSL_HEADER` matches the actual proxy and isn't client-spoofable.
 - [ ] Session and CSRF cookie names carry the `__Host-` prefix, with domain
       `None`, path `/`, and `Secure` set to agree with it. Or the team chose a
@@ -1050,29 +1274,45 @@ it that can still object.
       Read the effective value rather than the written one, since 5.2 and 6.0
       default it to `True` and 6.1 defaults it to `False`.
 - [ ] `CSRF_TRUSTED_ORIGINS` set with scheme; no stray `@csrf_exempt`.
+- [ ] No entry of `ALLOWED_HOSTS`, `CSRF_TRUSTED_ORIGINS`, or
+      `CORS_ALLOWED_ORIGIN_REGEXES` matches a subdomain by pattern, and every
+      regex origin is anchored at both ends.
 - [ ] CORS uses an allowlist; no `CORS_ALLOW_ALL_ORIGINS = True` with credentials.
 - [ ] `GZipMiddleware` is absent from any response that reflects user input
-      beside a bearer token, a session identifier, or another secret.
+      beside a bearer token, a session identifier, or another secret, and the
+      proxy compresses static content only.
+- [ ] The CSP names `base-uri`, `object-src`, `form-action`, and
+      `frame-ancestors`, and no source expression is as wide as `https:`.
 - [ ] DMARC is at `p=quarantine` or `p=reject` rather than parked at `p=none`.
       `sp` and `np` are set, and any rollout uses `t=y` rather than the
       removed `pct` tag.
 - [ ] SPF stays within 10 DNS-querying mechanisms, and every third-party sender
-      signs with custom DKIM under your own domain at 2048-bit RSA.
+      signs with custom DKIM under your own domain at 2048-bit RSA. Exactly one
+      SPF record and one DMARC record resolve, and the zone holds no retired
+      DKIM selector.
 - [ ] An MTA-STS policy is published at `mode: enforce` with a matching
-      `_mta-sts` TXT record, and TLS-RPT reports delivery-TLS failures.
-- [ ] A restrictive CAA record is published, with an `iodef` contact.
+      `_mta-sts` TXT record, and TLS-RPT reports delivery-TLS failures. That
+      policy protects inbound mail, and the sending MTA protects outbound.
+- [ ] A restrictive CAA record is published, with an `iodef` contact. It binds
+      the issuer, so a name an attacker holds still passes HTTP-01 at a
+      permitted CA.
 - [ ] Every CNAME resolves to a resource you still own, and the decommission
       procedure removes the DNS record before the resource.
 - [ ] `check --deploy` runs clean (and is enforced in CI), with
-      `SILENCED_SYSTEM_CHECKS` reviewed rather than assumed empty.
+      `SILENCED_SYSTEM_CHECKS` reviewed rather than assumed empty. The run
+      names the settings module it loaded, and each value assertion runs where
+      the production values exist.
 - [ ] Project checks assert the properties no framework check can know: a
       required variable, a placeholder secret, a fail-closed default, and a
       non-production target. Those checks are registered `deploy=True`,
       identified under a project prefix, and return `Error` where they are
-      meant to stop a deploy.
+      meant to stop a deploy. Each one asserts the values the deployment
+      permits rather than the values it forbids, and the gate names the
+      project's own tag.
 - [ ] Drift is established from the settings the deployed process resolved, and
       compared against the reviewed baseline. It is not a diff of two settings
       modules. The comparison output is treated as secret.
 - [ ] Every suppression carries an owner, a reason, and an expiry date that
       executable code enforces. A suppression is a silenced check, a scanner
-      ignore entry, an accepted advisory, or an inline comment.
+      ignore entry, an accepted advisory, an inline comment, or a rollout state
+      such as a report-only CSP, DMARC `t=y`, or MTA-STS `mode: testing`.
