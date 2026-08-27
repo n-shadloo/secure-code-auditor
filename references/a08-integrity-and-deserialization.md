@@ -71,6 +71,16 @@ write controls on that store.
 - **`marshal`, `dill`, and `jsonpickle`** reconstruct arbitrary objects, and
   they belong in the same class as `pickle`. That includes where they arrive
   as a machine learning model file or a cached computation.
+- **A model file the project loads is a consumed artifact, and the write
+  control the rule above asks for is not yours to give.** It comes from a
+  registry, a hub, or a bucket, and a mutable name there resolves to different
+  bytes on different days. The pipeline section of this file already answers
+  this for a base image, and the answer is the same here. Pin the artifact by
+  cryptographic digest, and verify the digest before the load rather than
+  after it. Prefer a format that stores tensors and no code, because that
+  removes the construction step that the digest protects. A model that an
+  object-constructing loader reads from a mutable name is the deserialization
+  finding. Nobody in the project controls that store.
 - **`django.core.serializers.deserialize`** on input an attacker can
   influence. See the fixtures section below.
 
@@ -90,8 +100,8 @@ def restore(request):
 
 ```python
 # Correct: both parsers can now only produce strings, numbers, lists, and
-# maps, so the worst a hostile payload yields is bad data for validation to
-# reject.
+# maps, so no payload reaches a constructor. The scalars they produce still
+# need the validation below.
 import json
 
 import yaml
@@ -102,6 +112,31 @@ def restore(request):
     config = yaml.safe_load(request.POST["config"])
     return state, config
 ```
+
+**A data-only parser ends the code-execution question, and not the validation
+question.** Two scalar behaviors defeat a check that reads as correct, and
+both are defaults rather than options:
+
+- **`json.loads` accepts the bare tokens `NaN`, `Infinity`, and `-Infinity`,
+  which JSON itself does not define.** A non-finite float compares False
+  against every bound. Thus `if amount > limit` and `if amount < limit` are
+  both False for the same value. A guard written as a rejection of the
+  out-of-range case therefore passes it. That is a fail-open on the limit, and
+  the payload needs no size at all. Reject a non-finite float where a number
+  carries weight. `math.isfinite` on the parsed value is the check, and the
+  `parse_constant` hook that raises is the parser-level equivalent.
+- **`yaml.safe_load` applies YAML 1.1 implicit typing, so it decides the type
+  and the caller never sees the text.** Confirmed on PyYAML 6.0.3: `no` and
+  `off` become `False`, and `on` and `yes` become `True`. In the same load
+  `0777` becomes the integer 511, `1:30` becomes the integer 90, and `.inf`
+  becomes a non-finite float. A field the code reads as a string arrives as a
+  bool, and a country code or a version becomes a number. Validate the parsed
+  value against the type the field requires. Prefer JSON for anything that a
+  caller sends.
+
+The rule is the same in both. Parse into data first. Then validate that data
+against a schema that states the type and the range. The format choice removes
+the constructor. It does not remove the check on what came back.
 
 **Protobuf sits on the data side of that line, with two caveats.** A protobuf
 message is schema-bound. The parser can fill only the fields the compiled
@@ -240,7 +275,7 @@ protocol is enough. Thus the set of principals who can invoke your tasks is
 exactly the set who can reach the broker. That is rarely the set the code was
 written for.
 
-Two consequences follow, and the second is the one usually missed:
+Three consequences follow, and the last two are the ones usually missed:
 
 - If the serializer can construct objects, broker reachability is remote code
   execution outright.
@@ -249,6 +284,17 @@ Two consequences follow, and the second is the one usually missed:
   bypass on every task. It is frequently an indirect route to code execution.
   The route is a task that calls another program, writes a file, or processes
   input it believes is internal.
+- **The broker is also an administration channel for the workers, and not
+  only an entrance for work.** Celery workers subscribe to a remote-control
+  channel on the same broker, and the protocol carries no authentication of
+  its own. Broker reach is the whole of the permission. The commands
+  registered on Celery 5.6.3, read on 27 Aug 2026, include `shutdown`,
+  `revoke`, `terminate`, `rate_limit`, `time_limit`, `pool_grow`,
+  `pool_shrink`, `pool_restart`, `add_consumer`, and `cancel_consumer`. Thus
+  one publisher stops the fleet, cancels legitimate work, or moves a worker
+  onto a queue of their own. The work in flight then survives only where a
+  durable record already holds it, which is why the webhook receiver below
+  commits its row before the enqueue.
 
 **Therefore task arguments are a trust boundary, not internal data.** Validate
 them inside the task as though they arrived from an anonymous client. Never
@@ -280,10 +326,27 @@ It defaults to `None`, which means it follows `accept_content`. Thus a project
 that widens that one setting alone re-opens the hole on the result backend,
 while `accept_content` still reads as narrow.
 
+**The remote-control channel is on by default, and few projects use it.**
+`worker_enable_remote_control` defaults to `True`, and it gates the whole
+control consumer. `worker_pool_restarts` defaults to `False`, and it gates the
+module reload. A project that turned it on gave the channel a code-reload
+command as well. Both defaults are from Celery 5.6.3, read on 27 Aug 2026.
+Turn the channel off where nothing operates the fleet through it:
+
+```python
+CELERY_WORKER_ENABLE_REMOTE_CONTROL = False
+```
+
+The setting is a narrowing of the blast radius and not a substitute for the
+broker controls. A project that runs `celery inspect` or `celery control` in
+its own operations keeps the channel and carries the exposure knowingly.
+
 **Write-time.** When you generate Celery configuration, write those three
 settings explicitly, even though the defaults already match them. The finding
 here is always a later widening, and an explicit `["json"]` is the line a
-reviewer can watch for a change.
+reviewer can watch for a change. Write
+`CELERY_WORKER_ENABLE_REMOTE_CONTROL = False` in the same block unless the
+project's own runbook uses the channel.
 
 When you generate a task, validate its arguments inside the task body. Pass
 identifiers rather than objects, secrets, or an already-authorized token.
@@ -298,6 +361,14 @@ signed serializer, which authenticates the message without concealment of it.
   or a token publishes it there. Projects also routinely log task arguments
   and results. Keep both free of secrets, and see
   `a09-logging-and-alerting.md`.
+- **A result is a report, and never a fact.** The write half of that reach is
+  the one reviews miss. A principal who writes the store marks a pending task
+  successful and chooses its return value. Code that then acts on the result
+  acts on the attacker's number. The rule holds on a `django.tasks`
+  `TaskResult` row too. Never let a result decide whether an effect happened,
+  or how much it was for. Re-read the authoritative record from the primary
+  datastore. Treat the queue's answer as a signal to look, and never as the
+  answer itself.
 - **Celery's `auth` serializer signs messages, so a worker rejects any message
   a trusted key did not sign.** That is the mechanism that actually
   authenticates the producer. Its own documentation is explicit that it does
@@ -348,16 +419,32 @@ name their release. Treat each unnamed claim as scoped to the 6.0 line.
 **A task function runs with no request and no authenticated user.** There is
 no `request.user`, no session, and no DRF permission class between the caller
 and the body. Thus the code that still holds a principal has to resolve the
-authorization decision *before* the enqueue. It then carries the decision into
-the task as data. The task receives a decision already made, not an identifier
-to judge later.
+authorization decision *before* the enqueue. The task receives a decision
+already made, not an identifier to judge later.
 
 That changes a common shape. A task that receives an object id and re-derives
 permission from it inside itself re-derives it **with no principal**. There is
 nobody to check the id against. Thus the check either compares the object to
-nothing, or silently becomes a check that everyone passes. Pass the
-identifiers the task needs to do its work, and pass the authorization outcome
-separately, as a fact the caller established.
+nothing, or silently becomes a check that everyone passes.
+
+**Carry the decision as committed state, and never as an argument.** An
+argument that says the caller was permitted is an assertion the message makes
+about itself. It is exactly the capability the rule below refuses, and anyone
+who reaches the task store sets it. The caller commits the decision to a row
+in the primary datastore, inside the transaction that established it. It then
+passes the identifier of that row. The body re-reads the committed record and
+refuses where the record does not authorize this work. The body still derives
+no permission of its own. It reads a fact that a write to an access-controlled
+datastore, and nothing else, could have created. That is the shape the webhook
+receiver below already uses, where the committed row is the durable fact and
+the message is only a wake-up.
+
+The same rule refuses a principal read from thread-local state. Under the
+inline default backend the body runs on the caller's thread, inside the request
+cycle. A helper that reads the current user from thread-local state therefore
+resolves the caller, and the check appears to work. The same code authorizes
+nobody once a durable backend runs the body in a worker. Never read a principal
+from thread-local state in a task body.
 
 **A project with two task systems has two authorization boundaries, and
 usually reviews one.** Where the built-in framework lands in a codebase that
@@ -490,8 +577,10 @@ further. Unpickle only from a store no lower-trust party can write. Verified
 against the 6.1 source of `django/tasks/base.py` on 20 Aug 2026.
 
 **Write-time.** When you generate a `@task` function, resolve the
-authorization decision in the caller before the enqueue, and pass the outcome
-as an argument. The body has no principal to re-derive it from. Enqueue inside
+authorization decision in the caller before the enqueue. The body has no
+principal to re-derive it from. Commit the decision to a row, and pass that
+row's identifier as the argument. Never pass the outcome itself, because an
+argument is a value the task store can supply. Enqueue inside
 `transaction.on_commit`, even where the configured backend is immediate,
 because that is the one placement correct under both.
 
@@ -552,6 +641,19 @@ retries up to eight times over four hours before it removes the subscription.
 Size the retention for the longer of the two. `a10-exceptional-conditions.md`,
 "Idempotency", owns the design of the store itself, including why a durable
 unique constraint rather than an `exists()` check arbitrates it.
+
+**That sizing holds only where the scheme signs a timestamp.** Where it does
+not, step 3 is unavailable. De-duplication is then the whole of the replay
+defense. A retention sized to the retry window ends that defense on a schedule
+the attacker can wait out. One captured delivery, replayed after expiry,
+verifies again and repeats the effect. The bytes never age, because nothing in
+them records when they were signed.
+
+Read the signed material in the table below. A row that signs the raw body
+alone is such a scheme. Retain the identifier there for the life of the effect.
+The alternative is an effect made idempotent against your own business record,
+rather than against the retention window. A fulfillment or a payment is a
+permanent obligation, so its guard is permanent too.
 
 ### Django & DRF implementation layer
 
@@ -631,9 +733,22 @@ def stripe_webhook(request):
     # The timestamp is inside the signed material, so it cannot be moved
     # forward without invalidating the signature.
     signed = timestamp.encode() + b"." + payload
-    expected = hmac.new(SECRET, signed, hashlib.sha256).hexdigest()
-    if not any(hmac.compare_digest(expected, s) for s in signatures):
-        return HttpResponse(status=401)
+    expected = hmac.new(SECRET, signed, hashlib.sha256).digest()
+    # Decode each candidate to bytes first. The header is attacker-controlled
+    # text, and hmac.compare_digest raises TypeError on a str that carries a
+    # non-ASCII character. An unhandled raise here is a 500 that any anonymous
+    # caller triggers with one header. Decoding also drops a candidate of the
+    # wrong length before the comparison sees it.
+    candidates = []
+    for value in signatures:
+        try:
+            candidates.append(bytes.fromhex(value))
+        except ValueError:
+            continue
+    if not any(hmac.compare_digest(expected, c) for c in candidates):
+        # One status for every rejection. A 401 here and a 400 above would
+        # tell an anonymous caller which check they failed.
+        return HttpResponse(status=400)
 
     event = json.loads(payload)   # parse only after the bytes are trusted
     # The unique constraint arbitrates, so a duplicate loses the insert rather
@@ -654,6 +769,20 @@ def stripe_webhook(request):
     transaction.on_commit(lambda: process_event.delay(event["id"]))
     return HttpResponse(status=200)
 ```
+
+**Every value the verifier touches before the MAC passes is attacker-authored,
+and a raise there is a rejection the route did not choose.** Search the
+verification block for the operations that raise on hostile text.
+`hmac.compare_digest` raises `TypeError` where either `str` carries a
+non-ASCII character. `int()` and `bytes.fromhex()` raise `ValueError` on text
+that is not a number. An index into a split header raises `IndexError`. Each
+one is an unauthenticated 500 on a payment route, reached with one header and
+no secret.
+
+Decode the candidate to bytes and catch the parse, as above. Where the
+surrounding code cannot guarantee that, wrap the whole verification block.
+Return from it the same rejection that the failed comparison returns. Fail
+closed means the raise becomes a rejection, and never a stack trace.
 
 The record is the durable fact, and the enqueue is only a wake-up. A crash
 between the commit and the enqueue, or a broker outage at `.delay`, leaves a
@@ -703,10 +832,24 @@ All four are HMAC-SHA256. These details change the code:
   `X-Hub-Signature` header is HMAC-SHA1, and it exists only for compatibility.
   A verifier that checks it instead of the SHA-256 header is a finding.
 - **Shopify** keys the HMAC with the app's client secret and identifies a
-  delivery with `X-Shopify-Webhook-Id`.
+  delivery with `X-Shopify-Webhook-Id`. It signs the raw body alone, so it is
+  the second timestamp-less scheme and it takes the permanent retention above.
 - **Standard Webhooks** base64-encodes the secret after its `whsec_` prefix.
   It carries a space-delimited list of signatures, so a rotation can sign with
   the old and new keys at once. Accept the message if any entry verifies.
+
+**A scheme that carries one signature moves the rotation into your verifier.**
+Stripe and Standard Webhooks put a signature per active secret in the header,
+so a verifier that already accepts any matching entry needs no change. GitHub
+and Shopify send one signature. A receiver that swaps the secret in one step
+therefore rejects every delivery already signed with the old one. The provider
+retires the subscription after enough failures.
+
+Compute a candidate digest per active secret across the overlap window. Accept
+the message where any one of them matches. Retire the old secret at the end of
+the window. Never answer the rejections by a widening of the scheme. Never
+answer them by a skip of the check, or by a fallback to an unsigned path. Each
+is a downgrade that the attacker waits for.
 
 #### Keying the replay store
 
@@ -745,6 +888,37 @@ who the actor is as authorization. A verified signature proves the message
 came from the provider. It proves nothing about what the message is entitled
 to do.
 
+#### Binding the event to a tenant
+
+The rule above has one concrete failure, and a multi-tenant integration meets
+it directly. An attacker connects their own account to your application, the
+way any customer does. They then make a real event happen in that account. The
+provider signs it with your endpoint's secret, because the provider signs
+every delivery to that endpoint with the same secret.
+
+Every step above passes. The signature is valid, the timestamp is fresh, and
+the event identifier is new. Only the account behind the event is the
+attacker's.
+
+The effect lands on the wrong tenant wherever the handler picks the tenant out
+of the payload. The attacker names your customer in a field of
+their own event. The handler then grants that customer's entitlement, marks
+their invoice paid, or writes to their records.
+
+**Resolve the tenant from a stored mapping, and never from the event.** Take
+the sender identity that the provider stamps on the delivery. It names the
+account, the shop, or the installation the event belongs to. Look that
+identity up in the record your application wrote at connection time. Where no
+record matches, reject.
+
+A signed event that disagrees with your own mapping is a live attack rather
+than a mistake. Where the record names a different tenant than the payload
+does, reject the event. Raise an alert on that rejection. Apply the effect
+only to the tenant that the mapping named.
+
+Severity is Critical on a money or entitlement path. The precondition is a
+self-service signup, which is the product working as designed.
+
 #### Sending webhooks of your own
 
 An outbound-delivery worker is an HTTP client whose destinations users supply.
@@ -767,6 +941,13 @@ specific to webhook delivery:
   backoff, a per-destination rate limit, and a delivery timeout. Without them,
   an attacker who registers a victim's URL and triggers events turns your
   retry logic into an amplifier pointed at a third party (CWE-770).
+- **A per-destination limit is the one an attacker escapes by arithmetic.**
+  A tenant usually registers a destination without approval, and each new one
+  carries a full allowance of its own. One event sent to many destinations is
+  therefore unbounded in total, while every destination stays compliant. Cap
+  the destinations a tenant may register. Rate-limit the registrant as well as
+  the destination. Cap the delivery worker's total outbound rate. Read the
+  aggregate at review time, and not the per-destination number.
 - **Sign what you send**, over the raw body with a timestamp bound in, so that
   a consumer can verify you. Support rotation: sign with the old and the new
   key during an overlap window, and send both.
@@ -819,7 +1000,11 @@ as platform recommendations, and not as repository findings.
 
 - [ ] No object-constructing deserializer (`pickle`, unsafe YAML, `marshal`,
       `dill`, `jsonpickle`) reads bytes from any store an attacker can write
-      to. The interchange formats are data-only.
+      to. The interchange formats are data-only. A parsed number that carries
+      weight is checked for finiteness, and a parsed value is checked against
+      the type the field requires.
+- [ ] A machine learning model file is pinned by digest and verified before
+      the load, rather than fetched by a mutable name.
 - [ ] Every store the application deserializes from has been checked for who
       can write to it, and not only for who can read it. The stores are the
       cache, the queue, the session, a file, and a database column.
@@ -842,16 +1027,25 @@ as platform recommendations, and not as repository findings.
       industry default.
 - [ ] A durable store keyed on the provider's event or delivery identifier
       de-duplicates. It is retained for as long as the provider will retry,
-      rather than only for the tolerance window.
+      rather than only for the tolerance window. Where the scheme signs no
+      timestamp, the retention lasts as long as the effect matters, because
+      de-duplication is then the only replay defense.
 - [ ] Receivers acknowledge with a 2xx quickly, and defer the work. A
       rejection returns an error without detail, a stack trace, or a hint
-      about which check failed.
+      about which check failed. One status code covers every rejection, and
+      the stage that failed reaches the log rather than the response.
 - [ ] Payload amounts, prices, and actor claims are reconciled server-side. A
       valid signature is treated as proof of origin only.
+- [ ] The handler resolves the tenant from the stored mapping for the sending
+      account, and never from a payload field. A signed event whose account
+      has no mapping is rejected, and one that disagrees with the mapping
+      raises an alert.
 - [ ] Outbound deliveries go to registered destinations, validated again at
       send time. The redirects are bounded, the egress is isolated, and the
-      retries are capped with backoff and a per-destination limit. The
-      payloads are signed with overlapping keys across a rotation.
+      retries are capped with backoff and a per-destination limit. A
+      per-tenant cap and a worker-wide rate cap bound the aggregate that many
+      destinations otherwise escape. The payloads are signed with overlapping
+      keys across a rotation.
 - [ ] Published artifacts have provenance, and installs verify hashes. Build
       inputs are pinned, and consumed by digest rather than by a mutable tag.
 
@@ -868,13 +1062,19 @@ as platform recommendations, and not as repository findings.
 - [ ] `CELERY_ACCEPT_CONTENT` is JSON-only, and it is the setting that decides
       what a worker will execute. The task and result serializers are set
       explicitly. The broker is authenticated and unreachable from the
-      internet, and the result backend holds no secrets.
+      internet, and the result backend holds no secrets. Nothing acts on a
+      task result as a statement that the effect happened.
+- [ ] `CELERY_WORKER_ENABLE_REMOTE_CONTROL` is `False` where no runbook uses
+      the channel, because broker reach is otherwise fleet control as well as
+      task invocation.
 - [ ] Where a project uses `django.tasks`, `TASKS` is set explicitly rather
       than inherited. The default backend executes tasks inline in the request
       cycle, and hides the exception. It gives the operation the request
       timeout it was moved off the request path to escape.
-- [ ] Every `@task` body receives its authorization outcome as an argument the
-      caller resolved. It does not re-derive permission from an identifier
+- [ ] Every `@task` body reads its authorization outcome from a record the
+      caller committed, and receives only that record's identifier. No
+      argument carries the outcome itself, and no body reads a principal from
+      thread-local state. It does not re-derive permission from an identifier
       with no principal to check it against. Secrets and personal data stay
       out of the arguments, which the result retains and the logs reproduce.
 - [ ] Enqueues are wrapped in `transaction.on_commit`. No task import path is
@@ -890,7 +1090,10 @@ as platform recommendations, and not as repository findings.
       `request.data` or `request.POST`, and no middleware consumes the stream
       ahead of it. The HMAC input is the raw bytes, and never `json.dumps` of
       parsed data.
-- [ ] Comparison uses `hmac.compare_digest`, never `==`.
+- [ ] Comparison uses `hmac.compare_digest`, never `==`. The candidate is
+      decoded to bytes first, because `compare_digest` raises `TypeError` on a
+      `str` that carries a non-ASCII character. No parse of an
+      attacker-authored header can raise out of the verifier.
 - [ ] `csrf_exempt` appears on the webhook route only, and that route verifies
       a signature.
 - [ ] A unique constraint arbitrates the de-duplication insert, and not an
