@@ -563,9 +563,9 @@ Otherwise the client writes straight into it and steps six through eight
 decide nothing.
 
 The quarantine prefix must not be readable outside the verification tier
-either. The uploader knows that key, because the URL they were issued named it.
-An anonymous read on the bucket, or a CDN origin that covers it, therefore
-hands them a link to their own unscanned bytes on your domain. Unguessability
+either. The uploader knows that key, because the URL they were issued named
+it. An anonymous read on the bucket, or a CDN origin that covers it, is then
+a link to their own unscanned bytes on your domain. Unguessability
 answers nothing here. Keep the quarantine prefix off every public origin, and
 give the read to the verification tier alone.
 
@@ -1101,8 +1101,8 @@ versioned bucket.
       isolated origin or as a download with fixed response headers.
 - [ ] The quarantine prefix is readable only by the verification tier. The
       promotion copy takes content type, disposition, and cache directive from
-      the server's record, and a delegated read signs the same values where
-      the provider offers the override.
+      the server's record. A delegated read signs the same values where the
+      provider offers the override.
 - [ ] SVG and other active formats are rejected or purpose-built sanitized,
       reserialized, and origin-isolated.
 - [ ] Request, file, decoded-content, archive, processing, concurrency, and

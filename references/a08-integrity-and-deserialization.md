@@ -293,8 +293,8 @@ Three consequences follow, and the last two are the ones usually missed:
   `pool_shrink`, `pool_restart`, `add_consumer`, and `cancel_consumer`. Thus
   one publisher stops the fleet, cancels legitimate work, or moves a worker
   onto a queue of their own. The work in flight then survives only where a
-  durable record already holds it, which is why the webhook receiver below
-  commits its row before the enqueue.
+  durable record already holds it. That is the reason the webhook receiver
+  below commits its row before the enqueue.
 
 **Therefore task arguments are a trust boundary, not internal data.** Validate
 them inside the task as though they arrived from an anonymous client. Never

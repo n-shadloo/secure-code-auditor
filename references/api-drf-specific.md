@@ -471,12 +471,12 @@ class PatientViewSet(viewsets.ModelViewSet):
   size of the matching set, including under a filter the caller controls. The
   count then becomes a binary search over data the caller cannot read. Where
   the collection is sensitive, `CursorPagination` returns no total and gives
-  the caller no random access, at the cost of an order on a stable field.
+  the caller no random access. The cost is an order on a stable field.
 - **A DRF cursor is encoded, and it is not opaque.** `CursorPagination`
   base64-encodes a query string that carries the position, the direction, and
   an offset. Nothing signs that string. The position is the value of the
-  first ordering field on the boundary row, so an order on a sensitive column
-  hands that column's values to the caller one page at a time. That is the
+  first ordering field on the boundary row. An order on a sensitive column
+  therefore hands that column's values to the caller one page at a time. That is the
   ordering oracle above, returned by the control that replaced it. Order on a
   stable field that the caller may already read, such as the creation
   timestamp or the primary key. Where the position must carry a value the
@@ -742,9 +742,9 @@ even inside one process.
   an open door. Letting the exception reach a 500 is a third behavior nobody
   chose.
 - **The window is fixed, and it does not slide.** `add()` anchors the window
-  on the first attempt inside it. A caller who spends the ceiling at the end
-  of one window, and again at the start of the next, makes twice the ceiling
-  in a short time. Read the setting as a per-window ceiling, and not as a
+  on the first attempt inside it. A caller can spend the ceiling at the end of
+  one window, and again at the start of the next. That caller makes twice the
+  ceiling in a short time. Read the setting as a per-window ceiling, and not as a
   rate. Where the rate itself must hold, put the second limit at the edge.
 
 **Write-time.** When you generate a login, password-reset, payment, or
@@ -849,7 +849,7 @@ the earlier response.
 
 `OPTIONS` removes the guess, because `DEFAULT_METADATA_CLASS` is
 `SimpleMetadata`. That class answers an `OPTIONS` request with every writable
-field of the `PUT` and `POST` handlers, and with the type and the required
+field of the `PUT` and `POST` handlers. It adds the type and the required
 flag of each one. It reads the serializer directly, so a field that a
 decoration dropped from the published document is still in the answer. It runs
 `check_permissions` first, so the answer reaches a caller who clears the
@@ -1033,9 +1033,9 @@ In DRF, emit both headers from a small mixin or renderer keyed on
 
 **Switch off by the route, and never by `request.version`.** Every versioning
 class falls back to `default_version`, and the two classes below fall back
-silently on input the caller controls. A `410` that a mixin returns on one
-value of `request.version` therefore never fires for a caller who reaches the
-same code with the version unresolved. Remove the URL patterns of the retired
+silently on input the caller controls. A mixin can return a `410` on one
+value of `request.version`. That `410` never fires for a caller who reaches
+the same code with the version unresolved. Remove the URL patterns of the retired
 version instead. That removal is visible in the URL map above, and a test
 proves it. The same reasoning applies to any authorization that branches on
 `request.version`.

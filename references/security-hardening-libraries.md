@@ -18,9 +18,9 @@ Hold that split on the next sweep. A version is one page away and cheap to
 re-check, and a default is neither. A collapse of the two would date a claim
 nobody verified.
 
-The two clocks can cross, and that case needs a rule. Where a row's version
-date is later than the date at the head of its section, the version is fresh
-and the default claims beside it are not. A release inside that gap can change
+The two clocks can cross, and that case needs a rule. A row's version date
+can be later than the date at the head of its section. The version is then
+fresh, and the default claims beside it are not. A release inside that gap can change
 a security-sensitive default under a re-checked version number. Re-read the
 defaults for that row before you quote them. Where you do not re-read them,
 record the default claim as unverified for that section date.

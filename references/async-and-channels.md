@@ -293,7 +293,7 @@ A channel-layer group name is routing metadata, not an authorization boundary.
 Check authorization before you add a connection to a sensitive group. Build the
 group name on the server from the object that the check authorized, and give
 each feature its own prefix. Where the check reads a primary key and the name
-carries a URL slug, the two identify different objects, and the connection
+carries a URL slug, the two identify different objects. The connection then
 joins a group that nobody authorized. Two features that both interpolate a raw
 URL parameter also collide on one name, and each one then receives the other's
 broadcast. Exclude secrets from broadcast payloads, and handle revocation for

@@ -582,9 +582,10 @@ the same verb on another.
 **Warning: single-use is a property of the consume, not of the token.** The
 agent retries at machine speed, so two calls can present one token at the same
 moment. `consume` must let exactly one caller win. That is one conditional
-statement that marks the token used and reports how many rows it changed, or a
-locked read inside a transaction (`a10-exceptional-conditions.md`, "Races,
-TOCTOU, and adversarial sequencing"). A check that reads the token and then
+statement that marks the token used and reports how many rows it changed. A
+locked read inside a transaction is the other form
+(`a10-exceptional-conditions.md`, "Races, TOCTOU, and adversarial
+sequencing"). A check that reads the token and then
 deletes it runs the irreversible action twice.
 
 The token is short-lived, single-use, bound to the action and its parameters,

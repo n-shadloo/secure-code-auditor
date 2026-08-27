@@ -430,8 +430,8 @@ an attacker picks when to receive a 4xx.
 The split of ownership has a matching gap. Django sets a header on a response
 Django generated. A `/static/` or a `/media/` path that nginx serves never
 reaches Django, so it carries no Django-set header at all. Public user content
-sits on those paths. Give every serving location the edge header set, and
-assert the headers on a static path and on a 404 as well as on a 200.
+sits on those paths. Give every serving location the edge header set. Assert
+the headers on a static path and on a 404 as well as on a 200.
 
 CWE-693 (Protection Mechanism Failure). Severity: medium.
 
@@ -488,9 +488,9 @@ Review technique, from outside and from the repository:
 Metrics deserve their own line. `django-prometheus` and its equivalents publish
 per-endpoint request counts and latencies, which disclose the URL inventory and
 the traffic shape. The endpoint is a Django view on the same listener that
-serves the site, so no bind address separates it, and advice to move it to an
-internal interface is not a change anyone can make in the application. Two
-mechanisms do exist. Require authentication on the view, or deny the path at
+serves the site, so no bind address separates it. Advice to move it to an
+internal interface is therefore not a change anyone can make in the
+application. Two mechanisms do exist. Require authentication on the view, or deny the path at
 the edge for every source outside the monitoring network. An unguessable path
 is not a control. `api-drf-specific.md`, "Schema and browsable-API exposure"
 owns schema and browsable-API exposure, and A02 owns the `DEBUG` error page
@@ -538,7 +538,7 @@ console or Debug Toolbar, medium for metrics and health disclosure.
   never inspects that layer, so neither the hop count nor the depth check sees
   it. Enable the option only where the load balancer requires it, and name the
   load balancer's address in `--proxy-allow-from`.
-- The ASGI servers carry the same switch under other names, and a project that
+- The ASGI servers carry the same switch under other names. A project that
   moves to Channels or to uvicorn keeps the habit it learned on Gunicorn.
   uvicorn honors the forwarded headers under `--proxy-headers`, and
   `--forwarded-allow-ips` names the peers it trusts. The value `*` makes
@@ -864,9 +864,9 @@ decorated URL.
 - Treat a reachable, unauthenticated Redis as Critical on its own, not merely
   as a broker-hygiene issue. The rating does not rest on a CVE, and a team that
   reads it that way under-reacts on a patched instance. `dir` and `dbfilename`
-  are writable at run time through `CONFIG SET`, so a caller who reaches an
-  unauthenticated instance chooses the path and the content of the next
-  persistence file. Replication hands the same caller the contents of the
+  are writable at run time through `CONFIG SET`. A caller who reaches an
+  unauthenticated instance therefore chooses the path and the content of the
+  next persistence file. Replication hands the same caller the contents of the
   instance. Both are features, and a fully patched Redis keeps both. The CVEs
   raise the ceiling rather than set it. CVE-2025-49844 is a use-after-free in
   the embedded Lua interpreter. It lets a caller who can run a script escape
@@ -894,8 +894,8 @@ decorated URL.
       without restoring the full inherited set. Nginx drops the rest silently.
 - [ ] The code reads the client IP a known number of hops from the right of
       `X-Forwarded-For`, never the leftmost entry. It confirms that the peer
-      and the hops to the right of the answer are proxies the project operates,
-      because the depth check cannot detect a hop count set too high.
+      and the hops to the right of the answer are proxies the project
+      operates. The depth check alone cannot detect a hop count set too high.
 - [ ] Security headers defined once; server/version banners hidden. Each
       edge `add_header` carries `always`, and the proxy-served static and media
       locations get the header set that Django cannot reach.

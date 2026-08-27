@@ -496,10 +496,9 @@ The anti-patterns, all of which appear in real code:
   lookup, never as the raw value. That hash is one pass of SHA-256, because
   the key is 256 random bits and an attacker has nothing to guess. Do not put
   a password KDF on that path. Argon2 on every API request multiplies the
-  memory cost above by the request rate rather than by the login rate, which
-  is the out-of-memory event above under another name. A password KDF protects
-  a
-  value a person chose, and this value is not one.
+  memory cost above by the request rate rather than by the login rate. That
+  product is the out-of-memory event above under another name. A password KDF
+  protects a value a person chose, and this value is not one.
   `a07-authentication-failures.md`, "API keys", holds the full key lifecycle:
   prefixes, scoping, expiry, and revocation.
 
@@ -1186,7 +1185,7 @@ needs.
       no ciphertext references them.
 - [ ] Where a KMS holds the KEK, every data key is generated and unwrapped
       under an encryption context. That context names the table, the column,
-      and the row the key belongs to, and it holds no personal value, because
+      and the row the key belongs to. It holds no personal value, because
       the KMS audit log records it. The plaintext data key lives in a local,
       rather than on an instance, in a cache, or in a log line.
 - [ ] A data key shared by a tenant or a batch carries a write budget, so no

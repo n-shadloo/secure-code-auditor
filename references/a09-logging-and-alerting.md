@@ -709,7 +709,7 @@ The expected reader set is empty for most placements. It is not empty for the
 decoy row inside a real tenant. The admins of that tenant read it, and so do
 the list endpoints of that tenant. State the signal for that placement
 precisely: a read by a principal outside the tenant. A reader count of zero on
-that row fires the alert on the tenant's own traffic, and the mute in the first
+that row fires the alert on the tenant's own traffic. The mute in the first
 failure above then closes it.
 
 ### Django & DRF implementation layer
@@ -731,7 +731,7 @@ entry, the next review reports it as an undocumented endpoint
 (`api-drf-specific.md`, "Endpoint inventory (API9)").
 
 Warning: a decoy credential must authenticate nothing. A decoy that a copy of
-the real provisioning path mints is a live credential with no owner, which is a
+the real provisioning path mints is a live credential with no owner. That is a
 backdoor rather than a control. Prove with a test that the value fails every
 real authorization check. Give the caller the same failure that any other
 invalid credential gets, and raise the alert off the response path. A different
@@ -766,7 +766,7 @@ first false alert to identify them for you.
       event without the identity (`data-lifecycle-and-privacy.md`).
 - [ ] The audit sink is append-only for the writing principal, and deletion
       sits under a separate identity whose credential the application cannot
-      reach. The review reports what any integrity chain proves — not
+      reach. The review reports what any integrity chain proves. That is not
       completeness, not a record it holds, not a removal at the end, and not
       resistance to a principal who can recompute it. A scheduled job verifies
       the chain and publishes the head digest.

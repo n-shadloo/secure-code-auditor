@@ -725,8 +725,8 @@ harvested the secret.
    somebody explicitly deletes it. Revocation reaches the credential, and not
    the tokens already minted from it. A self-contained access token stays
    valid until `exp`, whatever the provider now says. Treat the longest `exp`
-   in flight as the length of the incident, unless the resource server checks
-   issuer state on each call by introspection (RFC 7662).
+   in flight as the length of the incident. The exception is a resource server
+   that checks issuer state on each call by introspection (RFC 7662).
 3. **Assess the blast radius.** Establish what the credential granted, what it
    could reach, and whether the project reused the same value anywhere else.
    One leaked secret copied into five services is five incidents.

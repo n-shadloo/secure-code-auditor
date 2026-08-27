@@ -258,8 +258,8 @@ blanket schema grant reaches all three below, so check each one.
   that is not practical, grant the runtime role nothing on the partition.
 - **A view.** PostgreSQL applies the policies of the **view owner** to the
   base relation, and not the policies of the caller. The view therefore
-  answers with whatever its owner may read. Where that owner bypasses the
-  policy — an owner without `FORCE`, or a `BYPASSRLS` role — the view returns
+  answers with whatever its owner may read. That owner can bypass the policy,
+  as an owner without `FORCE` or as a `BYPASSRLS` role. The view then returns
   every row to every role that can read it. On PostgreSQL 15 and later,
   `security_invoker = true` makes the caller's policies apply instead.
 - **A materialized view.** It stores the rows that its query selected. No
@@ -935,9 +935,9 @@ stores which cannot delete in place.
       DML-only role. `ALTER DEFAULT PRIVILEGES` is set, so new migrations'
       tables stay readable. The test runner's `CREATEDB` belongs to a CI role.
       The runtime role holds no write on the migration bookkeeping table.
-- [ ] Row-level security uses `ENABLE` **and** `FORCE`, the application role is
-      neither the table owner nor a `BYPASSRLS` role, and `WITH CHECK` covers
-      writes as well as reads. Each partition, view, and materialized view
+- [ ] Row-level security uses `ENABLE` **and** `FORCE`. The application role
+      is neither the table owner nor a `BYPASSRLS` role, and `WITH CHECK`
+      covers writes as well as reads. Each partition, view, and materialized view
       over a protected table is checked in its own right.
 - [ ] Tenant context is set with `set_config(..., true)` as the first
       statement of the outermost `transaction.atomic()`, never a session `SET`

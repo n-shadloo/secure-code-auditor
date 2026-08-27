@@ -204,8 +204,8 @@ stock level, or a quota, and never bounds the amount itself. Read every such
 guard for the value that makes the comparison true in the wrong direction. Zero
 and a fractional value need the same answer as a negative value. Neither the
 sign bound nor the balance bound belongs to Python alone. Both are properties
-of the data, so put the amount bound on the serializer and the balance bound in
-a `CheckConstraint`, as "Push the invariant into a constraint" below describes.
+of the data. Put the amount bound on the serializer and the balance bound in a
+`CheckConstraint`, as "Push the invariant into a constraint" below describes.
 
 That fix has four failure modes, and reviews miss all of them:
 
@@ -229,11 +229,11 @@ That fix has four failure modes, and reviews miss all of them:
   *absence* of a row. A lock on the row that you mutate then protects none of
   it. The aggregate case is the common one, and it needs a named mechanism.
   "Seats sold stay under the capacity of the room" and "withdrawals today stay
-  under the daily limit" are true of a set, so no row carries them and no
+  under the daily limit" are true of a set. No row carries them, and no
   concurrent writer touches a shared row. Lock the anchor row that the set
-  hangs from instead — the `Room`, the `Account`, the tenant — with
-  `select_for_update()` inside the same `atomic()` that reads the aggregate and
-  writes the child. Every writer for that set then serializes on one row, and
+  hangs from instead — the `Room`, the `Account`, the tenant. Take
+  `select_for_update()` on it, inside the same `atomic()` that reads the
+  aggregate and writes the child. Every writer for that set then serializes on one row, and
   the aggregate that the transaction reads stays true until it commits. The
   anchor row has to be a real row that every writer selects, and every write
   path has to take it. Where no such row exists, the answer is
@@ -336,29 +336,30 @@ review that the defense is now application-side.
 uniqueness.** This is standard SQL, and it holds on PostgreSQL, MySQL, and
 SQLite. Rows that carry NULL in a constrained column never collide with each
 other, however many of them exist. The defect usually arrives after the
-constraint does: a later migration makes the tenant column, the scope column,
-or the key column nullable, and the invariant stops holding for exactly the
+constraint does. A later migration makes the tenant column, the scope column,
+or the key column nullable. The invariant then stops holding for exactly the
 rows an attacker can produce. Require `null=False` on every column that
 `fields=` names. Where the column must stay nullable, normalize the empty case
 to a sentinel value that compares equal, or set `nulls_distinct=False` on the
-constraint, which needs Django 5.2 and PostgreSQL 15 or later and warns with
-`models.W047` elsewhere.
+constraint. That option needs Django 5.2 and PostgreSQL 15 or later, and it
+warns with `models.W047` elsewhere.
 
 A `condition=` reads nullability the other way, and the difference matters. A
 condition that tests for NULL explicitly is correct, which is why
 `cancelled_at__isnull=True` above selects the live rows reliably. A condition
 that compares a nullable column with `=`, `>`, or `IN` is unknown for a NULL
-row, so the partial index excludes that row and the constraint never sees it.
+row. The partial index then excludes that row, and the constraint never sees
+it.
 Read every `condition=` for a comparison against a column that can be NULL.
 
 The constraint holds only as far as the code that receives its `IntegrityError`.
 That error is what "the loser fails loudly" means in practice, so read the
 handler for it on every guarded write. Two shapes cancel the defense. The
-first is a broad `except Exception` or a bare `except` around the insert, which
-turns the loss into a silent pass and lets the duplicate effect run anyway;
+first is a broad `except Exception` or a bare `except` around the insert. It
+turns the loss into a silent pass, and it lets the duplicate effect run anyway;
 this is the same swallowing that "Fail closed" above rejects for an auth check.
 The second is no handler at all. `IntegrityError` is not an `APIException`, so
-DRF's handler returns `None`, the response is a 500, and the client SDK retries
+DRF's handler returns `None` and the response is a 500. The client SDK retries
 it and runs the race again. Catch `IntegrityError` at the specific write that
 can lose, and map it to 409. Return no constraint name and no database text in
 that body, and keep the detail in the server-side log.
@@ -369,8 +370,8 @@ during validation and raise `ValidationError` when it matches. That is a
 pre-check in a separate statement from the insert, which is the exact shape
 this section bans. It lowers the duplicate rate and closes no window. It also
 does not run at all when the serializer omits a field the constraint names,
-including a field the `condition=` reads, so a partial constraint can have no
-validator behind it. Keep the constraint as the enforcement, and treat the
+including a field the `condition=` reads. A partial constraint can therefore
+have no validator behind it. Keep the constraint as the enforcement, and treat the
 validator as the friendly message.
 
 A distributed lock in Redis does not replace either defense. A lock is only as
@@ -591,7 +592,7 @@ nothing normative to cite, and no interoperability guarantee. `GET` and
 `DELETE` are idempotent in the HTTP method semantics, which describe the
 response and not the handler. Read the handler before you exempt it. A `GET`
 that consumes a token, marks a record read, or moves a counter is a state
-change on a safe method, and that is a defect on its own. A `DELETE` whose
+change on a safe method. That is a defect on its own. A `DELETE` whose
 handler dispatches an external effect re-runs that effect on the retry that
 proxies and SDKs send by themselves. Exempt a handler only where a second
 identical call changes nothing outside the response.
@@ -684,14 +685,14 @@ The fingerprint above digests the body alone. Canonicalize the method and the
 route into it as well. One key sent to two endpoints then cannot replay the
 wrong response. The rule behind that patch is the general one: everything the
 handler reads to decide the outcome belongs in the digest. Enumerate those
-inputs for the endpoint, and name them in the review. The query string and any
-header that selects a tenant, a currency, a locale, or an API version are the
-ones that a body-only digest drops. An input outside the digest lets one
+inputs for the endpoint, and name them in the review. A body-only digest
+drops the query string. It also drops each header that selects a tenant, a
+currency, a locale, or an API version. An input outside the digest lets one
 request receive the stored answer of a different one.
 
 The recovery `get()` in the except branch has the isolation edge of
 `get_or_create()` above it. A project that has raised the isolation level can
-find no row there, and the replay path then raises `DoesNotExist` on the branch
+find no row there. The replay path then raises `DoesNotExist` on the branch
 that exists to answer a retry. Handle that miss as a conflict, and never let it
 reach the caller as a 500.
 
@@ -704,12 +705,12 @@ retry finds no half-written row. Two consequences follow from that.
   the idempotency key of the provider in addition to this one. The guarantee
   has to hold on their side of the call too. Note what the stored response then
   promises. The record and its 200 commit with the database work, while the
-  dispatch that follows is not durable, so a process that dies in that window
+  dispatch that follows is not durable. A process that dies in that window
   loses the external effect and keeps the success. Every retry replays that
   success and never repairs it, because the key already exists. Where the
   external effect must not be lost, commit the outbox row in the same
-  transaction as the record, so that the stored success and the durable
-  dispatch exist together or not at all.
+  transaction as the record. The stored success and the durable dispatch then
+  exist together or not at all.
 - A genuinely simultaneous duplicate blocks on the unique index until the first
   transaction finishes, and does not get an immediate answer. If you commit the
   insert in its own transaction first, you get an instant "still in flight"
@@ -722,10 +723,10 @@ characters. Never derive one from an email address, an account number, or
 anything else whose presence in this table is itself a disclosure. Validate the
 key before it reaches the database: present, not empty, within the stored
 length, and inside a defined character set. Reject an invalid key with a 400.
-An empty key is a valid `CharField` value, and it collapses every keyless
+An empty key is a valid `CharField` value. It collapses every keyless
 request of that actor onto one record, which locks that actor out of the
-endpoint. An over-long key raises a database error on a strict backend and
-truncates silently on one that is not strict, where two different keys then
+endpoint. An over-long key raises a database error on a strict backend, and
+it truncates silently on one that is not strict. Two different keys then
 become one record.
 
 The store outlives the request that wrote it in two ways, and each way needs a
@@ -741,10 +742,10 @@ decision.
   the horizon whatever the first call disclosed, and the replay branch returns
   it without re-checking permission. An actor whose access you revoke, or a
   record that an erasure removes, is still readable through the key until the
-  record expires. Keep sensitive fields out of `response_body`, store a
-  reference where the client can re-fetch under a fresh check, shorten the
-  horizon on endpoints that return personal data, and delete an actor's records
-  when their access ends. `data-lifecycle-and-privacy.md`, "Where a record
+  record expires. Keep sensitive fields out of `response_body`, and store a
+  reference where the client can re-fetch under a fresh check. Shorten the
+  horizon on endpoints that return personal data, and delete an actor's
+  records when their access ends. `data-lifecycle-and-privacy.md`, "Where a record
   survives" owns the wider inventory that this table joins.
 
 ## Regular expressions and algorithmic cost
@@ -785,8 +786,9 @@ The mitigations follow, in the order that pays:
    serializer is therefore the cheapest control here, and the one to apply by
    default. Measure the string the pattern actually receives, and not only each
    field that feeds it. A subject built by joining many capped values carries
-   no cap at all, so a list field, a multi-value query parameter, and a
-   `" ".join(...)` of validated items all defeat the per-field bound. Where the
+   no cap at all. A list field, a multi-value query parameter, and a
+   `" ".join(...)` of validated items therefore all defeat the per-field
+   bound. Where the
    code composes the subject, put the length check at the call, immediately
    above the match.
 2. **Never compile a pattern from user input.** Where a feature genuinely
@@ -806,8 +808,8 @@ The mitigations follow, in the order that pays:
 3. **Keep Django and Python patched**, so the framework paths above stay fixed.
 4. Rewrite a known-dangerous in-house pattern with possessive quantifiers or an
    atomic group on Python 3.11 and above. This rewrite can change the set of
-   strings that the pattern matches, because a possessive quantifier and an
-   atomic group both give up the backtracking that made some matches possible.
+   strings that the pattern matches. A possessive quantifier and an atomic
+   group both give up the backtracking that made some matches possible.
    A validator that quietly stops matching is a weaker validator, so a
    benchmark is not the proof here. Write the accept cases and the reject cases
    first. Then show that the old pattern and the new pattern agree on every
@@ -821,16 +823,17 @@ The mitigations follow, in the order that pays:
       generic message. There is no `except` that yields "allowed", and no
       permission function that reaches its end with no return. A policy
       function returns a real boolean, and a merely truthy value denies. No
-      flag or config lookup opens the gate when its store is unavailable, and
-      no security flag is named for the exemption rather than the restriction.
+      flag or config lookup opens the gate when its store is unavailable. No
+      security flag is named for the exemption rather than the restriction.
 - [ ] Every read-check-write on money, stock, quota, or uniqueness is one
       atomic step. A database constraint or a lock on the exact row that the
       code mutates closes it. Every caller-supplied amount, quantity, or count
-      carries its own bound, so that no negative or zero value passes a guard
+      carries its own bound. No negative or zero value then passes a guard
       that only compares it to a balance.
-- [ ] An invariant over a set rather than a row — a sum against a capacity, a
-      daily total against a limit — serializes on a locked anchor row that
-      every writer selects, or on a raised isolation level with a retry loop.
+- [ ] An invariant over a set serializes on a locked anchor row that every
+      writer selects, or on a raised isolation level with a retry loop. A sum
+      against a capacity and a daily total against a limit are two such
+      invariants.
 - [ ] Invariants that are properties of the data — uniqueness, value bounds,
       non-overlap — are database constraints rather than application checks.
       The deployment backend supports each one, no column in a constraint's

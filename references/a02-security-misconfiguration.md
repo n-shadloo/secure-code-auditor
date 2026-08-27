@@ -1112,9 +1112,9 @@ compares two descriptions of a deployment rather than the deployment.
 project has five kinds, and they behave identically. They are a silenced system
 check, a scanner's ignore list, and a dependency advisory recorded as accepted.
 The fourth is an inline suppression comment on a line of code. The fifth is a
-state that a rollout was supposed to leave behind: `SECURE_CSP_REPORT_ONLY` in
-place of `SECURE_CSP`, DMARC `t=y`, MTA-STS `mode: testing`, and a short
-`SECURE_HSTS_SECONDS` chosen to test. Each of those enforces less than the
+state that a rollout was supposed to leave behind. Those states are
+`SECURE_CSP_REPORT_ONLY` in place of `SECURE_CSP`, DMARC `t=y`, MTA-STS
+`mode: testing`, and a short `SECURE_HSTS_SECONDS` chosen to test. Each of those enforces less than the
 setting beside it appears to promise, and no attack is needed to keep it.
 Each one was defensible the day somebody wrote it. None of them expires. None
 of them names who decided. A reader usually reconstructs the reason years
@@ -1279,7 +1279,7 @@ is the only part of it that can still object.
       regex origin is anchored at both ends.
 - [ ] CORS uses an allowlist; no `CORS_ALLOW_ALL_ORIGINS = True` with credentials.
 - [ ] `GZipMiddleware` is absent from any response that reflects user input
-      beside a bearer token, a session identifier, or another secret, and the
+      beside a bearer token, a session identifier, or another secret. The
       proxy compresses static content only.
 - [ ] The CSP names `base-uri`, `object-src`, `form-action`, and
       `frame-ancestors`, and no source expression is as wide as `https:`.
@@ -1314,5 +1314,6 @@ is the only part of it that can still object.
       modules. The comparison output is treated as secret.
 - [ ] Every suppression carries an owner, a reason, and an expiry date that
       executable code enforces. A suppression is a silenced check, a scanner
-      ignore entry, an accepted advisory, an inline comment, or a rollout state
-      such as a report-only CSP, DMARC `t=y`, or MTA-STS `mode: testing`.
+      ignore entry, an accepted advisory, or an inline comment. A rollout
+      state is the fifth kind, such as a report-only CSP, DMARC `t=y`, or
+      MTA-STS `mode: testing`.

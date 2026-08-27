@@ -561,7 +561,7 @@ cannot repair a state that the model cannot represent.
 Store the identifier of the provider for that operation on the local row, in
 the same edit. It is the only key that a later reconciliation can join on. It
 is also the only key the handler may use to find the row. A payer chooses the
-metadata and the reference fields of a checkout, and a handler that reads its
+metadata and the reference fields of a checkout. A handler that reads its
 target from those fields applies one payment to another account's order.
 `a08-integrity-and-deserialization.md`, "Binding the event to a tenant" holds
 the same rule for the tenant.
@@ -841,8 +841,8 @@ migration. Without that constraint it silently creates duplicates under
 concurrent submits. That duplicate is the failure this flow exists to prevent.
 
 The actor is in that key because the key is a string the client chose. Two
-members of one project can send the same string, and a scope without the actor
-answers the second member with the invite of the first.
+members of one project can send the same string. A scope without the actor
+then answers the second member with the invite of the first.
 
 Keep every call to another service outside the atomic block. Such a call holds
 the database connection until it returns, and a slow limit store then drains
@@ -928,8 +928,9 @@ mechanics behind it.
       machine caller.
 - [ ] Every caller-controlled value that multiplies work has a ceiling that
       the server enforces. Those values are the page size, the offset, the
-      depth, the nesting, the date range, the length of a JSON list body, and
-      the batch or expansion factor. The ceiling produces a rejection, and not
+      depth, the nesting, and the date range. They are also the length of a
+      JSON list body, and the batch or expansion factor. The ceiling produces
+      a rejection, and not
       an out-of-memory kill.
 - [ ] Every path that moves money, credits, entitlements, or durable status is
       enumerated from the fields that hold those values. That enumeration

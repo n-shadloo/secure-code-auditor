@@ -140,8 +140,8 @@ Three documented incidents, useful for justifying the controls below:
   role, the target identity, the reason, and the granted scope. It also
   captures the start and stop timestamps, and the actions taken. Store it per
   identity, where the operator cannot rewrite it. A model in the application
-  database does not meet that bar here, because the accounts that may
-  impersonate reach every model through the admin and the shell. Send the rows
+  database does not meet that bar here. The accounts that may impersonate
+  reach every model through the admin and the shell. Send the rows
   to a sink whose write credential the application does not hold, and see
   `a09-logging-and-alerting.md` for what that sink has to prove.
 - **Require a reason at grant time,** validated server-side. A free-text
@@ -293,9 +293,9 @@ gives the 500 that discards the session. A custom exception class in the
 project is the safe choice, and a project exception handler must not answer it
 below 500 either.
 
-The other two conditions are narrower. A session backend in another database is
-outside that rolled-back transaction. The same mechanism blocks a release when
-the `hijack_ended` receiver raises, so give that receiver its inputs on the
+The other two conditions are narrower. A session backend in another database
+is outside that rolled-back transaction. The same mechanism blocks a release
+when the `hijack_ended` receiver raises. Give that receiver its inputs on the
 request rather than in the flushed session.
 
 **`request.user` is the target for every record you did not write.** The rows
@@ -322,7 +322,7 @@ Middleware that reads `request.session` alone fails open. A session with
 `hijack_history` set and no start time reads as unbounded rather than as
 expired. Treat a live `hijack_history` with no open episode row as an episode
 to release now. Have the middleware re-check the preconditions and not the
-clock alone: the operator is still active and still holds the permission, and
+clock alone. The operator is still active and still holds the permission, and
 the target is still inside the permitted set. A disable of a compromised
 operator must end their live episodes in the same action, and
 `authorization-architecture.md` owns the rest of that lifecycle.
@@ -331,7 +331,7 @@ Write the episode identifier on the `started` row and on every terminal row,
 and pair the rows on it. Nested acquires and a per-tab retry both give one
 operator two open episodes, so a pair matched on operator and target closes the
 wrong one. An episode with a `started` row and no terminal row is worth an
-alert on its own, and it means something only once every end cause writes one.
+alert on its own. It means something only once every end cause writes one.
 
 ## Reviewing home-grown impersonation
 
@@ -347,10 +347,11 @@ for:
   Attribution is then impossible for the whole lifetime of the token. Such a
   token also usually inherits the normal long expiry. The operator claim alone
   is not enough. A resource server that reads `sub` and ignores an unknown
-  claim grants the target's full privileges, so give the impersonation token
-  its own audience and refuse it on every other path.
-- an expiry check that reads a start time from the session and treats a missing
-  key as "not impersonating", so a session without the key never expires.
+  claim grants the target's full privileges. Give the impersonation token
+  its own audience, and refuse it on every other path.
+- an expiry check that reads a start time from the session and treats a
+  missing key as "not impersonating". A session without the key then never
+  expires.
 - a scope allowlist applied by a decorator on each view, so a route added later
   carries the target's full privileges.
 - no expiry, no release path, or release that only clears a UI flag.
@@ -373,8 +374,8 @@ for the mechanics):
   that matters is that one compromised account is insufficient. Bind the
   approval to the grant, so that it names the target, the scope, and the
   duration. The executor refuses a grant whose parameters differ from the
-  approved ones, because an approval that names none of them approves whatever
-  the requester asks for later.
+  approved ones. An approval that names none of them approves whatever the
+  requester asks for later.
 - **Mandatory reason capture.** Capture the rationale, the incident or ticket
   reference, and the approvers. Capture the start and stop, the scope, and the
   actions that the grant permits. Validate the reference server-side: it
@@ -470,9 +471,9 @@ give that exception an expiry.
 - [ ] `hijack_started` and `hijack_ended` write durable, actor-attributed
       audit rows carrying the episode identifier and the root operator from
       `hijack_history`. The audit receiver raises rather than swallows.
-- [ ] Middleware releases an expired episode rather than rejecting it, writes a
-      terminal row for every end cause, and fails closed on a session whose
-      episode record is missing.
+- [ ] Middleware releases an expired episode rather than rejecting it, and it
+      writes a terminal row for every end cause. It fails closed on a session
+      whose episode record is missing.
 - [ ] Every receiver of `user_logged_in` and every admin action is checked for
       the identity it records during an episode.
 - [ ] Home-grown impersonation flushes the session on both edges. It never

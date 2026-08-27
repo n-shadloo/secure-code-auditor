@@ -288,8 +288,8 @@ parameter twice.
       and model-generated text, before any sink is judged.
 - [ ] Each source is followed to every sink it reaches, and the construction
       that joins it to developer-written text is named in the finding.
-- [ ] A first-party wrapper around a sink is searched under its own name, so
-      that the sink and its callers are not judged as two clean halves.
+- [ ] A first-party wrapper around a sink is searched under its own name. The
+      sink and its callers are then not judged as two clean halves.
 - [ ] Stored-then-used paths are traced across requests, not only within the
       handler under review. A writer outside this repository was asked about,
       rather than assumed absent.
@@ -648,10 +648,10 @@ environment is a second argument channel, and the child reads names out of it
 that no argument list shows. Pass an explicit `env=`. Never build the
 environment from keys a request supplied.
 
-**Write-time.** When you generate a call into another program, write the
-argument list, `shell=False`, the `timeout`, the absolute path, the explicit
-`env=`, and the `--` separator together. Each of them is a line a team adds
-after an incident rather than during a refactor.
+**Write-time.** When you generate a call into another program, write six
+controls together. They are the argument list, `shell=False`, the `timeout`,
+the absolute path, the explicit `env=`, and the `--` separator. Each of them
+is a line a team adds after an incident rather than during a refactor.
 
 Apply the same discipline where there is no request in front of the code. A
 management command's parsed arguments and a data migration's inputs reach
@@ -697,7 +697,7 @@ later edit that changes what is passed, and not how it is passed.
   or data injected into `<script>`. Emit JSON to a template with
   `json_script`, rather than interpolate it.
 - **A template name is an input position too.** A request that chooses the name
-  reaches every template the configured loaders can find, and it renders that
+  reaches every template the configured loaders can find. It renders that
   template with the context of the view it landed in. Django's loaders reject a
   traversal outside their own directories, so the reach is the search path
   rather than the filesystem. Resolve the name through a server-side mapping,

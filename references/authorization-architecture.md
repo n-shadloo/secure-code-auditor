@@ -268,7 +268,7 @@ Two defaults compound this:
   implements only `has_permission` therefore grants object access to every
   principal that clears the view-level check. A custom class that implements
   only `has_object_permission` is the same defect reversed, and it is the
-  worse one: `has_permission` then answers `True` for every caller, and the
+  worse one. `has_permission` then answers `True` for every caller, and the
   list and create paths never reach the object hook at all. A
   `permission_classes` list on the view also *replaces* the default list, so
   the restrictive project default is gone as well. Such a viewset answers an
@@ -389,7 +389,7 @@ Other admin surfaces:
   control and does nothing for other write paths.
 - `autocomplete_fields` and `ForeignKeyRawIdWidget` expose the related model
   twice, and the two exposures need different fixes. The **lookup** answers a
-  search with matching rows, and `AutocompleteJsonView` reads it from the
+  search with matching rows. `AutocompleteJsonView` reads it from the
   `get_queryset()` and `get_search_results()` of the **related** model's
   `ModelAdmin`, never from those of the one you are editing. Scope that other
   `ModelAdmin`, or the suggestions stay a cross-tenant search. The **write**
@@ -589,11 +589,12 @@ alike, and applies to `PUT` and `PATCH` equally.
 
 **A field that an authorization decision reads is never in a writable set.**
 Signal: `account`, `tenant`, `owner`, `role`, `groups`, or an `is_*` flag
-inside `fields`, with no matching `read_only_fields` entry. The unsafe pattern
-gives the top role a write to the field that selects the tenant, or a write to
-the field that selects its own role. A `PATCH` of `account` moves the row to
-another tenant, where the scoped list of that tenant reads it, and a `PATCH`
-of `role` promotes the caller for every request after it. The self-service
+inside `fields`, with no matching `read_only_fields` entry. The unsafe
+pattern gives the top role a write to the field that selects the tenant. It
+can also give a write to the field that selects its own role. A `PATCH` of
+`account` moves the row to another tenant, where the scoped list of that
+tenant reads it. A `PATCH` of `role` promotes the caller for every request
+after it. The self-service
 serializer matters most here, because signup, profile, and `/me` all write the
 identity that the next decision reads. Put each of these fields in
 `read_only_fields`, and change a grant or a tenant only through a separately
@@ -604,9 +605,9 @@ lives on one class, and one route reaches several. Three signals: a
 `get_serializer_class()` with a branch per action, format, or version; a
 writable nested serializer declared on the parent; and a field set that the
 caller names in the query string. The unsafe pattern puts the allow-list on
-the default class alone, so a caller reaches the export, the bulk, or the
-versioned class, writes the nested payload, or asks for the properties the
-role must not read. Put the allow-list in one base class, and let every
+the default class alone. A caller then reaches the export, the bulk, or the
+versioned class. That caller writes the nested payload, or asks for the
+properties the role must not read. Put the allow-list in one base class, and let every
 serializer that the route can instantiate inherit it. Intersect a
 caller-named field set with the set of the role, and never let the caller
 replace that set.
@@ -647,7 +648,7 @@ The design that prevents it rather than patching it:
    audit than per-view query construction, because a mandatory clause cannot
    be omitted by forgetting it. A matched record is not the only result the
    copy returns. A count, an aggregate, a facet, a suggestion, and a
-   similarity search each read the copy on a path of their own, and each one
+   similarity search each read the copy on a path of their own. Each one
    needs the same clause. A clause that the engine applies *after* the
    aggregate stage does not scope the aggregate. A caller then asks for zero
    records and reads the other tenants out of the facet counts.
@@ -661,13 +662,13 @@ The design that prevents it rather than patching it:
    where nothing can bypass the filter.
 
 Audit it in four steps. Enumerate every client that holds the engine
-credential rather than only the query-building sites, because a second
-service, a scheduled job, or a notebook with that credential reaches the copy
-without the clause; confirm that trusted code adds the principal-derived
-filter on each path. Authenticate as tenant A, search a term that exists only
-in tenant B, and assert zero hits; repeat that probe for a count, a facet, and
-a suggestion, because each one returns the data of tenant B with no matched
-record at all. Revoke access to a document, re-run the search *before* any
+credential, rather than only the query-building sites. A second service, a
+scheduled job, or a notebook with that credential reaches the copy without
+the clause; confirm that trusted code adds the principal-derived filter on
+each path. Authenticate as tenant A, search a term that exists only in tenant
+B, and assert zero hits; repeat that probe for a count, a facet, and a
+suggestion. Each one returns the data of tenant B with no matched record at
+all. Revoke access to a document, re-run the search *before* any
 content edit, and assert that the document disappears. Confirm that the
 indexing pipeline writes the authorization metadata and fires on a permission
 change.
@@ -798,9 +799,9 @@ Two controls, and neither substitutes for the other:
    second one. **A target is done when a read-back confirms the effect.** A
    handler that queues the work and returns proves nothing, and a lost message
    then reads as a clean offboarding. Signal: the ledger write sits beside the
-   call that queues the work. Mark the target dispatched there, and mark it
-   done only where the code reads the target again and finds the session
-   record gone, the token revoked, or the grant row absent. Retry until that
+   call that queues the work. Mark the target dispatched there. Mark it done
+   only where the code reads the target again and finds the session record
+   gone, the token revoked, or the grant row absent. Retry until that
    read succeeds.
 2. **A periodic reconciliation job that produces a report.** It compares every
    local identity and grant against the provider. It compares every machine

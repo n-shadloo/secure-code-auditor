@@ -874,9 +874,9 @@ class Command(BaseCommand):
         ))
 ```
 
-Three things about the shape are load-bearing. Every model lands in exactly one
-of the three lists: a model with no `Privacy` class is unclassified, and one
-that declares an empty `personal_fields` is a stated finding of none. The
+Three things about the shape are load-bearing. Every model lands in exactly
+one of the three lists. A model with no `Privacy` class is unclassified, and
+one that declares an empty `personal_fields` is a stated finding of none. The
 difference between "nobody looked" and "somebody looked and found none" is the
 whole value of the artifact. A model that lands in no list is a place to hide
 one, so an empty declaration has to be named rather than skipped.
@@ -988,8 +988,8 @@ pipeline that satisfies it follows:
 - [ ] Erasure of the primary row never calls an overridden `Model.delete()`,
       and it resolves every inbound relation before the row goes. A `PROTECT`
       child raises, and a `SET_NULL` child orphans out of the fan-out's reach.
-- [ ] Erasure of a `FileField` drives its field list from the model rather than
-      from a hard-coded tuple, and destroys the bytes after the row is
+- [ ] Erasure of a `FileField` drives its field list from the model rather
+      than from a hard-coded tuple. It destroys the bytes after the row is
       committed as gone. The review does not treat signal-based cleanup as the
       guarantee.
 - [ ] Cleanup does not depend only on an overridden `Model.delete()` or on

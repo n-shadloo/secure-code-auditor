@@ -201,7 +201,7 @@ version-tag discipline that every test identifier must carry.
 subject** — `V8` for an authorization finding, `V15.4` for a concurrency one.
 Do not cite requirement numbers. ASVS 5.0 renumbered against 4.0.3. The third
 component is the part that moves between releases. It is also the most
-expensive part to keep true across twenty-three files. A chapter token stays
+expensive part to keep true across every reference file. A chapter token stays
 correct for as long as the chapter exists.
 
 | ASVS 5.0 chapter | Where this skill covers it |
