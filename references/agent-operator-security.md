@@ -77,10 +77,14 @@ Four failures follow from a drop of any part of that:
 into a transcript and into a context window.** Every store either one reaches
 then holds it.
 
-Never open a file whose purpose is to hold credential material. That set is
+Never open a file whose purpose is to hold credential material. The test is
+the purpose of the file, and never its presence on a list. That set includes
 `.env` and each `.env.*` variant, `*.pem`, `*.key`, `~/.ssh`, `~/.aws`,
 `~/.gnupg`, `~/.netrc`, a service-account JSON key, and a decrypted secrets
-file.
+file. It also includes the credential cache that a command-line tool writes
+for itself. `.git-credentials`, `.npmrc`, `.pypirc`, `~/.docker/config.json`,
+`~/.kube/config`, and the token cache of each cloud client are examples of
+that second group. Each new tool adds a new file, so treat the list as open.
 
 Read `.env.example` instead, for the variable names. A review needs the name
 of the setting and the code that reads it. A review never needs the value.
@@ -109,6 +113,21 @@ instruction does not:
   agent can open. `service-identity-and-secrets.md`, "Where secrets live and
   how they reach the process" owns that delivery.
 
+**Warning: a deny rule matches a name, and the operating system opens a
+target.** The first control therefore needs a test against every surface that
+opens a file. Test it against the file-read tool. Test it against a shell
+command. Test it against a version-control command.
+
+Three indirections defeat a rule that lists only the working-tree path. A
+path substitution names the file at run time. An interpreter opens the file
+itself. A version-control command reads a committed copy out of the object
+store.
+
+Two consequences follow. Resolve a symbolic link before the read, and match
+the rule on the resolved path. A `.env.example` link that points at `.env`
+defeats the instruction above to read the example file. Report a committed
+`.env` as a leaked secret in its own right, and not only as a file to refuse.
+
 **Django: a settings module is executable, and an import of one resolves
 every secret it names.** `check --deploy` and every other management command
 import the module that `DJANGO_SETTINGS_MODULE` names. Point that variable at
@@ -122,11 +141,20 @@ with the `ast` module. It never imports or executes the target project, and
 it makes no network call. `a02-security-misconfiguration.md`,
 "check --deploy" owns what that command reports and what it cannot see.
 
+A parse reads a literal, and it does not resolve a value that the module
+computes. A parse also reports on the setting names that it carries. A secret
+under any other name is therefore invisible to it, and a clean report is not
+evidence of absence. Read the settings module by eye as well. Report each
+setting whose value comes from a call, and each credential-shaped literal under
+a name the parse does not carry.
+
 **Write-time.** When you generate a settings module, a compose file, or a
 workflow, write the variable name and leave the value to the environment.
 Write the name into `.env.example` with an empty value. A placeholder is also
 correct, if no reader can mistake it for a credential. Never write a real
-value into an example file. Never copy one across from a working `.env`.
+value into an example file. Never copy one across from a working `.env`. Never
+write a secret onto a command line, and pass it through standard input or the
+environment instead.
 
 ## A secret is named by its location
 
@@ -137,6 +165,11 @@ Write the location. That is the file path and the line, the environment
 variable name, or the key name in the secret store. Write the shape where the
 reader needs it, which is the prefix, the length, or a digest. Never write
 the value. Never write a fragment of it that is long enough to identify it.
+
+**Warning: a digest of a low-entropy secret is the secret.** A person chooses a
+database password or a shared secret, and a guess of that choice confirms
+itself against the digest. Write a digest only for a value that a generator
+produced at full length. Write the location alone for every other value.
 
 The instinct points the wrong way here. "Show the evidence" is correct for
 every other finding class in this skill, and it is wrong for this one. The
@@ -152,12 +185,15 @@ redaction is not guaranteed.
 
 That transformation is not theoretical. A disclosed exfiltration of a coding
 agent's tokens defeated the host's own secret scanning, by an encode of the
-values to base64 first. Three consequences follow.
+values to base64 first. Four consequences follow.
 
 - A value the agent derives from a secret is itself a secret. Register it as
   one. A masking layer that knows the input does not know the output.
 - Masking applies only to output that comes after the registration. A shell
   trace that runs before it prints the value in clear.
+- Never put a secret on a command line. The command line reaches the shell
+  trace, the process list, and the tool-event record before any masking layer
+  sees it. Pass the value through the environment or through standard input.
 - An unredacted secret in a log is a leak, and that log is now credential
   material. Delete the log and rotate the secret.
   `service-identity-and-secrets.md`, "Responding to a leaked secret" owns the
@@ -324,6 +360,12 @@ Enforce the gate where the agent cannot argue past it:
   an instruction that makes it careful. The documented safe context for such
   a mode is a container with no credentials and no network. On a workstation
   that holds live credentials, the same mode removes the last human check.
+- **Warning: a control that the agent can write is not a control.** Keep the
+  deny rule, the permission configuration, the instruction file, and the
+  workflow outside the write set of the agent. An injection that edits one of
+  them removes the gate for every run that follows, under a different task and
+  a different credential. A change to any of them is a change to a control, and
+  a person reviews it as one.
 - Separate the environments by construction. An agent that cannot reach the
   production credential cannot act on it, whatever it reads or believes.
 
@@ -375,8 +417,10 @@ actions, and nothing more.
 
 **Write-time.** When you generate the automation that runs an agent, write
 the telemetry export and the branch restriction into the same change as the
-credential. Write a distinct session identifier per run. Never leave the
-first question after an incident to a transcript the agent wrote itself.
+credential. Write the write set of the agent so that it excludes the deny
+rule, the permission configuration, the instruction file, and the workflow.
+Write a distinct session identifier per run. Never leave the first question
+after an incident to a transcript the agent wrote itself.
 
 ## Out of backend scope
 
@@ -400,15 +444,22 @@ backend finding:
 ### Stack-neutral
 
 - [ ] The agent refuses to open `.env`, `.env.*`, `*.pem`, `*.key`, `~/.ssh`,
-      `~/.aws`, `~/.gnupg`, `~/.netrc`, and any decrypted secrets file. A
-      deny rule in the tool-call path backs the refusal, and no ignore file
-      is treated as the control.
+      `~/.aws`, `~/.gnupg`, `~/.netrc`, any credential cache a command-line
+      tool writes, and any decrypted secrets file. A deny rule in the
+      tool-call path backs the refusal, and no ignore file is treated as the
+      control.
+- [ ] The deny rule holds against a shell command, an interpreter, and a
+      version-control read of a committed copy. It matches on the resolved
+      path rather than on the name the caller supplied.
 - [ ] Every finding, commit message, report, and fixture names a secret by
       its location and its shape. No output carries a value, or a fragment
       long enough to identify one.
 - [ ] Each value the agent derives from a secret is registered as a secret in
       its own right. Masking is treated as a backstop rather than as the
-      control.
+      control. No secret and no derived secret appears on a command line.
+- [ ] A digest stands in for a secret only where a generator produced that
+      secret at full length. A low-entropy value is named by its location
+      alone.
 - [ ] The agent holds its own credential, scoped to the repositories the task
       names, with the least permission that task needs. No classic
       account-wide token is issued to an agent.
@@ -425,6 +476,9 @@ backend finding:
 - [ ] The gate on a destructive action is enforced in the execution path. A
       permission-skip mode runs only without credentials and without network
       access.
+- [ ] The deny rule, the permission configuration, the instruction file, and
+      the workflow sit outside the write set of the agent. A change to any of
+      them is reviewed as a change to a control.
 - [ ] Tool events, commit attribution, and cloud-action attribution are
       recorded outside the agent's control. Retention outlives the time to
       detect.
@@ -434,7 +488,11 @@ backend finding:
 - [ ] No review points `DJANGO_SETTINGS_MODULE` at a production settings
       module, and no management command runs against a live deployment.
 - [ ] Settings posture is read by a parse of the settings package rather than
-      by an import of it. `settings_scan.py` is the bundled instrument.
+      by an import of it. `settings_scan.py` is the bundled instrument. A
+      clean parse is not reported as evidence that no secret is present.
+- [ ] A settings module is also read by eye. Each setting whose value comes
+      from a call, and each credential-shaped literal under a name the parse
+      does not carry, is reported for manual confirmation.
 - [ ] The agent runs no command that writes to the project or to its
       database. `migrate`, `flush`, `changepassword`, and `createsuperuser`
       are recommendations, never actions.

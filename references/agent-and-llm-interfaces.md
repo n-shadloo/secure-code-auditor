@@ -245,6 +245,21 @@ flag does not create the failure. But it hides the failure from any alert that
 keys on 4xx rates (`a09-logging-and-alerting.md`, "Log the right security
 events").
 
+**Warning: the error path is a control that the HTTP cycle carried.** DRF
+renders an exception through `EXCEPTION_HANDLER`, and that handler decides what
+detail a caller sees. A tool layer that calls the view outside
+`APIView.handle_exception` renders the exception itself. The database message,
+the file path, and the internal identifier inside that exception then reach the
+model's context. Confirm which handler runs on the tool path
+(`a10-exceptional-conditions.md`, "Don't leak on error").
+
+**Warning: an error message that quotes the submitted value carries that value
+back into the model's context.** A caller who puts an instruction in a
+parameter reads that instruction again in the refusal. Return the field name
+and the reason. Never return the value the caller sent. The refusal is
+retrieved content by the time the model reads it, so "Retrieved content and
+indirect prompt injection" below applies to it as well.
+
 ```python
 # Wrong: the tool layer inherits nothing and the queryset is unscoped, so the
 # tool hands every tenant's rows to whoever prompted the agent.
@@ -281,8 +296,13 @@ rather than to the process credential. `get_queryset()` can then scope to the
 intersection of the scope granted to the tool and the permissions of that user.
 Where the tool does anything irreversible, issue and consume a server-side
 confirmation token in the same change. Bind that token to the action and its
-parameters. A `confirmed` flag in the request body is only the client's
-assertion of its own approval.
+parameters, over a canonical encoding that separates the fields. Write the
+consume as one statement that lets a single caller win. A `confirmed` flag in
+the request body is only the client's assertion of its own approval.
+
+Write the error path of the tool as well. Return the field name and the reason
+for a refusal. Never return the exception detail, and never return the value
+the caller sent.
 
 Severity is Critical where the tool spans tenants. The failure is BOLA at the
 scale of the whole table rather than one object
@@ -308,6 +328,15 @@ insufficient rather than invalid with a 403. Name the required scope and the
 location of that metadata in the refusal. Scope hierarchies count when you
 decide whether a token is sufficient.
 
+**Warning: a valid token is not evidence that a human is behind the call.** A
+token whose `sub` names a service identity has no human principal to intersect
+against. RFC 8693 keeps the acting party visible in an `act` claim, so a
+delegated token names the human in `sub` and the agent in `act`. Reject a token
+that names a service identity in `sub` and carries no actor chain back to a
+person. Never run the permission check against the agent's own identity. The
+signal in code is a lookup of `claims["sub"]` as a user, with no test of which
+kind of subject that claim names.
+
 Passthrough is a confused-deputy vulnerability (CWE-441). The downstream
 service sees a valid token and cannot detect that the caller is an
 intermediary. It applies the token's full authority to a request the
@@ -315,6 +344,10 @@ intermediary shaped. Replace the passthrough with a separately issued
 downstream credential, scoped to the downstream resource and to the acting
 principal. That credential comes from RFC 8693 token exchange, a stored service
 credential, or a platform-managed identity.
+
+Read the failure path of that exchange. A fallback to the subject token when
+the exchange is unavailable is the passthrough this section prohibits. The call
+fails closed instead.
 
 ```python
 # Wrong: audience unchecked, the principal cached for the session, and the
@@ -372,6 +405,12 @@ def get_queryset(self):
     # not the service account the tool process runs as.
     return Order.objects.filter(owner=self.request.user)
 ```
+
+**A scope check that matches a prefix grants more than the scope it names.** A
+check that accepts a granted `orders` as sufficient for `orders:read` accepts
+it for `orders:write` too. Require exact membership in the granted set, as the
+example above does. Where a hierarchy exists, expand it into that set once, in
+one tested function rather than at each call site.
 
 Queryset scoping covers list and detail alike. The object hook does not run on
 list or create paths at all (`authorization-architecture.md`, "DRF: where the
@@ -446,7 +485,11 @@ A backend can actually enforce four controls, in order of leverage:
 2. **Egress allowlisting.** An exfiltration URL assembled from context still
    has to resolve and connect. Allowlist outbound destinations from the
    tool-executing process and treat every model-influenced fetch as SSRF
-   (`a01-broken-access-control.md`, "SSRF").
+   (`a01-broken-access-control.md`, "SSRF"). Read each entry for who may
+   publish under it. An entry that names a host where anybody can host content
+   is an open egress path with an allowlist in front of it. A wildcard over a
+   shared provider domain, an object-storage host, and a snippet service are
+   three such entries.
 3. **Provenance labeling.** Record the trust level of retrieved content, and
    refuse to let low-trust content trigger a high-privilege tool. A ticket body
    that an anonymous reporter submitted is not the same input class as a record
@@ -528,6 +571,22 @@ if token is None:
 issue_refund(order)
 ```
 
+**Warning: a digest over concatenated parameters is ambiguous.** An encoding
+that joins `order_id` and `amount` end to end gives one digest to `1` with `23`
+and to `12` with `3`. Build the digest over a canonical encoding that separates
+the fields and sorts them. Cover every parameter that changes what the action
+does, and not only the two this example names. Keep the action name fully
+qualified, as `refund.issue` is here. A token for one tool then never matches
+the same verb on another.
+
+**Warning: single-use is a property of the consume, not of the token.** The
+agent retries at machine speed, so two calls can present one token at the same
+moment. `consume` must let exactly one caller win. That is one conditional
+statement that marks the token used and reports how many rows it changed, or a
+locked read inside a transaction (`a10-exceptional-conditions.md`, "Races,
+TOCTOU, and adversarial sequencing"). A check that reads the token and then
+deletes it runs the irreversible action twice.
+
 The token is short-lived, single-use, bound to the action and its parameters,
 and stored as a digest like any other credential
 (`a07-authentication-failures.md`, "API keys"). Absence of a valid token fails
@@ -548,7 +607,12 @@ trust decision to a point none of the build-time machinery reaches.
   unvetted package: refuse it, rather than warn and proceed.
 - **Treat tool descriptions as untrusted input.** The name, the description,
   and the parameter documentation of a tool are attacker-influenced text that
-  reaches a model's context. They are content, not configuration.
+  reaches a model's context. They are content, not configuration. The
+  project's own tool definitions carry the same weight. A change to a
+  description string changes what every later session is told, and it reads in
+  review as a documentation change. Review such a change as a change to a
+  control. Flag a description that instructs the model rather than describes
+  the tool.
 - An outward connection is itself a code-execution surface. CVE-2025-6514
   (CWE-78, fixed in `mcp-remote` 0.1.16) was OS command execution. A crafted
   response from the server at the far end triggered it, and not anything the
@@ -578,6 +642,12 @@ reaches a log line ("Log injection and integrity"). Denials are the more
 valuable half of the record, so log the refused call and not only the executed
 one.
 
+One class of argument is an exception to the digest rule. Where a call pulls
+external content into the model's context, record which content it pulled.
+Record the URL, the document identifier, or the record key as a value rather
+than as a digest. The source is not the secret, and it is where an
+investigation into an injection starts. A digest of it answers nothing.
+
 Maps to CWE-778, CWE-532; A09:2025; ASI10 Rogue Agents; MCP08 Lack of Audit and
 Telemetry.
 
@@ -602,7 +672,10 @@ backend finding:
 
 - [ ] Every tool call resolves the human principal from a validated token. It
       applies the tool's scope *and* that principal's own permissions, and
-      infers neither from the other.
+      infers neither from the other. A token whose subject names a service
+      identity, with no actor chain back to a person, is refused.
+- [ ] The scope check requires exact membership in the granted set. No prefix
+      match, and no wildcard, stands in for it.
 - [ ] The server validates inbound tokens on every invocation for signature,
       issuer, expiry, audience, and scope. The audience check names this
       server's own resource identifier. No inbound token reaches a downstream
@@ -618,16 +691,22 @@ backend finding:
       serialized data.
 - [ ] Low-trust retrieved content cannot trigger a privileged tool, and
       outbound destinations are allowlisted from the tool-executing process.
+      No entry on that list names a host where a third party can publish.
 - [ ] Cost, spend, and concurrency caps exist per agent identity alongside
       request-rate limits, and the cost check fails closed.
 - [ ] Irreversible actions require a server-issued, single-use confirmation
       token bound to the action and its parameters. The server trusts no
       client-supplied confirmation flag.
+- [ ] The parameter digest reads a canonical encoding with separated fields,
+      and it covers every parameter that changes the outcome. One caller wins
+      the consume when two calls present one token together.
 - [ ] Runtime-discovered servers and tools require signed provenance or an
       allowlist entry, and the review treats tool descriptions as untrusted
-      input.
+      input. That treatment covers the project's own tool definitions, and a
+      change to one is reviewed as a change to a control.
 - [ ] The server records invocations and denials reconstructably in a store the
-      caller cannot rewrite, with values reduced to shapes and digests.
+      caller cannot rewrite, with values reduced to shapes and digests. The
+      source of any external content the call pulled is recorded as a value.
 
 ### Django & DRF
 
@@ -648,3 +727,6 @@ backend finding:
       test matrix as their own rows. The matrix does not assume that they
       inherit from the HTTP route.
 - [ ] Throttles on tool paths key on the resolved identity, never on IP.
+- [ ] The tool path renders an exception through a handler the review has
+      identified. No exception detail and no submitted value returns to the
+      caller inside an error message.
