@@ -71,6 +71,39 @@ pip install --require-hashes -r requirements.txt
 
 - Keep the development and test tooling out of the production dependency set.
 
+**The hash binds the artifact to the pin. Nothing binds the pin to a
+decision.** The install proves that the bytes match the lockfile line, and
+never that a person chose that line. So the trust decision happens when the pin
+moves, and that moment carries the least review. An update bot regenerates the
+hash from the artifact the index serves that day. A release from a compromised
+maintainer account then passes the install, the audit, the SBOM, and the
+attestation.
+
+Auto-merge on a dependency pull request removes the only person on that path.
+Refuse it. Require a person to read each lockfile diff. Treat a version bump as
+a re-vet trigger. Treat a change of maintainer or owner as one too.
+
+**`--require-hashes` bounds the requirements in the file it reads, and nothing
+more.** Two other install inputs stay outside it. The first is `[build-system]
+requires` in `pyproject.toml`. `pip` resolves those packages from the index
+inside the build isolation environment, with no pin and no hash. The audit of
+the requirements file never sees them, and an SBOM built from the lock omits
+them. The second is `pip install .`, which resolves `[project] dependencies` at
+image build time.
+
+Pin and hash the build requirements in their own file. Pass
+`--no-build-isolation` where the job already holds a vetted toolchain. Compile
+`[project] dependencies` into the hashed lockfile the production image reads.
+
+**A verified artifact still runs code at install time.** The hash proves the
+bytes, and it proves nothing about what the bytes do. A source distribution
+runs its own build backend during the install. A wheel can install a `.pth`
+file, which Python then runs at the start of every later interpreter. That
+includes the interpreter that runs the scanner.
+
+Install from wheels with `--only-binary :all:`. Keep source distributions out
+of the lockfile.
+
 ## Index resolution and dependency confusion
 
 `pip` treats every configured index as one pool. With `--extra-index-url`, the
@@ -81,12 +114,22 @@ install. Apply these rules:
 - Use one `--index-url` and no `--extra-index-url` in any project with private
   packages. Point it at a proxy index that hosts the internal packages and
   mirrors PyPI. Let the proxy decide precedence by name.
-- Reserve the internal package names on PyPI, or use a namespace prefix that
-  PyPI cannot serve.
+- Read the environment as part of the resolution. `pip` accepts
+  `PIP_INDEX_URL` and `PIP_EXTRA_INDEX_URL` from the environment. It also reads
+  `PIP_CONFIG_FILE`, and a `pip.conf` at the global, site, or user level. An
+  extra index set that way survives an explicit `--index-url` on the command
+  line, and `pip` searches both. Look for an `ENV` line in a Dockerfile, a job
+  `env:` block, and a `pip.conf` in an image. Look also for a step that writes
+  to `$GITHUB_ENV`.
+- Set `PIP_EXTRA_INDEX_URL` to empty in the job that installs. A rule that only
+  removes the flag leaves the environment in control.
+- Reserve the exact internal package names on PyPI. A prefix is a convention
+  and not a reservation, because anyone can register a name that carries it.
 - Hash-pin the lockfile (`--require-hashes`). A squatted substitute fails the
   hash even when the resolution goes wrong.
-- In CI, alert when the resolver downloads an internal name from the public
-  index.
+- Alert where the resolution is observable. With one proxy index the client
+  never contacts the public index, so the record lives at the proxy. Ask the
+  proxy operator which upstream served each internal name.
 
 ## Scan continuously
 
@@ -347,7 +390,8 @@ jobs:
 # commit SHAs with the tag in a trailing comment, the install verifies the
 # lockfile's hashes, the audit's exit code is the gate, the SBOM is built
 # from the same file the install read, and provenance and SBOM attestations
-# are requested separately because one step produces one predicate.
+# are requested separately because one step produces one predicate. The job
+# that holds the signing permissions runs no third-party code.
 permissions:
   contents: read
 
@@ -356,20 +400,37 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write
-      attestations: write
-      artifact-metadata: write
     steps:
       - uses: actions/checkout@<commit-sha>  # v7.0.1
       - uses: actions/setup-python@<commit-sha>  # v7.0.0
         with:
           python-version: "3.13"
+      - run: pip install --require-hashes -r requirements-ci.txt
       - run: pip install --require-hashes -r requirements.txt
       - run: pip-audit --strict -r requirements.txt
       - run: >-
           cyclonedx-py requirements requirements.txt
           --sv 1.6 --of JSON -o sbom.json
       - run: python -m build --wheel
+      - uses: actions/upload-artifact@<commit-sha>  # v7.0.1
+        with:
+          name: release-files
+          path: |
+            dist/*.whl
+            sbom.json
+
+  attest:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    steps:
+      - uses: actions/download-artifact@<commit-sha>  # v8.0.1
+        with:
+          name: release-files
       - uses: actions/attest@<commit-sha>  # v4.2.2
         with:
           subject-path: dist/*.whl
@@ -401,6 +462,19 @@ discipline in the audit step as well as in the install. `--strict` is
 separate, and it does something the exit code alone does not do. It fails the
 run when a dependency cannot be resolved or audited, rather than passes
 quietly over the package nobody could resolve.
+
+**A job that can sign must not run third-party code.** `id-token: write` puts
+`ACTIONS_ID_TOKEN_REQUEST_URL` and `ACTIONS_ID_TOKEN_REQUEST_TOKEN` into the
+job environment, where every process in the job reads them. A build backend, a
+`.pth` file from an installed package, or a substituted gate tool can therefore
+mint the workflow's own OIDC token. The same code can rewrite `dist/` before
+`actions/attest` reads it, and the action then signs the replaced artifact
+correctly. SLSA Build L3 describes this boundary as signing material that
+user-defined build steps cannot reach. The split above does not reach L3, and
+it removes the reach that one job gave every dependency.
+
+The gate tools install from their own hashed file, for the same reason.
+Whoever controls the effective index controls the scanner's verdict.
 
 Verification belongs in whatever job consumes the artifact, and it is the
 step most often missing entirely:
@@ -440,7 +514,11 @@ never verified is a build artifact rather than a control.
       nothing reads.
 - [ ] Every action and build image is pinned by commit SHA or digest rather
       than by a mutable tag. The basis is that anyone holding the publisher's
-      credentials can repoint a tag.
+      credentials can repoint a tag. A pinned action can still fetch its tool
+      by a mutable version input, so pin that input as well.
+- [ ] The job that holds `id-token: write` runs no third-party code. The build
+      and the attestation are separate jobs, and the gate tools install from a
+      hashed file.
 - [ ] Provenance is verified somewhere by a step that pins the expected signer
       identity and issuer. That step does not merely assert that a signature
       or attestation exists.
@@ -512,7 +590,8 @@ flaws.
   Never silently ignore a vulnerability because a scanner lacks a fix.
 - Keep `references/security-hardening-libraries.md` as the dated decision
   index. Re-vet a package when you upgrade Django or Python, after a relevant
-  advisory, or when its maintenance or compatibility signals change.
+  advisory, or when its maintenance or compatibility signals change. Re-vet it
+  on a version bump too, and on a change of maintainer or owner.
 
 **Review evidence:** name the package and its installed version, the
 disposition, the minimum safe version, the compatibility result, and the
@@ -549,11 +628,16 @@ runtime side of the same exposure. That is what happens when such a route or
 console is actually reachable.
 
 Read the file the production image installs, not the one at the repository
-root. Three ways bring a development pin into production without anyone adding
+root. Four ways bring a development pin into production without anyone adding
 it there. The first is a `requirements.txt` that ends with `-r
 requirements-dev.txt`. The second is an unsplit extras group installed with
 `pip install .[dev]`. The third is a Dockerfile that copies every requirements
-file and installs all of them.
+file and installs all of them. The fourth is a production dependency that
+declares the package as its own requirement.
+
+The fourth way defeats a check that reads declared lines. No line names the
+package, so the tier check never runs against it. Check the tier of every
+distribution in the resolved lockfile, and not only the ones a person wrote.
 
 **Write-time.** When you add a package whose purpose is development or
 debugging, put it in the development requirements file or extras group in the
@@ -613,6 +697,17 @@ has no custom model method, no overridden `save()`, and no current manager,
 unless the project made them available for migrations. Neither a normal
 `save()` nor a migration update calls `full_clean()` automatically.
 
+**A manager that reaches a migration can hide the rows the migration must
+transform.** `use_in_migrations = True` copies the manager into the historical
+model, together with any filter in its `get_queryset()`. A soft-delete or
+tenant-scoped manager then removes rows from the backfill, and from the count
+that verifies the backfill. The migration reports success, and the hidden rows
+keep their old security state. They return to view later, when somebody
+restores the row or changes the tenant.
+
+Read every migration queryset through the model's `_base_manager`. Confirm that
+`Meta.base_manager_name` does not name the filtered manager.
+
 Use the database selected by the schema editor and validate source values
 explicitly:
 
@@ -630,7 +725,7 @@ ROLE_MAP = {
 def forwards(apps, schema_editor):
     Membership = apps.get_model("accounts", "Membership")
     alias = schema_editor.connection.alias
-    memberships = Membership.objects.using(alias).all()
+    memberships = Membership._base_manager.using(alias).all()
 
     invalid = list(
         memberships.filter(
@@ -653,7 +748,7 @@ def forwards(apps, schema_editor):
 def backwards(apps, schema_editor):
     Membership = apps.get_model("accounts", "Membership")
     alias = schema_editor.connection.alias
-    memberships = Membership.objects.using(alias).all()
+    memberships = Membership._base_manager.using(alias).all()
 
     valid_roles = tuple(ROLE_MAP.values())
     invalid = list(
@@ -751,7 +846,8 @@ repository's history.
 - [ ] `RunPython` uses `apps.get_model()` and
       `schema_editor.connection.alias`. It does not import a live model, and
       it does not assume that model methods, signals, or `full_clean()` will
-      run.
+      run. It reads rows through `_base_manager`, so a filtering manager
+      cannot hide rows from the backfill or from its count check.
 - [ ] Schema and data phases are separated appropriately for the database.
       Transaction size, locks, routers, and multi-database behavior are
       tested.
@@ -766,9 +862,11 @@ repository's history.
 - [ ] Django/DRF/runtime on supported, patched versions (no EOL 4.2/5.1, no
       unmaintained deps).
 - [ ] Dependencies are pinned, a lockfile exists, and hashes are verified on
-      install.
+      install. `[build-system] requires` and `[project] dependencies` are
+      pinned and hashed as well.
 - [ ] `pip-audit` runs in CI as an advisory input, and automated update PRs
-      are enabled.
+      are enabled. No dependency pull request merges without a person who read
+      the lockfile diff.
 - [ ] Each pipeline control gates rather than merely runs. Hashes are enforced
       on install, and the scanner's exit code fails the build. The SBOM is
       generated from the lockfile, and provenance is verified against a pinned
@@ -777,7 +875,8 @@ repository's history.
 - [ ] Dependencies come from trusted indexes, and there is no stray VCS or
       wheel install.
 - [ ] One `--index-url` serves any project with private packages, and no
-      `--extra-index-url` lets a public index win the version race.
+      `--extra-index-url` lets a public index win the version race. The
+      environment and any `pip.conf` are read as part of that rule.
 - [ ] Components discovered and loaded at runtime are pinned or
       provenance-checked at call time. Tool descriptions are treated as
       untrusted input.
@@ -788,5 +887,6 @@ repository's history.
 - [ ] The requirements file the production image actually installs carries no
       package the library index tiers development-only. `django-extensions` is
       the case in particular, which ships `runserver_plus` and `shell_plus`.
+      The check covers the resolved set, and not only the declared lines.
 - [ ] Migrations use historical models, explicit validation and DB aliases,
       preserve fail-closed mixed-version access, and contain no secrets.
