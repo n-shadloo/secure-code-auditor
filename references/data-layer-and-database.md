@@ -97,17 +97,23 @@ CREATE ROLE app_migrator LOGIN PASSWORD '...';
 CREATE ROLE app_runtime LOGIN PASSWORD '...';
 GRANT USAGE ON SCHEMA app TO app_runtime;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA app TO app_runtime;
-GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA app TO app_runtime;
+-- USAGE gives nextval, which is what an INSERT needs. SELECT would also
+-- expose last_value, and one shared sequence counts every tenant's rows.
+GRANT USAGE ON ALL SEQUENCES IN SCHEMA app TO app_runtime;
 
 -- Without these two, every future migration's tables are invisible to the
 -- runtime role and the split appears to "break Django" after the next deploy.
 ALTER DEFAULT PRIVILEGES FOR ROLE app_migrator IN SCHEMA app
   GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO app_runtime;
 ALTER DEFAULT PRIVILEGES FOR ROLE app_migrator IN SCHEMA app
-  GRANT USAGE, SELECT ON SEQUENCES TO app_runtime;
+  GRANT USAGE ON SEQUENCES TO app_runtime;
 
 -- The application cannot create objects, so it cannot shadow or self-grant.
 REVOKE CREATE ON SCHEMA app FROM app_runtime;
+
+-- The blanket grant above also reached the bookkeeping table that records
+-- which migrations ran. Only `migrate` writes it. Take those writes back.
+REVOKE INSERT, UPDATE, DELETE ON app.django_migrations FROM app_runtime;
 ```
 
 In Django, the split is a settings module used only by `migrate`:
@@ -118,6 +124,13 @@ from .settings import *
 
 DATABASES["default"]["USER"] = "app_migrator"
 DATABASES["default"]["PASSWORD"] = os.environ["MIGRATOR_DB_PASSWORD"]
+# The import carried the runtime OPTIONS with it. Keep the TLS keys, and drop
+# the pool and the startup statement timeout, which belong to request serving.
+DATABASES["default"]["OPTIONS"] = {
+    k: v
+    for k, v in DATABASES["default"]["OPTIONS"].items()
+    if k not in {"pool", "options"}
+}
 ```
 
 Review notes:
@@ -130,6 +143,22 @@ Review notes:
 - An application that connects as the table **owner** or as a superuser also
   defeats row-level security entirely (below). This split is therefore a
   prerequisite for that control rather than an alternative to it.
+- `ON ALL TABLES` and `ALTER DEFAULT PRIVILEGES` also grant the runtime role
+  DML on tables the request path never writes. That set holds the rows which
+  grant a role or a tenant membership, and the migration bookkeeping table. An
+  injection foothold then edits its own rights. It can also mark a pending
+  security migration as applied, so that the next deploy skips it. Revoke the
+  writes the request path does not make. `a09-logging-and-alerting.md` holds
+  the same rule for the audit sink.
+- The migration role owns the tables, so no policy below applies to it, and
+  each migration it runs is privileged code. Keep `MIGRATOR_DB_PASSWORD` on
+  the release host alone. A request-serving process that can read it holds an
+  owner credential, and the split then gives nothing.
+- `migrator_settings.py` imports the runtime settings, so it inherits
+  `OPTIONS`. A large `CREATE INDEX` then aborts at the runtime statement
+  timeout. Teams answer that failed deploy by raising the timeout for every
+  request path, which removes the bound below. Override `OPTIONS` for the
+  migrator alias instead.
 - Severity: Medium on its own, High where it multiplies the blast radius of a
   reachable injection sink.
 
@@ -166,8 +195,11 @@ CREATE POLICY tenant_isolation ON app.invoice
   WITH CHECK (tenant_id = current_setting('app.current_tenant')::uuid);
 ```
 
-1. The application connects as a **non-owner, non-superuser** role. Policies do
-   not apply to owners or superusers.
+1. The application connects as a **non-owner, non-superuser** role that does
+   not hold `BYPASSRLS`. Policies do not apply to owners or superusers, and a
+   `BYPASSRLS` role bypasses them as well. That attribute belongs to the role
+   rather than to the table, so it appears in no policy listing. Read it from
+   `pg_roles.rolbypassrls`.
 2. `ENABLE` **and** `FORCE`. `ENABLE` alone leaves the owner exempt silently.
 3. Tenant context is **transaction-scoped**, never session-scoped.
 
@@ -187,6 +219,51 @@ PostgreSQL uses the `USING` expression as the check as well. The trap is a
 predicate never applies to the write, and permissive policies combine with
 `OR`. Write both clauses explicitly on every policy that permits a write, so
 the reviewer reads the write rule directly.
+
+`FORCE` also reaches the migration role, because that role owns the table. A
+data migration that writes a row then fails the `WITH CHECK` clause. Teams
+drop `FORCE` to make the deploy pass, and the owner exemption reopens
+silently. Set the tenant context inside the data migration instead, exactly as
+the request path sets it.
+
+**The tenant setting is not a credential.** Any role can call
+`set_config('app.current_tenant', ...)`. PostgreSQL guards a custom setting
+with no privilege, and no `REVOKE` takes that ability away. So the policy
+holds against the query nobody scoped, and it holds nothing against SQL an
+attacker already controls. Never treat row-level security as a mitigation when
+you score an injection finding. Do not lower that finding's severity for it.
+
+Teams answer this by moving the setting into a `SECURITY DEFINER` function.
+That function runs as its owner, and the owner is exempt from every policy.
+Two rules therefore apply to each definer function a migration creates. It
+validates that the caller may act for the tenant it is asked to set. It also
+pins `SET search_path = pg_catalog, app` in its own definition. Without the
+pinned path, a role that creates an object in a reachable schema supplies the
+function the definer body calls.
+
+That last rule depends on which roles can create an object. PostgreSQL 15
+removed the `CREATE` privilege that `PUBLIC` held on schema `public`. An
+upgraded cluster and a restored dump keep the old grant. Read the privilege
+from the cluster rather than from the release number.
+
+**A policy protects one relation, and not the rows that relation holds.** Any
+other relation that returns the same rows carries its own policies, or none. A
+blanket schema grant reaches all three below, so check each one.
+
+- **A partition.** `ENABLE ROW LEVEL SECURITY` and `FORCE ROW LEVEL SECURITY`
+  never recurse to a partition, and `CREATE POLICY` names one relation. A
+  query that names the partition directly therefore reads every tenant's rows,
+  and no `WITH CHECK` clause runs on a write. Create the policy and both flags
+  on each partition, inside the migration that creates the partition. Where
+  that is not practical, grant the runtime role nothing on the partition.
+- **A view.** PostgreSQL applies the policies of the **view owner** to the
+  base relation, and not the policies of the caller. The view therefore
+  answers with whatever its owner may read. Where that owner bypasses the
+  policy — an owner without `FORCE`, or a `BYPASSRLS` role — the view returns
+  every row to every role that can read it. On PostgreSQL 15 and later,
+  `security_invoker = true` makes the caller's policies apply instead.
+- **A materialized view.** It stores the rows that its query selected. No
+  policy runs when a role reads that stored copy.
 
 Note for operations: `pg_dump` sets `row_security` to `off` by default, so it
 dumps all the rows. A role that policies restrict, and that cannot bypass
@@ -221,19 +298,37 @@ with transaction.atomic():
     # ORM queries inside this block now see only this tenant's rows.
 ```
 
-Four conditions break it, in the order a reviewer meets them:
+Seven conditions break it, in the order a reviewer meets them:
 
 - **Transaction-mode pooling plus a session `SET`.** The backend returns to the
   pool at COMMIT with the tenant setting still on it, and the pool hands it to
   another client. This is the canonical failure, and it is a cross-tenant
   disclosure, not a bug with a workaround.
+- **A second connection alias.** The setting belongs to one connection. A read
+  replica, and the `serializable` alias below, each open a connection of their
+  own and carry no tenant. `connection` is the default alias, so a helper that
+  uses it sets the context on the wrong connection. Set the context with
+  `connections[alias].cursor()` inside every `atomic(using=alias)` block that
+  reaches a table with a policy.
 - **`SET LOCAL` outside a transaction.** In autocommit it warns and does
   nothing, so the policy sees no tenant and every query returns zero rows.
+  `set_config(..., true)` fails the same way and warns about nothing, because
+  it applies to its own statement alone. Middleware that sets the context
+  before the view opens `atomic()` breaks this way.
+- **A nested `atomic()` block.** Django opens a savepoint for it, and
+  PostgreSQL cancels a setting when a rollback returns to a savepoint that
+  precedes it. An inner block that sets the context and then rolls back
+  therefore leaves the outer work with no tenant, and raises nothing. Set the
+  context as the first statement of the outermost `atomic()` block.
 - **Workers, tasks, and management commands that never set context.** Under
   row-level security they fail closed and return nothing, which is safe but
   looks like a data bug. Under queryset scoping alone the same code path fails
   *open* and processes every tenant's rows. Wrap task entry points in the same
   context the request path sets.
+- **`transaction.on_commit()` and post-commit signal code.** The callback runs
+  after COMMIT, and COMMIT pops the setting. Every query the callback makes
+  therefore runs with no tenant. Open a new `atomic()` block in the callback
+  and set the context again, or hand the work to a task that sets it at entry.
 - **Schema-per-tenant.** `django-tenants` and similar carry tenant identity in
   the connection's `search_path`, which is session state with the same pooling
   hazard. Use session-mode pooling with schema-per-tenant, or the search path
@@ -241,7 +336,8 @@ Four conditions break it, in the order a reviewer meets them:
 
 Test it the way the leak happens. Run two requests for different tenants
 against the same pooled connection, and assert that the second sees nothing of
-the first. A single-connection test suite passes while production leaks.
+the first. A single-connection test suite passes while production leaks. Run
+that test against each alias which reaches a table with a policy.
 
 ## Verified database connections
 
@@ -307,35 +403,77 @@ HMAC.
 ```python
 import hashlib
 import hmac
+import os
+import unicodedata
 
-from cryptography.fernet import Fernet
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+KEY_VERSION = "v1"
 
 
-def encrypt_value(value: str) -> bytes:
+def canonical(value: str) -> str:
+    # One function for every writer and every lookup. A second normalization
+    # somewhere else produces a second index for one identity.
+    return unicodedata.normalize("NFKC", value).strip().casefold()
+
+
+def encrypt_value(value: str, *, row_id: str, column: str) -> bytes:
     # Randomized: two identical plaintexts produce different ciphertexts, so
     # the column leaks nothing about equality. Not searchable, by design.
-    return Fernet(FERNET_KEY).encrypt(value.encode())
+    # associated_data binds the value to its row and its column, so the same
+    # value moved onto another row no longer decrypts.
+    nonce = os.urandom(12)
+    aad = f"{KEY_VERSION}|{column}|{row_id}".encode()
+    key = ENCRYPTION_KEYS[KEY_VERSION]
+    token = AESGCM(key).encrypt(nonce, value.encode(), aad)
+    # The stored value names the key that wrote it, so a rotation can read it.
+    return f"{KEY_VERSION}:".encode() + nonce + token
 
 
-def blind_index(value: str) -> str:
-    # Deterministic, and keyed with a different key from the ciphertext, so
-    # possession of the index key alone does not decrypt anything.
-    normalized = value.strip().lower().encode()
-    return hmac.new(BLIND_INDEX_KEY, normalized, hashlib.sha256).hexdigest()
+def blind_index(value: str, *, tenant_id: str) -> str:
+    # Keyed apart from the ciphertext, so the index key decrypts nothing.
+    # Keyed per tenant as well, so equal values in two tenants do not match.
+    tenant_key = hmac.new(
+        BLIND_INDEX_KEY, str(tenant_id).encode(), hashlib.sha256
+    ).digest()
+    digest = hmac.new(tenant_key, canonical(value).encode(), hashlib.sha256)
+    return digest.hexdigest()
 
 
-# Lookup: User.objects.get(email_bidx=blind_index("a@b.example"))
+# Lookup: User.objects.get(email_bidx=blind_index("a@b.example", tenant_id=t))
 ```
 
 State the tradeoff. Do not hide it. The blind index is deterministic, so it
 leaks equality: equal plaintexts produce equal indexes. It therefore supports
 frequency analysis on low-entropy columns.
 
-Use a per-field key distinct from the encryption key, and normalize
-consistently. Do not blind-index a low-cardinality field whose distribution is
-itself sensitive. Do **not** use deterministic encryption of the whole column
-to gain searchability. It leaks the same equality with no advantage over a
-separate index and a randomized ciphertext.
+**A value that authenticates itself still moves.** A ciphertext with no
+associated data verifies wherever it is stored. A principal that holds DML on
+the table copies a valid pair of ciphertext and blind index from one row onto
+another. The victim's address then decrypts to the attacker's address, and a
+password reset reaches the attacker. Bind every value to its row and its
+column, as the example does. Treat a failed decryption as a security event
+rather than as data corruption.
+
+The bound row identity must exist before the value is written. A primary key
+that the application generates satisfies this. Where the database assigns the
+key, write the row first and set the encrypted column in the same transaction.
+
+The blind index also restores the constraint the ciphertext lost. Where the
+plaintext column was unique, add a `UniqueConstraint` on the blind-index
+column in the same migration. Make it composite with the tenant column where
+the identity is unique inside one tenant alone. Without that constraint, two
+concurrent registrations both read no row and both insert, and one identity
+becomes two accounts.
+
+Use a per-field key distinct from the encryption key, and normalize through
+one shared function. Unicode carries more than one encoding for one identity,
+so normalize the form as well as the case. A backfill or an import that
+normalizes differently writes an index that no lookup matches. Do not
+blind-index a low-cardinality field whose distribution is itself sensitive. Do
+**not** use deterministic encryption of the whole column to gain
+searchability. It leaks the same equality with no advantage over a separate
+index and a randomized ciphertext.
 
 Key storage, rotation, and managed-KMS integration are a separate concern from
 the storage mechanism, and this file does not cover them. The minimum is that
@@ -347,12 +485,13 @@ field key derived from `SECRET_KEY` is the common shortcut and the one to flag.
 It turns a signing-key rotation into a data-re-encryption event.
 
 **Write-time.** When you generate a field whose value the database must not
-read, write three things in the single edit that adds the field. Write the
+read, write four things in the single edit that adds the field. Write the
 randomized ciphertext column, and a blind index for each exact-match lookup the
-code actually performs. Write a key read from outside the database and outside
-the repository. If you add searchability afterwards, you must re-encrypt every
-row that already exists. A column that shipped readable stays readable in every
-backup taken since.
+code actually performs. Write a `UniqueConstraint` on each blind index that
+replaces a unique plaintext column. Write a key read from outside the database
+and outside the repository. If you add searchability afterwards, you must
+re-encrypt every row that already exists. A column that shipped readable stays
+readable in every backup taken since.
 
 Key the blind index separately from the ciphertext, and derive neither from
 `SECRET_KEY`. That derivation turns a signing-key rotation into a
@@ -383,12 +522,15 @@ the ORM's guarantees:
 
 - `Manager.raw()`, `QuerySet.extra()`, and `RawSQL` from
   `django.db.models.expressions`;
-- `connection.cursor()` followed by `execute()`, `executemany()`, or
-  `callproc()`;
+- `connection.cursor()` and `connections[alias].cursor()` followed by
+  `execute()`, `executemany()`, or `callproc()`;
 - `annotate()`, `aggregate()`, `filter()`, or `order_by()` carrying a `RawSQL`
   or an `extra(select=...)`;
 - `Func` and custom `Expression` subclasses whose `template` or `function` is
   built from input;
+- `COPY` in either direction, through `cursor.copy()` on psycopg 3 or
+  `copy_expert()` on psycopg2. It moves rows in bulk and carries no tenant
+  filter of its own;
 - any `%`, f-string, `.format()`, or concatenation within reach of the above.
 
 Write the same finding on every hit: **`params` binds values, not
@@ -418,6 +560,18 @@ db.users.find_one({"username": body["username"], "active": True})
 username = serializer.validated_data["username"]   # guaranteed to be a str
 db.users.find_one({"username": str(username), "active": True})
 ```
+
+Validate the whole structure, and not the top level alone. A serializer that
+guarantees one scalar says nothing about a filter, a sort specification, or a
+pipeline stage that the code builds around it. Reject a key that starts with
+`$` at every depth. Reject a key that holds a `.` on a write path, because a
+dotted key addresses a field inside a nested document. Reject a non-scalar
+value where the query expects a scalar, rather than cast it. A cast is a last
+line behind a serializer, and it validates no shape.
+
+Allowlist the fields a caller can query, and the operators a caller can name.
+An allowlist of operators is the only form that survives a new operator in the
+next release of the store.
 
 Django's own ORM is SQL-only, so this arrives through explicit integrations:
 
@@ -457,6 +611,17 @@ state, and the session and token models, to the primary alias. Never make a
 security decision on a replica read. Django's documented primary/replica router
 example is deliberately simple, and the documentation notes that it does not
 address replication lag at all. It is a starting point, not a security control.
+
+Write the router to deny by default. A router that names the models it pins is
+an allowlist, and the next model to carry authorization state is missing from
+it. An API key, a deny list, a lockout counter, and a feature gate each arrive
+later, and each one reads a replica. Send every read to the primary, and name
+the models a replica may serve.
+
+A router sees only a read that reaches the database. The `cached_db` session
+backend reads the cache first, and reaches the row on a miss alone. So the pin
+on the session model does not make that read current. Any decision that turns
+on a session being revoked reads the primary itself.
 
 The same reasoning covers other denormalized copies of authorization-relevant
 state. `authorization-architecture.md`, "Search indexes and denormalized
@@ -526,6 +691,13 @@ the queryset put one flow at the higher level, while the rest of the
 application stays on `READ COMMITTED`. Two aliases onto one database are two
 connections, and they count twice against the pool sizing below.
 
+`isolation_level` applies to the connection that the driver opened. A
+transaction-mode pooler can run the transaction on a different server
+connection, and the flow then runs at the server's default and raises nothing.
+Prove the level rather than assume it. Read `SHOW transaction_isolation`
+inside the transaction, in a startup check or in the test that covers the
+flow.
+
 ### The retry loop is not optional
 
 ```python
@@ -533,6 +705,7 @@ connections, and they count twice against the pool sizing below.
 # invalidates everything the aborted attempt read as well as everything it
 # wrote. The retry is outside atomic(), since a transaction that has raised
 # cannot be used further.
+import random
 import time
 
 from django.db import DatabaseError, transaction
@@ -542,7 +715,10 @@ MAX_ATTEMPTS = 5
 
 
 def is_retryable(exc):
-    return getattr(exc.__cause__, "sqlstate", None) in RETRYABLE_SQLSTATES
+    # psycopg 3 exposes sqlstate on the error, and psycopg2 exposes pgcode.
+    # Both expose diag.sqlstate, so this classifier holds on either driver.
+    diag = getattr(exc.__cause__, "diag", None)
+    return getattr(diag, "sqlstate", None) in RETRYABLE_SQLSTATES
 
 
 def rebalance(*, account_id):
@@ -557,7 +733,8 @@ def rebalance(*, account_id):
         except DatabaseError as exc:
             if not is_retryable(exc) or attempt == MAX_ATTEMPTS - 1:
                 raise
-            time.sleep(0.05 * 2**attempt)
+            # Jitter, so the callers that conflicted do not retry together.
+            time.sleep(0.05 * 2**attempt * (0.5 + random.random()))
 ```
 
 - **Retry from the top, reads included.** If you re-run only the write, you
@@ -570,9 +747,17 @@ def rebalance(*, account_id):
   calls, mail, and task dispatch belong in `transaction.on_commit()`.
   `a10-exceptional-conditions.md` owns that order and the idempotency it
   implies.
-- **Bound the attempts and back off.** An uncapped retry loop under contention
-  is a caller-triggered load multiplier of its own
-  (`a06-insecure-design.md`, "Algorithmic resource exhaustion").
+- **Bound the attempts, back off, and add jitter.** An uncapped retry loop
+  under contention is a caller-triggered load multiplier of its own
+  (`a06-insecure-design.md`, "Algorithmic resource exhaustion"). Equal backoff
+  re-synchronizes the callers that just conflicted, so the next round
+  conflicts again. The sleep also holds the request's database connection, so
+  a retry storm consumes the pool that the section below caps.
+- **Test the classifier against the driver in use.** A classifier that reads
+  the wrong attribute returns `None` rather than an error. Every serialization
+  failure then reaches the caller, and the loop still looks correct in review.
+  Teams answer those 500s by deleting the loop or the alias, which removes the
+  control instead of the defect.
 - **Deadlocks retry on the same path** and occur at every isolation level.
   Write the loop wherever lock order is not provably consistent.
 
@@ -631,6 +816,15 @@ The controls follow, in order of leverage:
 - **Size deliberately**: hosts × workers × threads × per-worker connections
   must stay under `max_connections`, with headroom left for migrations and
   operator sessions.
+- **Bind the ceiling and the timeouts to the database role.** The arithmetic
+  above is a plan, and a scale-out event or a rolling restart breaks it.
+  `ALTER ROLE app_runtime CONNECTION LIMIT n` refuses connection n + 1 at the
+  server, whatever the application believes it opened. Leave headroom for
+  the migration role and for an operator session, or the outage locks you out
+  of its own repair. `statement_timeout` bounds one statement, and not a
+  transaction that waits between statements. So set
+  `idle_in_transaction_session_timeout`, `lock_timeout`, and `temp_file_limit`
+  on the role as well.
 - **Use `ATOMIC_REQUESTS` knowingly.** It is good for write consistency, and it
   holds a connection and an open transaction for the whole of every view.
   Exclude long-running views, streaming views, and external-call views.
@@ -646,11 +840,19 @@ DATABASES = {
         "CONN_MAX_AGE": 0,
         "OPTIONS": {
             "pool": {"min_size": 2, "max_size": 10},
+            # A startup option belongs to the connection the driver opened.
+            # A transaction-mode pooler can hand the work a different server
+            # connection, so set the same bound on the role as well.
             "options": "-c statement_timeout=15000",
         },
     }
 }
 ```
+
+A setting on the role is a default and not a ceiling. The runtime role can
+raise `statement_timeout` in its own session, so that bound holds the slow
+query rather than the hostile one. `CONNECTION LIMIT` and `temp_file_limit`
+differ, because the runtime role cannot raise either one.
 
 Under async and Channels, `CONN_MAX_AGE = 0` is required for a different
 reason: Django's own persistent-connection reuse is not safe across the async
@@ -695,28 +897,35 @@ stores which cannot delete in place.
       what it was not granted, and cannot grant. Schema changes use a separate
       principal.
 - [ ] Any database-enforced isolation is a backstop behind scoped querysets,
-      and is forced for owners as well as others. Migrations define it, rather
-      than a manual step.
+      and is forced for owners as well as others. No role holds an attribute
+      that bypasses it. Every other relation that returns the same rows
+      carries the same predicate. Migrations define it, rather than a manual
+      step.
 - [ ] The identity that reaches the database is scoped to the unit of work. It
-      cannot survive on a pooled connection into the next caller's request.
-- [ ] Background workers, scheduled jobs, and operator commands establish the
-      same isolation context as the request path, or fail closed.
+      cannot survive on a pooled connection into the next caller's request,
+      and it is present on every connection that work touches.
+- [ ] Background workers, scheduled jobs, operator commands, and code that
+      runs after the commit establish the same isolation context as the
+      request path, or fail closed.
 - [ ] The database connection verifies the server certificate rather than only
       encrypting; the connection string is handled as a secret.
 - [ ] Encrypted columns are justified by a threat inside the database's trust
       boundary, and disk-level encryption is not counted as column encryption.
 - [ ] Any searchable-encryption scheme states what it leaks; blind-index keys
-      are separate from encryption keys.
+      are separate from encryption keys. Each stored value names the key
+      version that wrote it, and is bound to the row and the column that hold
+      it.
 - [ ] Every path that reaches the store without the application's query layer is
       audited for isolation bypass, not only for injection.
-- [ ] Query input is validated for shape as well as value, so a client cannot
-      substitute an operator object for a scalar.
-- [ ] Authorization state is never read from an eventually consistent copy.
+- [ ] Query input is validated for shape as well as value, at every depth, so
+      a client cannot substitute an operator object for a scalar.
+- [ ] Authorization state is never read from an eventually consistent copy,
+      and never from a cache the read path consults before the database.
 - [ ] Any isolation level above the backend default has a bounded retry of the
       whole transaction beside it. The review chose it only after it ruled out
       a database constraint.
-- [ ] Connection concurrency is capped by a pool, and every query is
-      time-bounded server-side.
+- [ ] Connection concurrency is capped by a pool and by a limit on the
+      database role, and every query is time-bounded server-side.
 - [ ] No raw production data in lower environments; export and report features
       are authorized, bounded, and audited.
 
@@ -725,11 +934,17 @@ stores which cannot delete in place.
 - [ ] `migrate` runs under a migration role, and the server runs under a
       DML-only role. `ALTER DEFAULT PRIVILEGES` is set, so new migrations'
       tables stay readable. The test runner's `CREATEDB` belongs to a CI role.
+      The runtime role holds no write on the migration bookkeeping table.
 - [ ] Row-level security uses `ENABLE` **and** `FORCE`, the application role is
-      not the table owner, and `WITH CHECK` covers writes as well as reads.
-- [ ] Tenant context is set with `set_config(..., true)` inside
-      `transaction.atomic()`, never a session `SET`; schema-per-tenant
-      deployments use session-mode pooling.
+      neither the table owner nor a `BYPASSRLS` role, and `WITH CHECK` covers
+      writes as well as reads. Each partition, view, and materialized view
+      over a protected table is checked in its own right.
+- [ ] Tenant context is set with `set_config(..., true)` as the first
+      statement of the outermost `transaction.atomic()`, never a session `SET`
+      and never inside a nested block; schema-per-tenant deployments use
+      session-mode pooling.
+- [ ] Every other alias, and every `on_commit()` callback that queries, sets
+      the tenant context of its own.
 - [ ] `OPTIONS` sets `sslmode=verify-full` with a pinned root certificate.
 - [ ] Field encryption is built on PyCA `cryptography` with keys outside the
       database; no abandoned field-encryption package is relied on.
@@ -737,14 +952,18 @@ stores which cannot delete in place.
       `params`, take identifiers from an allowlist, and re-apply tenant scoping.
 - [ ] PyMongo and `raw_aggregate()` calls receive serializer-validated scalars;
       server-side JavaScript and `$where` are not reachable from input.
-- [ ] A database router pins authorization, session, and token reads to the
-      primary.
+- [ ] A database router sends every read to the primary and names the models
+      a replica may serve. A session read that the cache answers reaches no
+      router, so a revocation check reads the primary itself.
 - [ ] `OPTIONS["isolation_level"]` is named rather than left to the server. A
-      raised level is scoped to its own alias rather than applied globally.
-      Side effects inside a retried `atomic()` block defer to
+      raised level is scoped to its own alias rather than applied globally,
+      and the effective level is proven at run time rather than assumed. The
+      retry classifier reads a field that the project's driver sets. Side
+      effects inside a retried `atomic()` block defer to
       `transaction.on_commit()`.
-- [ ] `OPTIONS` sets a pool `max_size` and a `statement_timeout`;
-      `CONN_MAX_AGE = 0` accompanies pooling; `ATOMIC_REQUESTS` excludes
+- [ ] `OPTIONS` sets a pool `max_size` and a `statement_timeout`; a
+      `CONNECTION LIMIT` and an idle-in-transaction timeout on the role back
+      both; `CONN_MAX_AGE = 0` accompanies pooling; `ATOMIC_REQUESTS` excludes
       long-running and streaming views.
 - [ ] Cross-tenant and connection-reuse isolation tests exist and run against a
       pooled configuration, not a single connection.
