@@ -137,11 +137,27 @@ The other route shapes that skip the hook:
 - **Create** has no object yet, so the hook cannot run. Set the owner and the
   tenant in `perform_create()` from `request.user`. Never accept either one
   from the body.
+- **Update** authorizes the record as stored, and not as saved.
+  `UpdateModelMixin.update()` calls `get_object()` first, and
+  `serializer.save()` applies the body after it. A writable `owner`,
+  `tenant`, or parent relation therefore moves the record after the check
+  passed on the old value. Make the owner and the tenant read-only after
+  create. Where a parent relation must stay writable, authorize the new value
+  in `validate_<field>()` against the caller.
 - **`@action(detail=False)`** has no object identity at all; it is a
   function-level surface, below.
 - **An overridden `get_object()`** that omits
   `self.check_object_permissions(...)` silently removes the one automatic
   check.
+- **An overridden `dispatch()` or `initial()`** that omits the `super()` call
+  removes every control, and not only the object hook. `APIView.dispatch()`
+  reaches `initial()`, and `initial()` is the only place DRF enforces the
+  permission checks and the throttle checks. An override that answers the
+  request itself therefore runs with no permission check and no throttle.
+  `request.user` still authenticates on first access, so the view looks
+  authenticated while nothing acts on the result. The signal is a `dispatch`
+  or an `initial` method on a view class. Confirm that it calls `super()` on
+  every branch.
 - **Bulk routes** — see "Bulk endpoints".
 
 CWE-285 (Improper Authorization), CWE-639 (Authorization Bypass Through
@@ -160,6 +176,14 @@ In DRF, BFLA is almost always a custom `@action` that inherited the viewset's
 permissions when it needed stricter ones. `permission_classes` on the decorator
 **replaces** the viewset's list for that action rather than adding to it, so
 restate the base requirement alongside the stricter one.
+
+The decorator passes every other keyword argument to `as_view()` in the same
+way. `throttle_classes`, `authentication_classes`, `renderer_classes`, and
+`filter_backends` therefore replace the viewset's lists too. An action that
+names one of them drops the quota, the authentication, or the renderer set
+that the viewset declared, and reports no error. Restate the base classes
+inside every such keyword argument. Review every `@action` keyword argument,
+and not `permission_classes` alone.
 
 ```python
 # Wrong: any authenticated user can promote themselves
@@ -194,6 +218,14 @@ The third is a `get_permissions()` override that branches on `self.action`,
 where a new action falls through to the permissive default branch. Prefer an
 explicit mapping with a deny fallback over an `if/elif` chain that ends in the
 base return.
+
+**An `@action` that names no method answers GET.** The `methods` argument
+defaults to `["get"]`, so the signal is a decorator with no `methods` on a
+handler that changes state. Django accepts GET, HEAD, OPTIONS, and TRACE
+without a CSRF check, and DRF adds none. A prefetch, a crawler, or an `<img>`
+tag in a page that an authenticated operator opens therefore invokes the
+operation with the session cookie attached. Give every action that changes
+state `methods=["post"]`. Keep a GET action free of side effects.
 
 `authorization-architecture.md` owns the privilege model these classes express;
 A01 owns the finding as a per-request failure. CWE-862 (Missing Authorization);
@@ -306,6 +338,21 @@ same rule reaches `SlugRelatedField` and nested writes. `UniqueValidator` and
 queryset answers whether a value exists in another tenant, which is an
 existence oracle.
 
+**A scope that resolves to nothing must deny.** Two branches of the rule above
+fail open, and each one looks like defensive code.
+
+The first branch is an absent request. Four callers instantiate a serializer
+with no request: the schema generator, the shell, a test, and a management
+command. A `self.context.get("request")` that returns `None` then falls back
+to the unscoped default queryset. Raise on that branch instead.
+
+The second branch is an absent scope value. Django translates
+`filter(tenant=None)` into `IS NULL`, so a principal that carries no tenant
+reads every record that carries none either. The trigger is a nullable scope
+attribute, on the serializer relation and on `get_queryset()` alike. Where
+that attribute is nullable, resolve the value first and return `none()` for a
+principal that carries none.
+
 **Write-time.** When a serializer gains a writable relation, write the scoped
 queryset in the same edit. State in one line which principal scope that
 queryset encodes.
@@ -317,6 +364,13 @@ POST data, including the `is_staff`, `owner`, or `balance` column added two
 migrations later. `exclude = [...]` fails open the same way an excluded
 serializer field does: the next added field is writable by default. Require an
 explicit `fields` allowlist on every `ModelForm` bound to request data.
+
+The relation rule reaches the form too. `ModelForm` builds a
+`ModelChoiceField` for each foreign key it renders, and gives that field the
+whole table of the related model. `ModelMultipleChoiceField` does the same for
+a many-to-many field. The `fields` allowlist decides which relations the
+caller may set, and never which rows the caller may name. Set `queryset` on
+each such field from the caller's scope in the form's `__init__`.
 
 Treat a server-owned field rendered as a form input as the same finding. The
 shape is a missing `disabled=True`, or a value round-tripped through a hidden
@@ -403,7 +457,12 @@ class PatientViewSet(viewsets.ModelViewSet):
 - **Ordering is an oracle too.** A sort on a field the caller may not read
   leaks its relative values across the result set. Allow-list
   `ordering_fields` as deliberately as `filterset_fields`. Never leave either
-  one as `"__all__"`.
+  one as `"__all__"`. An unset `ordering_fields` is the worse shape, because
+  it reads as a decision to offer no ordering. `OrderingFilter` defaults the
+  attribute to `None`, and on that default it accepts every field of the
+  serializer that is not write-only. Set `ordering_fields = []` on a view that
+  offers no ordering. Remove `OrderingFilter` from a view where nothing
+  orders.
 - **`search_fields` traversals** follow relations with `__`. A search
   configured across a foreign key can therefore match on a related record the
   caller has no access to. Review each traversal as a read.
@@ -411,8 +470,17 @@ class PatientViewSet(viewsets.ModelViewSet):
   and `LimitOffsetPagination` return a total `count`. That count discloses the
   size of the matching set, including under a filter the caller controls. The
   count then becomes a binary search over data the caller cannot read. Where
-  the collection is sensitive, `CursorPagination` exposes neither offsets nor
-  a total, at the cost of ordering on a stable field and no random access.
+  the collection is sensitive, `CursorPagination` returns no total and gives
+  the caller no random access, at the cost of an order on a stable field.
+- **A DRF cursor is encoded, and it is not opaque.** `CursorPagination`
+  base64-encodes a query string that carries the position, the direction, and
+  an offset. Nothing signs that string. The position is the value of the
+  first ordering field on the boundary row, so an order on a sensitive column
+  hands that column's values to the caller one page at a time. That is the
+  ordering oracle above, returned by the control that replaced it. Order on a
+  stable field that the caller may already read, such as the creation
+  timestamp or the primary key. Where the position must carry a value the
+  caller may not read, sign the cursor and reject one that fails the check.
 - Ids in a paginated response are still a disclosure: a listing that includes
   identifiers of records the caller cannot open tells them those records
   exist.
@@ -443,6 +511,19 @@ REST_FRAMEWORK = {
 
 A default of `AllowAny` makes every un-annotated view public — a common
 misconfiguration.
+
+**The authentication default is permissive too, and it is less visible.**
+`DEFAULT_AUTHENTICATION_CLASSES` defaults to `SessionAuthentication` and
+`BasicAuthentication` together. On that default every view accepts a password
+in an `Authorization` header. `BasicAuthentication` calls Django's
+`authenticate()` directly, so it is a second credential path around the login
+view. The atomic counter on that view therefore never counts an attempt that
+arrives in that header.
+
+A `401` from that class also carries `WWW-Authenticate: Basic`, so a browser
+shows a credential dialog on an API route. Set
+`DEFAULT_AUTHENTICATION_CLASSES` explicitly. Keep `BasicAuthentication` out of
+every production list.
 
 **Write-time.** When you generate a viewset or an `APIView`, set
 `permission_classes` on the class itself. Do not inherit the project default.
@@ -484,7 +565,9 @@ you judge any view.
 - A DRF `APIView` is CSRF-exempt **except** inside `SessionAuthentication`.
   That class enforces CSRF for an authenticated cookie request. Token and JWT
   authentication through the `Authorization` header needs no CSRF, because the
-  browser does not send that credential automatically.
+  browser does not send that credential automatically. The header is the
+  condition, and not the token. A token that travels in a cookie travels
+  automatically, so it needs CSRF exactly as a session does.
 - Note one known trap. A login or token-obtain view built on plain `APIView`
   with `SessionAuthentication` does **not** enforce CSRF for an
   *unauthenticated* user. Always apply CSRF to a login view.
@@ -509,6 +592,15 @@ The deciding question is what `authentication_classes` resolves to for that
 view, including the project default it may be inheriting. Where
 `SessionAuthentication` is in that list and the endpoint changes state, the
 decorator is the finding the bullet above describes.
+
+Ask a second question about that same list. Ask where each class reads its
+credential from. `SessionAuthentication` is the only bundled class that checks
+CSRF, and it checks nothing for the classes beside it. A token or JWT class
+that reads a cookie rather than the `Authorization` header is therefore a
+cookie-authenticated write path with no CSRF check anywhere. A class of that
+shape comes from a package or from the project, and the class name says
+nothing about it. Read the class, and find the request attribute it reads the
+credential from.
 
 The webhook receiver is the other case that reaches this heading legitimately.
 `@csrf_exempt` is correct there, because a MAC over the raw body replaces what
@@ -596,27 +688,37 @@ def register_attempt(identity):
 # the window only when it is absent, so the expiry is established once and the
 # window does not slide forward under sustained load. incr() raises ValueError
 # when the key expires between the two calls -- that is the real race, and it
-# is handled rather than left to chance.
+# is handled rather than left to chance. Every other cache error denies here,
+# because Django defines no common exception for an unreachable backend, and
+# an unhandled one becomes the 500 that the text below rules out.
+import logging
+
 from django.conf import settings
 from django.core.cache import caches
 from rest_framework.exceptions import Throttled
+
+logger = logging.getLogger(__name__)
 
 
 def register_attempt(identity):
     cache = caches["throttle"]
     key = f"login-attempts:{identity}"
     window = settings.LOGIN_ATTEMPT_WINDOW_SECONDS
-    cache.add(key, 0, window)
     try:
-        attempts = cache.incr(key)
-    except ValueError:
-        cache.set(key, 1, window)
-        attempts = 1
+        cache.add(key, 0, window)
+        try:
+            attempts = cache.incr(key)
+        except ValueError:            # the key expired between the two calls
+            cache.set(key, 1, window)
+            attempts = 1
+    except Exception:                 # the backend is unreachable
+        logger.exception("throttle cache unavailable; attempt denied")
+        raise Throttled(wait=window)  # fail closed on a credential flow
     if attempts > settings.LOGIN_ATTEMPT_LIMIT:
         raise Throttled(wait=window)
 ```
 
-Three constraints travel with it, and none is optional.
+Four constraints travel with it, and none is optional.
 
 - **The backend decides whether it is atomic at all.** `incr()` is atomic only
   on Memcached and Redis. On `LocMemCache` the increment holds the lock of the
@@ -633,11 +735,17 @@ even inside one process.
   at LocMemCache for a test suite. It also keeps the counter off a cache whose
   eviction policy discards keys under memory pressure. An evicted counter is a
   reset counter.
-- **Choose the outage behavior.** `incr()` raises when the cache is
-  unreachable. The flow then denies or allows. A denial fails closed, which is
-  correct for a credential or payment flow. An allow fails open, which makes a
-  cache outage an open door. Letting the exception reach a 500 is a third
-  behavior nobody chose.
+- **Choose the outage behavior.** `add()`, `incr()`, and `set()` all raise
+  when the cache is unreachable, so guard the whole flow and not one call. The
+  flow then denies or allows. A denial fails closed, which is correct for a
+  credential or payment flow. An allow fails open, which makes a cache outage
+  an open door. Letting the exception reach a 500 is a third behavior nobody
+  chose.
+- **The window is fixed, and it does not slide.** `add()` anchors the window
+  on the first attempt inside it. A caller who spends the ceiling at the end
+  of one window, and again at the start of the next, makes twice the ceiling
+  in a short time. Read the setting as a per-window ceiling, and not as a
+  rate. Where the rate itself must hold, put the second limit at the edge.
 
 **Write-time.** When you generate a login, password-reset, payment, or
 invitation endpoint, write the atomic counter in the same change as the view.
@@ -673,10 +781,19 @@ a writable HTML form that discloses every writable field on every endpoint. It
 can also surface exception detail.
 
 Content negotiation selects it, so a JSON entry first does not retire it. A
-request with `Accept: text/html` still reaches it. So does `?format=api`,
-where format suffixes are enabled. Reordering `DEFAULT_RENDERER_CLASSES` is
-therefore not a fix — remove the renderer in production configuration, or gate
-its inclusion on `DEBUG`.
+request with `Accept: text/html` still reaches it. So does `?format=api`.
+`URL_FORMAT_OVERRIDE` defaults to `format`, and the negotiation class reads
+that query parameter on every view. Format suffix patterns are a second route
+to the same renderer, and not the condition for the first. Reordering
+`DEFAULT_RENDERER_CLASSES` is therefore not a fix — remove the renderer in
+production configuration, or gate its inclusion on `DEBUG`.
+
+**The setting is not the whole surface.** A view or an installed package that
+sets its own `renderer_classes` builds the negotiated list from that
+attribute, and the project default never reaches it. Sweep the project and the
+installed packages for a `renderer_classes` that names `BrowsableAPIRenderer`.
+Assert the absence in a test that walks the URL map, because the next copied
+example puts the renderer back.
 
 ```python
 # Correct: the browsable renderer exists only where DEBUG is on
@@ -730,6 +847,16 @@ component; both change the document only. The route still resolves, and the
 serializer still returns the field. A caller who guesses the name gets exactly
 the earlier response.
 
+`OPTIONS` removes the guess, because `DEFAULT_METADATA_CLASS` is
+`SimpleMetadata`. That class answers an `OPTIONS` request with every writable
+field of the `PUT` and `POST` handlers, and with the type and the required
+flag of each one. It reads the serializer directly, so a field that a
+decoration dropped from the published document is still in the answer. It runs
+`check_permissions` first, so the answer reaches a caller who clears the
+view-level check, and no caller below that. Where that check is broad, replace
+`DEFAULT_METADATA_CLASS` with a narrower class. You can instead drop `options`
+from `http_method_names` on the view.
+
 Use them to keep an internal operation out of a partner-facing contract. Never
 use them as the reason an operation is safe. The permission class and the
 field set are the control. The decoration only brings the document up to date.
@@ -764,7 +891,7 @@ class AccountViewSet(viewsets.ReadOnlyModelViewSet):
         return Account.objects.filter(tenant=self.request.user.tenant)
 
     @extend_schema(exclude=True)
-    @action(detail=False)
+    @action(detail=False, methods=["post"])
     def reindex(self, request):
         return Response({"queued": True})
 ```
@@ -850,6 +977,21 @@ such as `django.contrib.admin`, `rest_framework.urls`, or a schema or Swagger
 route. An old versioned URL module stays alive after its successor ships.
 `format_suffix_patterns` also doubles every route it touches.
 
+**Two bundled routes accept credentials, and neither one inherits a control
+from this file.** `rest_framework.urls` mounts Django's own `LoginView` and
+`LogoutView`. Those are plain Django views, so `initial()` never runs, and no
+DRF authentication, permission, or throttle class applies to them.
+`obtain_auth_token` reaches DRF, and still takes no control.
+`ObtainAuthToken` sets `throttle_classes = ()` and `permission_classes = ()`
+on the class itself, so it opts out of the project defaults rather than
+inheriting them.
+
+The login route and the token route each accept password attempts with no
+limit in front of them. Retire `rest_framework.urls` from a deployment that
+does not serve the browsable API. Where a token route is needed, subclass
+`ObtainAuthToken` and call the atomic counter above from its `post()`. Add the
+edge limit in that same change.
+
 The same table answers a second question that this file does not own. That
 question is which of two matching patterns a path reaches.
 `a01-broken-access-control.md`, "URL resolution as an access-control surface"
@@ -857,9 +999,17 @@ owns it.
 
 Treat the inventory as a recurring artifact, and not as a single exercise.
 Generate it in CI. Diff it against the previous run. Require that a new public
-route is an intentional, reviewed change. OWASP API9:2023. Severity: medium on
-its own, but it multiplies every other finding — an endpoint missing from the
-inventory was never reviewed at all.
+route is an intentional, reviewed change.
+
+**The settings module decides what the URL map holds.** A conditional
+`include()`, a `DEBUG` branch, and a feature flag each add or remove a route
+at import time. An inventory built under the test settings therefore proves
+nothing about the deployment. Run the walk with the settings module and the
+environment that the deployment runs. Where the two differ by design, walk
+both and diff the two maps against each other.
+
+OWASP API9:2023. Severity: medium on its own, but it multiplies every other
+finding — an endpoint missing from the inventory was never reviewed at all.
 
 ## Versioning and deprecation lifecycle
 
@@ -881,6 +1031,15 @@ Run the lifecycle in three stages, each with a header the client can act on:
 In DRF, emit both headers from a small mixin or renderer keyed on
 `request.version` so no view has to remember.
 
+**Switch off by the route, and never by `request.version`.** Every versioning
+class falls back to `default_version`, and the two classes below fall back
+silently on input the caller controls. A `410` that a mixin returns on one
+value of `request.version` therefore never fires for a caller who reaches the
+same code with the version unresolved. Remove the URL patterns of the retired
+version instead. That removal is visible in the URL map above, and a test
+proves it. The same reasoning applies to any authorization that branches on
+`request.version`.
+
 While both versions run, the security requirements are:
 
 - **Identical authorization on both.** The same `permission_classes` and the
@@ -896,7 +1055,11 @@ client sends nothing. With the stock classes you therefore cannot require a
 client to state a version. You can only constrain which versions you accept.
 - **Evidence before switch-off.** Monitor the traffic for each version. The
   decommission date is then a decision rather than a guess. You also find a
-  client that still calls v1 the day before, and before it breaks.
+  client that still calls v1 the day before, and before it breaks. Set the
+  date first, and let the evidence decide the exceptions to it. The version is
+  caller-supplied input, so traffic alone keeps a version alive for whoever
+  sends it. Count the authenticated identities on the old version, and not the
+  requests.
 
 That behavior is common to every versioning class. Two of them additionally
 make the version a decision about something outside the request body, and
@@ -953,8 +1116,10 @@ hook runs zero times for N objects.
   and every per-object check with them. Both are unmaintained — see the
   library index.
 - **A hand-written bulk route must authorize each object explicitly.** Load
-  the whole set from a requester-scoped queryset, and confirm that the
-  returned count matches the requested ids. You can instead call
+  the whole set from a requester-scoped queryset, and compare the returned ids
+  with the requested ids as sets. A count comparison is a proxy for that test,
+  and it holds only on a request with no repeated id. De-duplicate the ids
+  before you compare them, and before you write. You can instead call
   `self.check_object_permissions(request, obj)` for each object.
 - **Define the partial-failure semantics.** If object 7 of 10 is denied, does
   the whole request fail, or do nine succeed? Either is defensible; silence is
@@ -965,6 +1130,13 @@ hook runs zero times for N objects.
   tool, and a dangerous authorization primitive. Where the queryset it runs on
   is not scoped to the requester, it is a mass-assignment and mass-deletion
   path in one.
+- **`bulk_create()` is the same tool on the create path.** Django states that
+  it does not call `save()` and sends no `pre_save` or `post_save` signal. A
+  model whose owner or tenant is set in `save()` or in a signal therefore
+  gets nothing set. The create path also has no object hook to lose, so every
+  row carries whatever the request body named. Set the owner and the tenant
+  per row from `request.user` before the call. Validate each row through the
+  serializer first, and never pass request data straight to `bulk_create()`.
 
 CWE-862 (Missing Authorization); OWASP API1:2023 and API5:2023. Severity: high
 to critical — the blast radius is the size of the request body.
@@ -976,6 +1148,8 @@ at write-time as a checklist and at review-time as a sweep:
 
 - `DEFAULT_PERMISSION_CLASSES` unset behaves as `AllowAny`: every un-annotated
   view is public.
+- `DEFAULT_AUTHENTICATION_CLASSES` unset includes `BasicAuthentication`, so
+  every view accepts a password in a header, around the login view.
 - `BasePermission.has_object_permission` returns `True`, so an incomplete custom
   permission class is permissive exactly where it looks strictest.
 - `queryset = Model.objects.all()` on a viewset leaves the list route unscoped;
@@ -988,6 +1162,10 @@ at write-time as a checklist and at review-time as a sweep:
   as unvalidated client input.
 - `filterset_fields`, `ordering_fields`, or `search_fields` set to `"__all__"`
   or generated across a model exposes every column as a filter or sort oracle.
+- `ordering_fields` unset on a view that uses `OrderingFilter` orders on every
+  serializer field that is not write-only.
+- A DRF cursor is an unsigned base64 string, and it carries the value of the
+  first ordering field on the boundary row.
 - Offset and page-number pagination return a total `count` over whatever the
   filter matched.
 - `SessionAuthentication` on a login or token-obtain view built on plain
@@ -996,6 +1174,12 @@ at write-time as a checklist and at review-time as a sweep:
 - `NUM_PROXIES = None` keys the IP throttles on the whole `X-Forwarded-For`
   value, so varying the header is enough to earn a fresh bucket.
 - `@action(detail=True)` adds a `pk` to the URL and authorizes nothing.
+- `@action` with no `methods` argument answers GET, so a state change on that
+  route takes no CSRF check.
+- `ObtainAuthToken` sets `throttle_classes = ()` and `permission_classes = ()`,
+  so `obtain_auth_token` takes no project default.
+- `rest_framework.urls` mounts plain Django login and logout views, which no
+  DRF authentication, permission, or throttle class reaches.
 
 ## Payments and webhook bodies
 
@@ -1043,10 +1227,16 @@ def payment_webhook(request):
       `Model.objects.all()` behind a list or detail route.
 - [ ] Any overridden `get_object()` still calls
       `self.check_object_permissions(self.request, obj)`; plain `APIView`s
-      that load objects call it by hand.
+      that load objects call it by hand. Any overridden `dispatch()` or
+      `initial()` calls `super()` on every branch.
+- [ ] The owner, the tenant, and the parent relation are read-only after
+      create, or the update path authorizes the new value; the object hook
+      sees the record as stored, not as saved.
 - [ ] Actions needing stricter access declare their own `permission_classes`,
       restating the base requirement; `get_permissions()` overrides deny by
-      default rather than falling through.
+      default rather than falling through. Every other `*_classes` keyword
+      argument on an `@action` restates the base list. Every action that
+      changes state names `methods=["post"]`.
 - [ ] No `fields = "__all__"`; explicit fields; server-controlled fields
       read-only, with `read_only=True` on *declared* fields rather than only
       in `read_only_fields`; passwords write-only.
@@ -1055,13 +1245,22 @@ def payment_webhook(request):
 - [ ] The server sets the owner and the tenant on create, because an object
       permission does not run there. Role-dependent writable fields are
       allow-listed, and `PATCH` is tested.
+- [ ] Every writable relation carries a scoped queryset, in a serializer and
+      on a `ModelForm`'s `ModelChoiceField` alike. A scope that cannot
+      resolve denies, and never widens to the default queryset or to the null
+      rows.
 - [ ] Filters, ordering, and search run on requester-scoped querysets, and
-      each one is allow-listed by field. Nothing is `"__all__"`. A sensitive
-      collection uses cursor pagination, and does not expose a total count.
+      each one is allow-listed by field. Nothing is `"__all__"`, and
+      `ordering_fields` is not left unset on a view that uses
+      `OrderingFilter`. A sensitive collection uses cursor pagination, and
+      does not expose a total count. No cursor orders on a field the caller
+      may not read.
 - [ ] `DEFAULT_PERMISSION_CLASSES` is restrictive. No view carries an
-      accidental `AllowAny`.
+      accidental `AllowAny`. `DEFAULT_AUTHENTICATION_CLASSES` is set
+      explicitly, and `BasicAuthentication` is not in the production list.
 - [ ] CSRF is correct for the authentication model. No login view is
-      CSRF-exempt by accident.
+      CSRF-exempt by accident. No authentication class carries a token in a
+      cookie without a CSRF check of its own.
 - [ ] Throttles serve as quotas only, and the real abuse defense sits
       elsewhere. The throttle cache is shared, and is not `LocMemCache`.
       `NUM_PROXIES` matches the deployed proxy count, so the key is not a
@@ -1070,28 +1269,35 @@ def payment_webhook(request):
       as by rate. Any limit that must hold is an atomic `incr` on a Redis or
       Memcached alias, with a selected cache-outage branch, and not a
       read-modify-write.
-- [ ] `BrowsableAPIRenderer` is absent from the production renderers, and not
-      only ordered last. The schema, Swagger, and Redoc routes are
-      authenticated or `DEBUG`-gated, unless the API is deliberately public.
+- [ ] `BrowsableAPIRenderer` is absent from the production renderers and from
+      every per-view `renderer_classes`, and not only ordered last. The
+      schema, Swagger, and Redoc routes are authenticated or `DEBUG`-gated,
+      unless the API is deliberately public.
 - [ ] The schema view sets `SERVE_PERMISSIONS` and `SERVE_PUBLIC`, rather than
       taking the defaults. A public schema omits internal and admin
       operations, error internals, and the fields that only an elevated role
       receives. No operation depends on `extend_schema(exclude=True)` for its
-      access control. The generated document is a CI artifact, diffed on
+      access control. The `OPTIONS` response answers to the same field policy
+      as the schema. The generated document is a CI artifact, diffed on
       upgrade and on release.
-- [ ] The live URL map is enumerated, and diffed against the served schema.
-      Every shadow, zombie, and orphan route is retired or protected.
+- [ ] The live URL map is enumerated under the settings module the deployment
+      runs, and diffed against the served schema. Every shadow, zombie, and
+      orphan route is retired or protected. `rest_framework.urls` and
+      `obtain_auth_token` are retired, or they carry a limit of their own.
 - [ ] Every deprecated version emits `Deprecation` and `Sunset`, with a dated
-      switch-off. It carries the same authorization as the current version.
-      `DEFAULT_VERSION` and `ALLOWED_VERSIONS` are both set.
+      switch-off. The switch-off removes the URL patterns, and does not branch
+      on `request.version`. The old version carries the same authorization as
+      the current version. `DEFAULT_VERSION` and `ALLOWED_VERSIONS` are both
+      set.
 - [ ] Under `HostNameVersioning`, a wildcard DNS entry and a wildcard
       `ALLOWED_HOSTS` entry are each checked as version inputs. Under
       `NamespaceVersioning`, no stale `include()` keeps a retired version
       live. No route there resolves outside a namespace into
       `default_version`.
-- [ ] Every bulk route authorizes every object, and defines its
-      partial-failure semantics. No queryset-level bulk update or delete runs
-      on an unscoped queryset.
+- [ ] Every bulk route authorizes every object by comparing id sets, and
+      defines its partial-failure semantics. No queryset-level bulk update or
+      delete runs on an unscoped queryset. No `bulk_create()` runs on request
+      data that the server did not scope and validate.
 - [ ] Payments resolve amounts server-side; webhook verifiers read
       `request.body` before `request.data`; no raw card storage.
 - [ ] Any GraphQL schema or non-DRF framework in the same project was reviewed
