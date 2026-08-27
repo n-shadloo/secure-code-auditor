@@ -87,10 +87,15 @@ Treat OWASP's numbers as the floor and RFC 9106's as the target envelope, then
 tune rather than copy:
 
 1. Fix **p** to the cores you are willing to spend per hash.
-2. Set **m** to the memory each concurrent login can afford. Peak logins per
-   second multiplied by **m** has to fit inside the worker's real headroom.
-   Otherwise a login spike becomes an out-of-memory event, and the
-   availability incident costs more than the parameter bought.
+2. Set **m** to the memory each concurrent login can afford. Multiply **m**
+   by the concurrent requests one worker process accepts, rather than by the
+   peak logins you expect. An attacker chooses the arrival rate, and the
+   concurrency limit is the number you control. That product has to fit inside
+   the worker's real headroom. Otherwise a login spike becomes an
+   out-of-memory event, and the availability incident costs more than the
+   parameter bought. The attempt limit in `a07-authentication-failures.md`,
+   "Brute force and enumeration", caps the arrival rate. This number caps the
+   memory.
 3. Raise **t** until a single hash costs the most latency the login path can
    absorb.
 
@@ -273,6 +278,13 @@ from django.db import migrations
 from myproject.hashers import Argon2WrappedMD5PasswordHasher
 
 
+def wrappable(password):
+    # Argon2 rejects a salt under 8 bytes. A value of any other shape does not
+    # carry the salt and the digest that this wrapper needs.
+    parts = password.split("$")
+    return len(parts) == 3 and len(parts[1]) >= 8 and len(parts[2]) == 32
+
+
 def wrap_md5_hashes(apps, schema_editor):
     User = apps.get_model("auth", "User")
     hasher = Argon2WrappedMD5PasswordHasher()
@@ -282,6 +294,18 @@ def wrap_md5_hashes(apps, schema_editor):
         .filter(password__startswith="md5$")
         .order_by("pk")
     )
+    # Survey first, because the write destroys the only copy of the legacy
+    # digest. A row this wrapper cannot re-encode goes to a different target
+    # or to a reset, and a person makes that choice. The pass stops for it.
+    stuck = [
+        pk
+        for pk, password in legacy.values_list("pk", "password").iterator(
+            chunk_size=500
+        )
+        if not wrappable(password)
+    ]
+    if stuck:
+        raise RuntimeError(f"{len(stuck)} rows cannot be wrapped")
     for user in legacy.iterator(chunk_size=500):
         _, salt, md5_hash = user.password.split("$", 2)
         user.password = hasher.encode_md5_hash(md5_hash, salt)
@@ -300,16 +324,25 @@ the preferred one. It re-hashes the plaintext it was just handed, and the row
 lands on plain `argon2$...`. Nobody is prompted, and nothing is reset. Four
 things to know before you run it:
 
-- **Every live session ends the moment the migration lands.**
-  `get_session_auth_hash()` is an HMAC of the password field, and `get_user()`
-  compares it on each request. Thus a rewrite of every row invalidates every
-  session at once. There is no request in flight to call
-  `update_session_auth_hash()` for. Schedule and announce this effect rather
-  than avoid it.
+- **Every value derived from the password hash dies the moment the migration
+  lands.** `get_session_auth_hash()` is an HMAC of the password field, and
+  `get_user()` compares it on each request. Thus a rewrite of every row
+  invalidates every session at once. There is no request in flight to call
+  `update_session_auth_hash()` for. Every outstanding password-reset link dies
+  with the sessions, because `PasswordResetTokenGenerator` hashes the password
+  field too. An email verification built on that generator dies with them. A
+  longer `PASSWORD_RESET_TIMEOUT` does not save a token whose input changed,
+  so re-issue those messages after the pass. Schedule and announce this effect
+  rather than avoid it.
 - **A short legacy salt is a hard stop for an Argon2 target.** Argon2 rejects
   a salt under 8 bytes outright, so a row whose salt is shorter cannot be
   wrapped into it. Such a row needs a different target, or the reset path
-  below.
+  below. A row of any other shape is the same stop. The column can hold an
+  import from another system, and a split that returns two parts or four
+  carries no salt this wrapper can reuse. Survey the column for both shapes
+  before the pass writes anything. The write replaces the only copy of the
+  legacy digest, so a wrong wrap locks that user out and leaves no digest to
+  rebuild.
 - **The data-migration form is fine here** in a way the key-rotation pass
   earlier in this file is not. It depends on no key that will later be
   destroyed. The resumability argument still holds at scale. A user table large
@@ -445,7 +478,13 @@ The anti-patterns, all of which appear in real code:
   `secrets.choice` over a 62-character alphanumeric alphabet, about 5.95 bits
   per character. That makes the common 12-character call roughly 71 bits. That
   size is adequate for a filename suffix or a nonce, and short for a bearer
-  credential. Pass a longer length, or use `token_urlsafe`.
+  credential. Pass a longer length, or use `token_urlsafe`. A second argument
+  replaces that alphabet, and it is the signal to read in review. The entropy
+  is `log2(len(allowed_chars))` multiplied by the length, so
+  `get_random_string(8, "0123456789")` holds under 27 bits. Check that product
+  against the 128-bit floor. A short numeric code holds only where a bounded
+  attempt count and a short expiry carry the defense, which
+  `a07-authentication-failures.md`, "Brute force and enumeration", owns.
 - `django.core.management.utils.get_random_secret_key()` generates a
   `SECRET_KEY`. It is what `startproject` uses.
 - Password-reset and email-verification tokens should use Django's
@@ -454,9 +493,15 @@ The anti-patterns, all of which appear in real code:
   password hash and last-login timestamp. `PASSWORD_RESET_TIMEOUT` also makes
   it time-limited.
 - A long-lived API key is stored as a hash plus a short non-secret prefix for
-  lookup, never as the raw value. `a07-authentication-failures.md`, "API
-  keys", holds the full key lifecycle: prefixes, scoping, expiry, and
-  revocation.
+  lookup, never as the raw value. That hash is one pass of SHA-256, because
+  the key is 256 random bits and an attacker has nothing to guess. Do not put
+  a password KDF on that path. Argon2 on every API request multiplies the
+  memory cost above by the request rate rather than by the login rate, which
+  is the out-of-memory event above under another name. A password KDF protects
+  a
+  value a person chose, and this value is not one.
+  `a07-authentication-failures.md`, "API keys", holds the full key lifecycle:
+  prefixes, scoping, expiry, and revocation.
 
 ```python
 # Wrong: a statistical PRNG, far too little entropy, and derived from a value
@@ -562,6 +607,12 @@ def digest(value: str) -> bytes:
 if hmac.compare_digest(digest(provided_key), digest(stored_key)):
     ...
 ```
+
+`COMPARISON_KEY` is a random 32-byte value from the secret manager, and never
+`SECRET_KEY`. Generate it with `secrets.token_bytes(32)`. It hashes both sides
+of one comparison inside one process, and no digest it produces reaches
+storage. Therefore a rotation of it costs a restart rather than a data
+migration, which is the opposite of the field keys below.
 
 ## Signing and salt discipline
 
@@ -719,7 +770,13 @@ owns the primitive and the key's life around it.
   column leaks when each row was last written. Where that is sensitive, or
   where a single-pass AEAD is preferred, use `AESGCM` or `ChaCha20Poly1305`
   and own the nonce. Never reuse a nonce under one key, which for GCM is
-  catastrophic rather than merely untidy.
+  catastrophic rather than merely untidy. A random 96-bit nonce makes that a
+  counting problem rather than a coding one. NIST SP 800-38D limits one GCM
+  key to 2^32 encryptions under random nonces, so that the chance of a repeat
+  stays negligible. A DEK per row never approaches that limit. A DEK shared by
+  a tenant or a batch does. Give a shared DEK a write budget. Rotate that DEK
+  before the budget runs out. `ChaCha20Poly1305` takes a 96-bit nonce and
+  carries the same arithmetic.
 - **`MultiFernet` is the in-process model of key versioning.** It encrypts
   with the first key in the list, and it decrypts with each key in turn. Its
   `rotate()` re-encrypts an existing token under the primary key, and it
@@ -764,6 +821,7 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         last, size = options["after"], options["batch"]
+        missed = 0
         while True:
             rows = list(Patient.objects.filter(pk__gt=last).order_by("pk")[:size])
             if not rows:
@@ -772,15 +830,28 @@ class Command(BaseCommand):
                 # rotate() decrypts with whichever version applies and
                 # re-encrypts under the primary key; a row already on the
                 # primary key is unchanged in effect, which makes a re-run safe.
-                row.ssn = CIPHER.rotate(row.ssn)
-            Patient.objects.bulk_update(rows, ["ssn"])
+                # The filter repeats the value this pass read, so a row the
+                # application wrote in between matches nothing and keeps its
+                # newer ciphertext.
+                written = Patient.objects.filter(pk=row.pk, ssn=row.ssn).update(
+                    ssn=CIPHER.rotate(row.ssn)
+                )
+                if written == 0:
+                    missed += 1
             last = rows[-1].pk
-            self.stdout.write(f"completed through pk={last}")
+            self.stdout.write(f"through pk={last}, missed={missed}")
 ```
 
-The batch read and `bulk_update` overwrite a row the application changed in
-between. Use `select_for_update()` or a write-quiet window, and run the
-command again.
+A batch read and an unconditional write overwrite a row the application
+changed in between, and that user's new value is gone with no error. The
+filter on the value the pass read is what stops it. Every write produces a
+different ciphertext, so the stored value is itself the version marker this
+needs, and no extra column carries one. A miss needs no repair. The
+application encrypts with the same list, so a row it wrote during the pass
+already carries the primary key. Report the count anyway. It is the evidence
+that the pass left those rows alone rather than overwrote them. A lock over
+the whole batch is the other answer, and it blocks every writer for as long as
+the batch runs.
 
 **Package decision (7 Aug 2026):** `cryptography==50.0.0` is the recommended
 base, and `django-fernet-encrypted-fields==0.4.0` is **conditional**. The
@@ -809,6 +880,14 @@ supplies it again as a case-sensitive exact match. Thus a context bound to the
 table and row stops an attacker from unwrapping a DEK lifted out of one row
 against another.
 
+Name the column in the context as well. Two encrypted columns in one row
+otherwise share one context, and the wrapped DEK, the nonce, and the
+ciphertext move between them as a set. KMS unwraps that set, AESGCM decrypts
+it, and a value arrives in the wrong column with no error anywhere. This
+attacker is the one the pattern already assumes. Write access to the row comes
+with a stolen dump, a replica, or a database role that never reaches the
+KEK.
+
 The context also has to be **stable from the first write**. Thus you cannot
 derive it from a primary key the row does not have yet.
 
@@ -833,10 +912,16 @@ class Patient(models.Model):
     ssn_nonce = models.BinaryField()
     wrapped_dek = models.BinaryField()
 
-    def _encryption_context(self):
+    def _encryption_context(self, column):
         # Not secret, but authenticated. KMS refuses the unwrap unless decrypt
         # supplies this same dict, so the DEK is useless against another row.
-        return {"table": "accounts_patient", "row_id": str(self.pk)}
+        # The column is in it because a second encrypted column on this model
+        # would otherwise accept this row's DEK, nonce, and ciphertext.
+        return {
+            "table": "accounts_patient",
+            "column": column,
+            "row_id": str(self.pk),
+        }
 
     def set_ssn(self, ssn):
         if self.pk is None:
@@ -847,13 +932,18 @@ class Patient(models.Model):
         response = kms.generate_data_key(
             KeyId=KEK_ALIAS,
             KeySpec="AES_256",
-            EncryptionContext=self._encryption_context(),
+            EncryptionContext=self._encryption_context("ssn"),
         )
         dek = response["Plaintext"]
         nonce = os.urandom(12)
+        ciphertext = AESGCM(dek).encrypt(nonce, ssn.encode(), None)
+        # Assign after every step succeeds. A failure between the wrap and the
+        # encryption otherwise leaves the new wrapped DEK on the instance
+        # beside the previous ciphertext, and any later save of that instance
+        # makes the row unreadable.
         self.wrapped_dek = response["CiphertextBlob"]
         self.ssn_nonce = nonce
-        self.ssn_ciphertext = AESGCM(dek).encrypt(nonce, ssn.encode(), None)
+        self.ssn_ciphertext = ciphertext
 
     def get_ssn(self):
         # KeyId is optional for a symmetric KEK because KMS reads it from the
@@ -861,7 +951,7 @@ class Patient(models.Model):
         # decrypted under whatever key it happens to point at.
         dek = kms.decrypt(
             CiphertextBlob=bytes(self.wrapped_dek),
-            EncryptionContext=self._encryption_context(),
+            EncryptionContext=self._encryption_context("ssn"),
             KeyId=KEK_ALIAS,
         )["Plaintext"]
         return AESGCM(dek).decrypt(
@@ -893,11 +983,13 @@ disposition.
 `EncryptionContext` on `generate_data_key` in the same edit that writes the
 `decrypt` call. A wrapped DEK created without one can never acquire the
 binding afterwards without a re-encryption of the column. The pair works only
-if both sides carry the identical dict. Bind it to a value the row already
-has, rather than to a pk it is about to receive. Add the `wrapped_dek` column
-in the same migration as the ciphertext column, so that no row can exist
-without its key. Keep the plaintext DEK in a local rather than on the model
-instance.
+if both sides carry the identical dict. Name the table, the column, and the
+row in it. The KMS writes that context into its audit log, so bind an internal
+identifier and never an email address or another personal value. Bind it to a
+value the row already has, rather than to a pk it is about to receive. Add the
+`wrapped_dek` column in the same migration as the ciphertext column, so that
+no row can exist without its key. Keep the plaintext DEK in a local rather
+than on the model instance.
 
 ## Cryptographic agility and algorithm lifecycle
 
@@ -1073,8 +1165,9 @@ needs.
       scrypt acceptable. The parameters are chosen explicitly and benchmarked
       on production hardware, not inherited and never measured.
 - [ ] Argon2id parameters meet at least the OWASP floor of m=19 MiB, t=2, p=1.
-      The memory cost multiplied by peak concurrent logins still fits the
-      worker's real headroom.
+      The memory cost multiplied by the concurrent requests one worker process
+      accepts still fits that worker's real headroom. No password KDF runs on
+      an API-key path, where the credential is already random.
 - [ ] No password is stored under a fast hash, without a per-password salt, or
       under any reversible scheme.
 - [ ] Every bearer secret comes from a cryptographic source with at least 128
@@ -1092,11 +1185,16 @@ needs.
       are rotatable without downtime, and destroyed only after an audit shows
       no ciphertext references them.
 - [ ] Where a KMS holds the KEK, every data key is generated and unwrapped
-      under an encryption context. That context is bound to the row the key
-      belongs to. The plaintext data key lives in a local, rather than on an
-      instance, in a cache, or in a log line.
+      under an encryption context. That context names the table, the column,
+      and the row the key belongs to, and it holds no personal value, because
+      the KMS audit log records it. The plaintext data key lives in a local,
+      rather than on an instance, in a cache, or in a log line.
+- [ ] A data key shared by a tenant or a batch carries a write budget, so no
+      key passes the random-nonce limit for its AEAD.
 - [ ] Re-encryption after a key rotation exists as a chunked, resumable,
-      idempotent job rather than as an intention.
+      idempotent job rather than as an intention. It writes each row back
+      under the value it read, so a write the application made in between
+      survives.
 - [ ] Every stored ciphertext, signature, and non-password digest carries its
       algorithm identifier and key identifier as data. No reader infers either
       one from the payload or from the value's length.
@@ -1127,12 +1225,15 @@ needs.
 - [ ] A wrapped-hasher data migration carries a change of hasher *family*,
       rather than a reorder of `PASSWORD_HASHERS` alone. Dormant accounts
       therefore move too. An Argon2 target overrides `verify` as well as
-      `encode`, or every migrated login fails.
+      `encode`, or every migrated login fails. The pass surveys the column and
+      stops on a row it cannot wrap, because the write replaces the only copy
+      of the legacy digest.
 - [ ] `AUTH_PASSWORD_VALIDATORS` configured.
 - [ ] Tokens use `secrets.token_urlsafe`, `get_random_secret_key()`, or
       `PasswordResetTokenGenerator`. They do not use `get_random_string` at a
       short hand-picked length, such as the common 12 characters for a bearer
-      credential.
+      credential. A second argument that narrows the alphabet gets the same
+      check.
 - [ ] Every `Signer` / `TimestampSigner` passes a purpose-specific `salt`
       rather than accepting the default, and `unsign` passes a `max_age`.
 - [ ] Secret comparisons use `constant_time_compare` or `hmac.compare_digest`.
