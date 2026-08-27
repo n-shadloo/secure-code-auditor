@@ -35,6 +35,9 @@ owns the sink that model output or retrieved text finally reaches.
 `a06-insecure-design.md` owns which flows need a limit at all.
 `a09-logging-and-alerting.md` owns the audit record a tool call has to leave.
 
+`agent-operator-security.md` owns the opposite side of this boundary. That
+side is the access the agent itself holds, rather than the backend it calls.
+
 ## Contents
 - [Principle](#principle)
 - [Mapping to the LLM and Agentic Top 10s](#mapping-to-the-llm-and-agentic-top-10s)
