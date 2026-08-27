@@ -20,177 +20,159 @@ license: MIT
 allowed-tools: Read, Grep, Glob, Bash
 metadata:
   author: n-shadloo
-  version: 1.51.0
+  version: 1.52.0
 ---
 
 # secure-code-auditor
 
-A backend security skill. It reviews and hardens server-side code, with
-Django/DRF as the deep specialty and a general OWASP layer that applies to any
-stack. Scope is the backend: server-side code, data handling, configuration,
-and the deployment/runtime the backend owns. It does not cover browser/frontend
-concerns except where the server controls output (encoding, headers, cookies).
-Other agents (Codex, Cursor, Gemini CLI) reuse its canonical content through
+A backend security skill. It reviews server-side code, and it applies secure
+defaults while new code is written. Django and DRF are the deep specialty. A
+stack-neutral layer under them suits any backend. The scope is the backend:
+server-side code, data, configuration, and the deployment the backend owns.
+Browser and frontend concerns stay out, except where the server controls the
+output. Other agents (Codex, Cursor, Gemini CLI) reuse this content through
 `AGENTS.md`, with Claude as the primary integration.
 
 ## How the reference material is organized
 
-Everything is arranged on the **OWASP Top 10:2025 spine**. Category files and
-cross-cutting topic references have two layers:
-
-1. **Principle** — the vulnerability, why it matters, and the defense, stated
-   stack-agnostically so it is useful in any backend language.
-2. **Django & DRF implementation** — the specific settings, code patterns,
-   correct/incorrect examples, gotchas, and hardening steps. This is where the
-   depth lives.
-
-The same split names the two halves of a sub-topic checklist,
-`#### Stack-neutral` and `#### Django & DRF`. A file's final
-`## Review checklist` may stay unsplit. About half of them do, and neither form
+Everything sits on the **OWASP Top 10:2025 spine**. Each reference has two
+layers. The **principle layer** states the vulnerability and the defense in
+stack-neutral terms. The **Django & DRF layer** holds the settings, the code
+patterns, the correct and wrong examples, and the gotchas. A sub-topic
+checklist splits the same way, into `#### Stack-neutral` and `#### Django &
+DRF`. A file's final `## Review checklist` may stay unsplit, and neither form
 is a defect.
 
-Every control is stated in both grammars. The review form says what to flag,
-and the write-time form says what to write. The second is a paragraph that
-opens `**Write-time.**` directly under the control it completes, never
-collected into a list of its own. All twenty-two references that own a control
-carry at least one. The two that do not are the methodology file and the
-library index. The methodology file indexes them by generation moment, and the
-library index owns package dispositions rather than controls.
+Every control is stated in two grammars. The review form says what to flag.
+The write-time form says what to write, in a paragraph that opens
+`**Write-time.**` directly under the control it completes. Every reference
+that owns a control carries at least one. The two that do not are the
+methodology file and the library index.
 
-Load only the file(s) relevant to the concern in front of you. The tables below
-group on that spine, so the choice is two steps rather than one: pick the group,
-then the row. Where two rows could both match, the ownership rules underneath
-decide which file is authoritative.
+Load only the file for the concern in front of you. Pick the group, then the
+row. Where two rows could both match, the ownership table below decides which
+file is authoritative.
 
 ### Start here
 
 | Concern | Reference file |
 |---|---|
-| How a codebase is swept before anything is judged: the phase order together with the artifact each phase hands the next and the coverage property that closes it, the entry-point inventory across URLconf chains, routers and actions, Django Ninja, GraphQL, gRPC, Channels, Celery and beat, management commands, signals, admin, webhooks, MCP tools, and middleware, the principals and trust boundaries a Django backend actually distinguishes, source-to-sink pairing with the intervening functions retrieved rather than the path inferred from its two ends, hypothesis ordering by impact against effort to confirm, the budget rule for a tree too large to read closely — enumerate exhaustively, read selectively, and record a sampled family as sampled — the six-item gate every hypothesis discharges before it is written as a finding, each discharge resting on retrieved text rather than remembered behavior, and the disposition rule for one that fails an item, the Django and DRF patterns commonly mistaken for findings together with the question that decides each, the coverage ledger that keeps examined-and-clean apart from not-examined and is read back at each phase boundary rather than recalled, the attack chains worth searching for with the file that owns each hop, the regression harness that holds a finding closed — one test per finding stating the attack rather than the patch, proven by reintroducing the defect, and a pipeline gate that reads the bundled scanners' records because their exit code is always 0 — and the WSTG mapping at section granularity naming which of the testing guide's sections this skill covers, which it declares non-goals, and why any test identifier it cites is version-tagged | `references/01-audit-workflow.md` |
-| Method & severity model including how a race and a privacy failure are rated, the baseline-severity table that makes an ordinary finding class reproducible beside the rubric that decides the borderline one, the evidence line every finding carries, report format, the ASVS 5.0 chapter mapping with the chapters this skill treats as non-goals, mode selection, the write-time secure-default contract and the index of which file holds each generation moment's rule, what to do when a secure default conflicts with the request, the security-decisions note write-time returns instead of a findings report, and the two-mode convention every control follows | `references/00-methodology-and-severity.md` |
+| How a codebase is swept: the phase order and per-phase artifacts, the entry-point inventory (URLconf chains at their resolved prefixes, DRF routers and `@action` methods, Django Ninja, GraphQL, gRPC, Channels, Celery and beat, management commands, signals, admin, webhooks, MCP tools, middleware), principals and trust boundaries, source-to-sink pairing, hypothesis order, the budget rule for a large tree, the six-item verification gate, the cross-cutting benign-pattern catalog, the coverage ledger, attack chains, the security regression harness and scanner gating, the WSTG section mapping | `references/01-audit-workflow.md` |
+| How a finding is scored and written: the severity rubric and the baseline table under it, the confidence scale, the finding schema and its evidence line, the report structure, the ASVS 5.0 chapter mapping and its non-goals, mode selection, the standing write-time contract with its per-moment index, the conflict rule, the security-decisions note | `references/00-methodology-and-severity.md` |
 
 ### The OWASP Top 10:2025 spine
 
 | Concern | Reference file |
 |---|---|
-| **A01** Access control, IDOR/BOLA, object- & function-level authz, the generic relation whose target model the client picks by naming a content type and the check that therefore runs against nothing, URL resolution as the surface every check assumes — the unanchored pattern that matches more than its shape, the first of two matching patterns winning while the second carries the permission, and the review action of grouping resolved routes rather than reading route files, cache-mediated data leaks, SSRF and egress control, path traversal on a file read the request names, open redirect including the language switch that is one, the locale prefix redirect and the cache key that loses the request's language while `Vary` still names it, multi-tenancy, admin access | `references/a01-broken-access-control.md` |
-| **A02** DEBUG/ALLOWED_HOSTS, SECURE_*/SESSION_*/CSRF_* matrix, the `__Host-` and `__Secure-` cookie prefixes with the four settings each needs to agree with and the cookie tossing from a sibling subdomain that the strong one removes, signed cookies and the legacy salt fallback, CORS, headers, mail authentication (SPF/DKIM/DMARC alignment and rollout) with MTA-STS and TLS-RPT as the transport half, `security.txt`, CAA and dangling-DNS/subdomain takeover, `check --deploy` and what it cannot see, writing the project's own deploy-only guardrail check for the properties no framework check can know together with the identifier prefix that keeps a silencing entry from disabling it, configuration drift measured against the settings a deployed process resolved rather than against the files, and the owner, reason, and expiry every suppression carries | `references/a02-security-misconfiguration.md` |
-| **A03** Dependencies, third-party vetting/maintained-package gate, a development-only package reaching the production requirements file, pinning/hashing, `pip-audit`, EOL frameworks, migrations/data integrity, the SBOM generated from the lockfile rather than the built image and what it does not prove, the CI scan gate read as configuration rather than as a step that exists, build provenance and the consumer-side verification that makes an attestation mean anything, SLSA Build levels at claim level, and the line between what a repository audit can verify and what is confirm-with-platform | `references/a03-software-supply-chain.md` |
-| **A04** Password-hashing family and parameters, upgrade-on-login and the wrapped-hasher migration that reaches the dormant accounts it cannot, randomness and token generation, constant-time comparison, signing and per-purpose salt discipline, TLS-in-transit, data at rest, key lifecycle and envelope encryption worked against a KMS, cryptographic agility and the four-step algorithm migration whose measurement step is the one that gets skipped, post-quantum posture | `references/a04-cryptographic-failures.md` |
-| **A05** The sink inventory every other reference defers to and the method for tracing a source to it, including the stored-then-used path worked end to end, SQL/ORM injection, dictionary-expansion column aliases, GeoDjango raster band indexes and spatial-lookup raster sources, command and argument injection, template injection and XSS from server-rendered output, LDAP/directory injection, header/email injection, XML external entity injection and entity expansion named at the XML sink, and the exported CSV or workbook cell whose interpreter is a spreadsheet program on the reader's machine | `references/a05-injection.md` |
-| **A06** Which flows need a rate limit or anti-automation in the first place, the inventory of every path that moves money, credits, entitlements, or durable status — including the command, task, admin action, signal, migration, and bulk writers that never reach a view — and whether each transition's invariant is held by the database or only by Python, amount and currency binding, capture/refund/reversal as a design question, entitlement grant against revocation, algorithmic resource exhaustion and the bound every caller-controlled input needs, abuse of side-effecting actions with email/notification abuse as its worked instance, missing limits, insecure defaults | `references/a06-insecure-design.md` |
-| **A07** Human authentication: password policy from the length floor to the breached-corpus screening no built-in validator provides, the user model as an identity contract — which field is the identifier, the collation that silently decides whether two rows are one person, the one normalization every write path has to share, and what `is_active` reaches against what it leaves standing — sessions, the engine choice that decides whether a session can be revoked at all and the three calls that rotate one, JWT/SimpleJWT, OAuth2/OIDC/social login including the mix-up attack by name, API keys, brute force, MFA, passkey and WebAuthn configuration, password reset, allauth/dj-rest-auth/OAuth Toolkit, enumeration | `references/a07-authentication-failures.md` |
-| **A08** Insecure deserialization (pickle/yaml), the cache/session/fixture paths Django deserializes without being asked, Celery task-message trust and serializers, Django's built-in tasks framework and the inline execution its default backend gives an enqueue that reads as backgrounded, signed data, inbound webhook signature/timestamp/replay and event de-duplication, outbound webhook delivery controls, artifact provenance | `references/a08-integrity-and-deserialization.md` |
-| **A09** Sensitive-data leakage in logs, audit logging, lifecycle hooks/signals, alerting, log injection, forensic readiness and evidence integrity including append-only sinks and what a hash chain does and does not prove, decoy records and canary tokens as a detection control | `references/a09-logging-and-alerting.md` |
-| **A10** Fail-open vs fail-closed checks, error views and stack-trace leakage, race conditions/TOCTOU, locking vs database constraints, idempotency-key design, transaction side-effect ordering, state-transition enforcement, ReDoS | `references/a10-exceptional-conditions.md` |
+| **A01** Object- and function-level authorization, IDOR/BOLA, generic relations and the client-chosen content type, URL resolution (missing anchors, shadowed routes, `reverse()` against `resolve()`), multi-tenancy and tenant freshness, caching and authorization with the 2026 cache CVEs, SSRF and egress control, path traversal on a read the request names, open redirect, locale redirects and language negotiation, admin exposure | `references/a01-broken-access-control.md` |
+| **A02** `DEBUG` and `ALLOWED_HOSTS`, the `SECURE_*`/`SESSION_*`/`CSRF_*` matrix, `__Host-` and `__Secure-` cookie prefixes and cookie tossing, the signed-cookie legacy salt fallback, CSRF trusted origins, wildcard allowlist entries, Fetch Metadata, CORS and origin regexes, compression and BREACH, CSP, mail authentication (SPF, DKIM, DMARC, MTA-STS, TLS-RPT, `MAILERS`), CAA and dangling DNS, `security.txt`, `check --deploy` and its blind spots, project guardrail checks, configuration drift, the expiring exception | `references/a02-security-misconfiguration.md` |
+| **A03** Supported Django lines, pins and hash verification, index resolution and dependency confusion, `pip-audit`, the SBOM from the lockfile, the scan gate read as configuration, build provenance and verification, SLSA claim levels, the artifact boundary, third-party vetting, the development-only package in the production requirements file, migration and data-integrity safety | `references/a03-software-supply-chain.md` |
+| **A04** Password-hashing families and parameters, the wrapped-hasher migration for dormant accounts, peppering, randomness and token generation, constant-time comparison, signing and per-purpose salts, data in transit and at rest, key lifecycle and envelope encryption against a KMS, cryptographic agility and the four-step algorithm migration, post-quantum posture | `references/a04-cryptographic-failures.md` |
+| **A05** The sink inventory the whole skill defers to, source-to-sink tracing, SQL and the ORM escape hatches, dictionary-expansion column aliases, GeoDjango raster and spatial lookups, OS command and argument injection, template injection and server-rendered output, Markdown renderers, LDAP filters and distinguished names, header and email injection, CSV and workbook formula injection, XML external entities | `references/a05-injection.md` |
+| **A06** Which flows need a rate limit or anti-automation, the inventory of money, credit, entitlement, and status writers (commands, tasks, admin actions, signals, migrations, bulk writes), database-held invariants, amount and currency binding, capture, refund, and reversal, entitlement grant against revocation, side-effecting actions, email and notification abuse, algorithmic resource exhaustion and its per-surface bounds | `references/a06-insecure-design.md` |
+| **A07** The user model as an identity contract (identifier, normalization, collation, `is_active`), password policy and breached-corpus screening, sessions and session engines, rotation and revocation, JWT and SimpleJWT, token storage, brute force and enumeration, password reset, email change and purpose-bound tokens, MFA and TOTP seed storage, OAuth2/OIDC and social login with the mix-up attack, passkeys and WebAuthn, `REMOTE_USER` header authentication, API keys | `references/a07-authentication-failures.md` |
+| **A08** Insecure deserialization (`pickle`, `yaml`, and the cache, session, and fixture paths Django runs unasked), Celery task messages and the remote-control channel, Django's built-in tasks framework and its inline default backend, signed cookies and data, inbound webhook integrity (raw body, signature, timestamp, replay, per-provider schemes, tenant binding), outbound webhook delivery, pipeline and artifact integrity | `references/a08-integrity-and-deserialization.md` |
+| **A09** The never-log list, error-report scrubbing, the security event set, lifecycle hooks and audit guarantees, log injection and integrity, forensic readiness (append-only sinks, hash chains and their limits, clocks, correlation identifiers), decoy records and canary tokens | `references/a09-logging-and-alerting.md` |
+| **A10** Fail-open against fail-closed checks, error views and stack-trace leakage, races and TOCTOU, constraints against row locks, the `select_for_update()` failure modes, `get_or_create()`, state-transition enforcement, side effects and the commit boundary, idempotency-key design, ReDoS and regular-expression cost | `references/a10-exceptional-conditions.md` |
 
 ### Cross-cutting surfaces
 
-These span several categories, so this file groups them by the surface in front
-of you rather than by OWASP number.
+These span several categories, so this group sorts by the surface in front of
+you rather than by OWASP number.
 
 | Concern | Reference file |
 |---|---|
-| Privilege model (RBAC/ABAC/ReBAC), `ModelBackend`/DRF/admin permission behavior, default-deny + URLconf audit test, field-level authz (BOPLA), search-index and denormalized-copy leakage, authz test design, permission decay, and the joiner/mover/leaver lifecycle a provider-side disable does not finish | `references/authorization-architecture.md` |
-| Impersonation / "log in as user", django-hijack, break-glass & JIT elevation, operator audit identity | `references/privileged-access-and-impersonation.md` |
-| Where DRF runs the object check and the routes that skip it, `@action` and function-level authz (BFLA), serializer over-exposure/mass assignment (ModelForm and formset included), pagination/filter/ordering leakage, throttling mechanics and the owned atomic counter a limit that must hold needs instead, schema and browsable-API exposure, endpoint inventory and shadow routes, versioning and deprecation, bulk endpoints, unsafe DRF defaults, DRF+CSRF | `references/api-drf-specific.md` |
-| GraphQL endpoints and schemas, resolver-level authorization and nested traversal, all-fields types, query depth/alias/token/cost limits, introspection and error masking, mutation inputs and nested writes, batching, persisted queries, N+1 as resource exhaustion, Strawberry and graphene-django defaults, Django Ninja routes with no `auth=`, gRPC servicers serving every method until an interceptor is installed, protobuf message-size and recursion limits, `Any` and unknown-field handling, reflection and channelz as debug surfaces | `references/graphql-and-alternative-api-surfaces.md` |
-| Async/ASGI boundaries, sync ORM access, task/request context, WebSocket/Channels origin, authentication, authorization, and limits, subscriptions on the subscribe and publish paths | `references/async-and-channels.md` |
-| File uploads, type/content validation, safe names and storage-key design, object-storage configuration and bucket exposure, per-tenant bucket vs shared prefix, delegated upload URLs across S3 presigned POST, GCS V4 signed URLs, and Azure SAS — what each binds, what caps its size, and what it takes to withdraw one, quarantine and promotion, scan verdict caching and CDR, callback trust, SVG, image/archive bombs, size/count/quotas, metadata reflected on serve, private downloads, proxy vs signed URL, CDN caching of private objects | `references/file-uploads.md` |
-| AI agents and MCP tool surfaces, DRF viewsets republished as tools, agent tokens and audience validation, tool scope vs user permissions, model output and retrieved content as untrusted input, prompt injection reaching a backend sink, per-agent cost/concurrency limits, tool-call confirmation and audit, the entry-token mapping to the OWASP LLM Top 10 2026 and Agentic Top 10 with the entries a backend skill declares non-goals | `references/agent-and-llm-interfaces.md` |
-| The agent's own access while it does the work: the credential files it must never open and the name-by-location rule for every finding, report, commit message, and fixture it writes, the kind, scope, and life of its own repository credential, CI token, and deploy key ranked by blast radius, the per-job token permission and the federated cloud credential that replace a stored one, revocation at the end of the task, instructions arriving through repository content, a ticket, or tool output as data rather than authority, the confirmation gate on a rotation or a revocation a finding recommends, and the command, change, and cloud-action record a layer the agent cannot edit has to author | `references/agent-operator-security.md` |
-| Database roles and privilege separation, row-level security, tenant context on pooled connections, verified DB TLS, field-level encryption and blind indexes, raw-SQL isolation bypass, NoSQL/Redis injection, read-replica staleness, transaction isolation and the serialization-failure retry a raised level requires, connection exhaustion, backups and production-data copies | `references/data-layer-and-database.md` |
-| Deletion completeness and erasure, soft-delete tombstones leaking through related-object/admin/serializer/raw paths, files left after a row is deleted, retention and scheduled purges, anonymization vs pseudonymization, personal-data inventory and model-layer classification, data export/DSAR endpoints, copies in indexes, caches, history tables, and lower environments | `references/data-lifecycle-and-privacy.md` |
-| Service-to-service identity, machine-token validation (algorithm pinning, `iss`/`aud`, required claims), JWKS caching and key rotation, OAuth client credentials, mutual TLS and certificate-bound tokens, proxy-set client-certificate identity, platform workload identity, network-position-as-authentication on internal endpoints, downstream token exchange, secret storage/delivery/rotation, `SECRET_KEY` rotation, leaked-secret response | `references/service-identity-and-secrets.md` |
-| TLS/HSTS and hybrid post-quantum key exchange at the edge, Nginx, reverse-proxy & `X-Forwarded-*` trust, reading the client IP behind proxies, header ownership edge-vs-Django, debug/profiling and metrics endpoints reachable in production, Gunicorn/systemd hardening, container image posture and secrets baked into layers, static/media, cache & queue exposure | `references/deployment-and-runtime.md` |
+| The privilege model (RBAC/ABAC/ReBAC), what Django's permission layer does, `has_perm` with an object, the DRF object-hook table, admin permission hooks and custom admin views, default-deny and the URLconf audit test, field-level authorization (BOPLA), search indexes and denormalized copies, authorization test suites, permission decay, the joiner, mover, and leaver lifecycle | `references/authorization-architecture.md` |
+| Impersonation and "log in as user", django-hijack, break-glass and just-in-time elevation, the operator audit identity | `references/privileged-access-and-impersonation.md` |
+| Where DRF runs the object check and the routes that skip it, `@action` and function-level authorization (BFLA), serializer over-exposure and mass assignment (`ModelForm` and formsets included), writable relations, pagination, filter, and ordering leakage, throttling mechanics and the owned atomic counter, schema and browsable-API exposure, the endpoint inventory and shadow routes, versioning and deprecation, bulk endpoints, unsafe DRF defaults, DRF and CSRF, payment webhook bodies | `references/api-drf-specific.md` |
+| GraphQL resolver authorization and nested traversal, all-fields types, document depth, alias, token, and cost limits, introspection and error masking, mutations and nested writes, batching, persisted operations, Django Ninja routes with no `auth=`, gRPC servicers, interceptors, and protobuf limits, reflection and channelz | `references/graphql-and-alternative-api-surfaces.md` |
+| Async and ASGI boundaries, sync ORM access, request and tenant context, WebSocket origin checks, per-connection authentication and authorization, long-lived consumer limits, subscriptions on the subscribe and publish paths | `references/async-and-channels.md` |
+| File uploads from the request to the reader: type and content validation, filenames and storage keys, object-storage configuration, per-tenant buckets against shared prefixes, delegated upload URLs across S3, GCS, and Azure, quarantine and promotion, scan verdict caching and CDR, callback trust, SVG, image and archive bombs, size and quota limits, private downloads, CDN caching of private objects | `references/file-uploads.md` |
+| AI agents and MCP tool surfaces: DRF viewsets republished as tools, agent token audience validation, tool scope intersected with user permissions, model output and retrieved content as untrusted input, per-agent cost and concurrency limits, server-enforced confirmation, tool-call audit, the LLM and Agentic Top 10 mapping | `references/agent-and-llm-interfaces.md` |
+| The auditing agent's own access: the credential files it must never open, the name-by-location rule for every output it writes, the kind, scope, and life of its own repository credential, CI token, and deploy key, instructions inside content as data, the confirmation gate on a recommended rotation or revocation, the command and change record a layer the agent cannot edit has to author | `references/agent-operator-security.md` |
+| Database roles and privilege separation, row-level security, tenant context on pooled connections, verified database TLS, field-level encryption and blind indexes, raw SQL as an isolation bypass, NoSQL and Redis injection, read-replica staleness, transaction isolation and the serialization-failure retry, connection exhaustion, copies of production data | `references/data-layer-and-database.md` |
+| Deletion completeness and erasure, soft-delete tombstones and the traversals they leak through, files left after a row is deleted, retention that can be shown to have run, anonymization against pseudonymization, the personal-data inventory in the model layer, export and subject-access endpoints, audit history against erasure, lower environments | `references/data-lifecycle-and-privacy.md` |
+| Service-to-service identity: machine-token validation (algorithm pinning, `iss`, `aud`, required claims), JWKS caching and rotation, sender-constrained tokens, client-certificate identity behind a proxy, network position as authentication, downstream token exchange, secret storage and delivery, `SECRET_KEY` rotation, the leaked-secret response | `references/service-identity-and-secrets.md` |
+| TLS, HSTS, and hybrid post-quantum key exchange at the edge, the reverse proxy and `X-Forwarded-*` trust, the client IP behind proxies, header ownership, request smuggling and the parser chain, operational and development endpoints in production, Gunicorn and systemd hardening, container images and secrets in layers, static and media, cache and queue exposure | `references/deployment-and-runtime.md` |
 
 ### Package decisions
 
 | Concern | Reference file |
 |---|---|
-| Vetted security-library choices, compatibility, minimum-safe versions, conditional/existing-install-only/rejected candidates (current as of 9 Aug 2026) | `references/security-hardening-libraries.md` |
+| Vetted security-library choices, compatibility, minimum-safe floors, conditional, existing-install-only, and rejected candidates (current as of 9 Aug 2026) | `references/security-hardening-libraries.md` |
 
 ## Ownership and boundaries
 
-Overlap between these files is designed. Each contested topic below has exactly
-one owner. Every other file names the topic and points at the owner, rather
-than restates its rules. Each reference file also repeats its own half of the
-rule in its opening paragraph, which is why a row can carry the decision here.
-The reader who needs it is usually already in one of the two files. The table
-only has to send them to the right one. The three splits below the table turn
-on an axis a row would misstate, so they keep their sentence.
+Overlap between these files is designed. Each contested topic below has
+exactly one owner. Every other file names the topic and points at the owner,
+rather than restates its rules. Each reference also repeats its own half of
+the rule in its opening paragraph, which is why a row can carry the decision
+here. The three splits below the table turn on an axis a row would misstate,
+so they keep their sentences.
 
 | Contested topic | Owner | Deciding distinction |
 |---|---|---|
-| Sweeping a codebase: phase order, entry-point inventory, principals and boundaries, hypothesis ordering, the budget rule, the coverage ledger, a chain as one finding at the severity of its outcome | `references/01-audit-workflow.md` | Procedural — what gets opened, and in what order |
-| Scoring and writing a finding: severity rubric, confidence scale, finding schema, ASVS mapping, report structure, the standing write-time contract | `references/00-methodology-and-severity.md` | Evaluative — what an opened file is worth. The handoff runs one way at write-up: the ledger's not-examined lines become the limitations section, whose shape belongs here |
-| The test that holds a closed finding, and the pipeline step that runs it | `references/01-audit-workflow.md` | Procedural, and the sweep's forward half: what runs on every commit once the report is written. `references/authorization-architecture.md` still owns the authorization matrix's design, and A03 the dependency scan gate whose exit code is its own verdict |
-| A suppression, an ignore entry, or a silenced check, and the expiry it carries | `references/a02-security-misconfiguration.md` | An exception is a configuration decision wherever it is written, so one file owns the record for all four kinds; A03 keeps what a pipeline does with the scanner result being suppressed |
+| Sweeping a codebase: phase order, the entry-point inventory, principals, hypothesis order, the budget rule, the coverage ledger, a chain as one finding | `references/01-audit-workflow.md` | Procedural — what gets opened, and in what order |
+| Scoring and writing a finding: the rubric, confidence, the schema, the ASVS mapping, the report, the write-time contract | `references/00-methodology-and-severity.md` | Evaluative — what an opened file is worth. The ledger's not-examined lines become the limitations section, whose shape belongs here |
+| The test that holds a closed finding, and the pipeline step that runs it | `references/01-audit-workflow.md` | Procedural, and the sweep's forward half. `references/authorization-architecture.md` still owns the authorization matrix, and A03 the dependency scan gate |
+| A suppression, an ignore entry, or a silenced check, and its expiry | `references/a02-security-misconfiguration.md` | An exception is a configuration decision wherever it is written. A03 keeps what a pipeline does with a suppressed scanner result |
 | The per-request access-control failure | `references/a01-broken-access-control.md` | The request that reached what it should not, and how to recognize it in code |
-| The privilege model that produces it, field-level authorization, and which DRF paths invoke the object hook | `references/authorization-architecture.md` | The model rather than the failure. The bypass-path table lives only here; everything else cross-references it |
-| The identity's own lifecycle: joiner, mover, leaver, and everything a provider-side disable leaves running | `references/authorization-architecture.md` | The principal and its grants over time. A07 owns each credential's own rules, this file the event that should have ended all of them at once |
+| The privilege model behind it, field-level authorization, and which DRF paths invoke the object hook | `references/authorization-architecture.md` | The model rather than the failure. The bypass-path table lives only here |
+| The identity's own lifecycle: joiner, mover, leaver, and what a provider-side disable leaves running | `references/authorization-architecture.md` | The principal and its grants over time. A07 owns each credential's own rules |
 | The call sites where a correct model still fails to run | `references/api-drf-specific.md` | DRF routes, actions, and defaults rather than the model behind them |
-| Which view a path reaches when two patterns match it | `references/a01-broken-access-control.md` | The request that arrived at the wrong code, so the check on the other route never ran. `references/api-drf-specific.md` owns producing the route inventory; the pass that groups it by resolved path is here |
+| Which view a path reaches when two patterns match it | `references/a01-broken-access-control.md` | The request that arrived at the wrong code. `references/api-drf-specific.md` owns producing the route inventory; the pass that groups it by resolved path is here |
 | Operator privilege | `references/privileged-access-and-impersonation.md` | Impersonation and break-glass, and the accountable operator identity both have to carry |
-| Which flows need a rate limit or anti-automation in the first place | `references/a06-insecure-design.md` | The design question, never the mechanism |
-| Throttling mechanics, including the reasons a configured rate is not the effective one | `references/api-drf-specific.md` | The mechanism every other file defers to |
+| Which flows need a rate limit or anti-automation | `references/a06-insecure-design.md` | The design question, never the mechanism |
+| Throttling mechanics, and the reasons a configured rate is not the effective one | `references/api-drf-specific.md` | The mechanism every other file defers to |
 | Login lockout | `references/a07-authentication-failures.md` | The limit belonging to a human credential |
 | Per-agent cost and concurrency limits | `references/agent-and-llm-interfaces.md` | Budget per caller rather than requests per window |
 | Whether a limit holds under concurrent requests | `references/a10-exceptional-conditions.md` | Race and idempotency mechanics |
-| Algorithmic resource exhaustion: which caller-controlled inputs multiply work and need a server-enforced bound | `references/a06-insecure-design.md` | Its own table names the surface that enforces each bound and each of those files keeps its mechanics, down to A10 for the regular expression alone |
-| The injection-sink inventory for the whole skill | `references/a05-injection.md` | Exhaustive by design, so no other file keeps a partial copy. SQL, the shell, and server-side output are owned outright — with SQL, the GeoDjango raster band index and spatial-lookup raster source the ORM does not parameterize — and every other row points outward |
-| SSRF, including the cloud metadata endpoint a leaked workload credential is reached through | `references/a01-broken-access-control.md` | Absorbed into A01 in the 2025 list; every file that reaches it defers here |
-| The choice of cryptographic primitive, its parameters, and the life of a key from generation to destruction | `references/a04-cryptographic-failures.md` | The primitive, not the place it is consumed |
+| Algorithmic resource exhaustion: which inputs multiply work and need a bound | `references/a06-insecure-design.md` | Its own table names the surface that enforces each bound. Each of those files keeps its mechanics, down to A10 for the regular expression alone |
+| The injection-sink inventory for the whole skill | `references/a05-injection.md` | Exhaustive by design, so no other file keeps a partial copy. SQL, the shell, and server-side output are owned outright; every other row points outward |
+| SSRF, including the cloud metadata endpoint | `references/a01-broken-access-control.md` | Absorbed into A01 in the 2025 list; every file that reaches it defers here |
+| The choice of cryptographic primitive, its parameters, and the life of a key | `references/a04-cryptographic-failures.md` | The primitive, not the place it is consumed |
 | Where a secret lives, how it reaches the process, and how it rotates, `SECRET_KEY` included | `references/service-identity-and-secrets.md` | A02 owns the settings module that names it, and `references/deployment-and-runtime.md` how the environment is injected |
-| What happens when the expected sequence does not hold: concurrency mechanics, idempotency-key design, fail-closed error handling | `references/a10-exceptional-conditions.md` | The mechanics and the fixes. A06 keeps the inventory of flows worth attacking, and A08's event de-duplication is the same design as the idempotency key here |
-| What must be recorded and what must never be, and whether the record survives as evidence | `references/a09-logging-and-alerting.md` | The record, not the failure being recorded. Append-only sinks, sequence integrity, and decoys are here; `references/data-lifecycle-and-privacy.md` keeps the erasure obligation the retained record has to reconcile with |
-| The receiving end of cross-system trust: the inbound webhook end to end, the task message a worker will execute for anyone who can reach the broker, both task systems a project may be running and the authorization a task body has no principal to re-derive, every path that turns bytes back into live objects including the ones the framework runs without being asked | `references/a08-integrity-and-deserialization.md` | Only the integrity of what the project itself produces and consumes. A03 keeps dependency vetting, A01 the SSRF an outbound delivery worker has to satisfy, `references/deployment-and-runtime.md` broker and cache exposure, and `references/service-identity-and-secrets.md` where signing secrets live |
-| The file from the request to the reader: delegated upload URLs, the quarantine prefix and promotion, proxying a private download against signing a URL for it | `references/file-uploads.md` | A08 keeps the signature, timestamp, and replay rules a callback satisfies; A01 keeps import-from-URL SSRF and the cache-mediated leak a CDN key dropping its signing parameters is one case of; `references/data-lifecycle-and-privacy.md` keeps whether the bytes are gone, leaving here only that an already-issued signed URL outruns any erasure |
-| The database as a boundary: roles, row-level security, verified transport, encrypted columns, the isolation level, pooling | `references/data-layer-and-database.md` | The serialization-failure retry a raised level requires is here; the constraint-versus-lock choice that usually makes raising it unnecessary is A10's |
-| The record over time: deletion completeness, what a soft-delete flag fails to hide, retention, anonymization, every copy an erasure has to reach | `references/data-lifecycle-and-privacy.md` | Existence rather than access. `references/authorization-architecture.md` owns who may read a denormalized copy and A09 what must be logged; this file owns whether the copy still exists, and the log and history table as retained personal data |
-| The surface where the client composes the request, and every API surface that is not a DRF route | `references/graphql-and-alternative-api-surfaces.md` | Resolver-edge authorization, document cost, and schema exposure, plus the defaults of a Django Ninja route or a gRPC servicer that a DRF engineer will assume are present |
+| What happens when the expected sequence does not hold: concurrency, idempotency keys, fail-closed error handling | `references/a10-exceptional-conditions.md` | The mechanics and the fixes. A06 keeps the inventory of flows worth attacking. A08's event de-duplication is the same design as the idempotency key here |
+| What must be recorded, what must never be, and whether the record survives as evidence | `references/a09-logging-and-alerting.md` | The record, not the failure being recorded. `references/data-lifecycle-and-privacy.md` keeps the erasure obligation the retained record reconciles with |
+| The receiving end of cross-system trust: the inbound webhook, the task message, both task systems, every path that turns bytes back into objects | `references/a08-integrity-and-deserialization.md` | Only the integrity of what the project itself produces and consumes. A03 keeps dependency vetting, A01 the delivery worker's SSRF, `references/deployment-and-runtime.md` broker exposure, `references/service-identity-and-secrets.md` where signing secrets live |
+| The file from the request to the reader: delegated upload URLs, quarantine and promotion, proxied against signed private downloads | `references/file-uploads.md` | A08 keeps the callback's signature and replay rules. A01 keeps import-from-URL SSRF and the cache-mediated leak. `references/data-lifecycle-and-privacy.md` keeps whether the bytes are gone |
+| The database as a boundary: roles, row-level security, verified transport, encrypted columns, isolation, pooling | `references/data-layer-and-database.md` | The serialization-failure retry a raised level requires is here. The constraint-against-lock choice that usually makes raising it unnecessary is A10's |
+| The record over time: deletion completeness, soft delete, retention, anonymization, every copy an erasure has to reach | `references/data-lifecycle-and-privacy.md` | Existence rather than access. `references/authorization-architecture.md` owns who may read a denormalized copy, and A09 what must be logged |
+| The surface where the client composes the request, and every API surface that is not a DRF route | `references/graphql-and-alternative-api-surfaces.md` | Resolver-edge authorization, document cost, and schema exposure, plus Django Ninja and gRPC defaults a DRF engineer assumes are present |
 | The tool-call threat model and the MCP-specific controls | `references/agent-and-llm-interfaces.md` | What changes when the caller is a program driving the backend on someone's behalf; it restates none of the machinery it reuses |
-| Agent-operator access | `references/agent-operator-security.md` | The auditing agent's own access rather than the audited backend's surface. `references/agent-and-llm-interfaces.md` keeps the serving side, and `references/service-identity-and-secrets.md` the project's own secrets and the leak response |
-| The container image | `references/deployment-and-runtime.md` | Stops at the artifact the repository produces — base image, `USER`, `.dockerignore`, secrets baked into layers. Orchestrator enforcement is a cross-team recommendation rather than a repository finding, and where a secret comes from at run time is `references/service-identity-and-secrets.md`'s |
+| Agent-operator access | `references/agent-operator-security.md` | The auditing agent's own access rather than the audited backend's surface. `references/agent-and-llm-interfaces.md` keeps the serving side, and `references/service-identity-and-secrets.md` the project's own secrets |
+| The container image | `references/deployment-and-runtime.md` | Stops at the artifact the repository produces. Orchestrator enforcement is a cross-team recommendation, and where a secret comes from at run time is `references/service-identity-and-secrets.md`'s |
 
 **Path traversal.** The split between A01 and `references/file-uploads.md` is
-by direction rather than by file type, and it is not the read-against-write
-line it resembles. A01 owns the read whose path the request named, along with
-what Django does and does not protect there. Those flows are the report
-download, the export, and the artifact or log viewer, with no upload in them at
-all. `references/file-uploads.md` owns the name an upload brought and the key
-it landed under. It also owns the private download of a file the application
-stored. That read stays there because the application chose the path rather
-than the caller. A05's inventory row for the filesystem path points at A01 and
-names `references/file-uploads.md` for the storage-key half.
+by direction rather than by file type. A01 owns the read whose path the
+request named, with what Django does and does not protect there. Those flows
+are the report download, the export, and the artifact or log viewer, with no
+upload in them. `references/file-uploads.md` owns the name an upload brought
+and the key it landed under. It also owns the private download of a file the
+application stored, because the application chose that path. A05's inventory
+row for the filesystem path points at A01, and it names
+`references/file-uploads.md` for the storage-key half.
 
-**Configuration versus runtime.** The split is by where the setting lives
-rather than by topic, so a search by topic misroutes. A02 owns what a settings
-module or a DNS zone declares. `references/deployment-and-runtime.md` owns what
-the proxy, the process, and the image do with a request once it arrives. That
+**Configuration against runtime.** The split is by where the setting lives
+rather than by topic, so a search by topic misroutes. A02 owns what a
+settings module or a DNS zone declares. `references/deployment-and-runtime.md`
+owns what the proxy, the process, and the image do with a request. That
 includes forwarded-header trust, and the client IP that every rate limit and
-audit record depends on.
-
-A cached response splits on the same line. A01 owns whether a cached
-representation may be reused across principals.
-`references/deployment-and-runtime.md` owns the edge rule that decides what is
-cached at all, which is the half a deception attack turns on. Mail
+audit record depends on. A cached response splits on the same line. A01 owns
+whether a cached representation may be reused across principals. The
+deployment file owns the edge rule that decides what is cached at all. Mail
 authentication is A02, whether your domain can be forged, while whether your
 mailer can be driven is A06.
 
-**Human versus machine identity.** The axis holds except at the two places a
-reader actually arrives at it. A07 owns the human principal and every
-credential issued to one. That includes the API-key discipline a static service
-key still has to meet, which is a machine credential governed from the human
-file. `references/service-identity-and-secrets.md` owns the machine principal:
-mechanism choice, inbound machine-token validation, JWKS caching and rotation,
-proxy-set certificate identity, and a downstream credential obtained by
-exchange.
-
-The prohibition on a passthrough of an inbound token to that downstream service
-belongs to neither. It belongs to `references/agent-and-llm-interfaces.md`,
-alongside the tool-call threat model. A04 owns the primitives all three are
-built on.
+**Human against machine identity.** A07 owns the human principal and every
+credential issued to one. That includes the API-key discipline a static
+service key still has to meet. `references/service-identity-and-secrets.md`
+owns the machine principal: mechanism choice, inbound machine-token
+validation, JWKS caching and rotation, proxy-set certificate identity, and a
+downstream credential obtained by exchange. The prohibition on a passthrough
+of an inbound token belongs to neither. It belongs to
+`references/agent-and-llm-interfaces.md`, beside the tool-call threat model.
+A04 owns the primitives all three are built on.
 
 ## Mode selection
 
@@ -198,38 +180,35 @@ built on.
 scan, or "check" existing code. The user pastes code and asks whether it is
 safe. The user has just finished a feature and wants a look at it. Behavior:
 
-- Load `references/01-audit-workflow.md` first, before any topic file. It owns
-  the sweep: the phase order, the entry-point inventory, the principals and
-  boundaries, and the coverage ledger. The topic files answer the questions
-  that sweep generates. If you open a topic file first, you review whatever the
-  codebase made obvious.
-- Treat the codebase as **read-only**. Do not edit, refactor, or "fix in place"
-  unless the user explicitly asks you to apply fixes afterward.
-- Optionally run the bundled scripts for fast triage (see below), then read the
-  code yourself. Scripts surface indicators. They do not replace judgment.
-- Investigate before flagging. Confirm the data flow and the reachability of a
-  sink. Do not pattern-match a keyword into a finding.
+- Load `references/01-audit-workflow.md` first, before any topic file. It
+  owns the sweep, and the topic files answer the questions that sweep
+  generates. If you open a topic file first, you review whatever the codebase
+  made obvious.
+- Treat the codebase as **read-only**. Do not edit, refactor, or "fix in
+  place" unless the user explicitly asks you to apply fixes afterward.
+- Optionally run the bundled scripts for fast triage, then read the code
+  yourself. Scripts surface indicators. They do not replace judgment.
+- Investigate before you flag. Confirm the data flow and the reachability of
+  a sink. Do not pattern-match a keyword into a finding.
 - Produce a findings report in the exact format in
   `references/00-methodology-and-severity.md`. Order it by severity. Each
-  finding carries location, CWE, OWASP mapping, the evidence the finding was
+  finding carries a location, a CWE, an OWASP mapping, the evidence it was
   confirmed on, and a concrete fix. End with what you did *not* review.
 
-**Write-time.** Trigger when you generate or modify backend code for a feature.
-Behavior:
+**Write-time.** Trigger when you generate or modify backend code. Behavior:
 
-- Apply the secure defaults from the relevant category file(s) as you write.
-  Those defaults are parameterized queries, scoped querysets, explicit
-  serializer fields, correct cookie and security flags, safe deserializers, and
-  secrets from the environment. `references/00-methodology-and-severity.md`
-  holds the standing contract behind those, and the index of which file carries
-  the rule for each generation moment.
-- Prefer built-in framework mechanisms over add-ons (see the libraries file).
-- Where a secure default conflicts with what was asked for, apply the default.
-  Say so in one line that names the risk and the exact opt-out. Never downgrade
+- Apply the secure defaults from the relevant reference as you write. Those
+  defaults are parameterized queries, scoped querysets, explicit serializer
+  fields, correct cookie flags, safe deserializers, and secrets from the
+  environment. `references/00-methodology-and-severity.md` holds the standing
+  contract, and the index of which file carries each generation moment's rule.
+- Prefer built-in framework mechanisms over add-ons (see the library index).
+- Where a secure default conflicts with the request, apply the default. Say
+  so in one line that names the risk and the exact opt-out. Never downgrade
   silently, and never refuse silently.
-- Close with a short **Security decisions** note. It carries the defaults
-  applied, anything the request forced with its residual risk, and anything
-  left for the caller to do. Write-time does not produce a findings report.
+- Close with a short **Security decisions** note: the defaults applied,
+  anything the request forced with its residual risk, and anything left for
+  the caller. Write-time does not produce a findings report.
 
 **If it is ambiguous,** default to write-time guardrails while you code, and
 offer to run a review afterward.
@@ -237,9 +216,9 @@ offer to run a review afterward.
 ## Using the scripts
 
 All three scripts are read-only, stdlib-only, and make no network calls. All
-three take `--json`, which is JSON Lines in each. That is one object per line,
-consumed a record at a time rather than parsed as one document. Run them for
-triage. Always confirm what they surface by a read of the code.
+three take `--json`, which is JSON Lines in each: one object per line,
+consumed a record at a time. Run them for triage. Always confirm what they
+surface by a read of the code.
 
 - Entry-point inventory, the instrument for the workflow's first phase:
   `python scripts/entrypoint_inventory.py path/to/project --settings path/to/settings --json`
@@ -251,27 +230,22 @@ triage. Always confirm what they surface by a read of the code.
   `python scripts/dangerous_patterns.py path/to/project`
 - The same tree as JSON Lines, filtered, for a large codebase:
   `python scripts/dangerous_patterns.py path/to/project --json --min-severity MEDIUM`
-- Confirm the scanner itself before trusting a quiet result:
+- Confirm the scanner itself before you trust a quiet result:
   `python scripts/dangerous_patterns.py --selftest`
 
-The inventory enumerates the declared entry points. Those are routes at the
-full prefix their `include()` chain resolves to, routers and actions, Ninja,
-GraphQL, gRPC, Channels, Celery, commands, signals, admin, and middleware. The
-review therefore derives from the whole surface rather than from the files that
-looked interesting. The inventory also marks each HTTP-reachable row as one of
-three states. The row declares its authorization, inherits it from somewhere
-not visible there, or has none.
+The inventory enumerates the declared entry points: routes at their resolved
+prefixes, routers and actions, Ninja, GraphQL, gRPC, Channels, Celery,
+commands, signals, admin, and middleware. It marks each HTTP-reachable row
+with one of three states. The row declares its authorization, inherits it
+from somewhere not visible there, or has none.
 
 All three parse with the `ast` module rather than match lines, so a hit is a
 structural match. Parameterized SQL, `mark_safe` on a constant, and anything
 inside a docstring are not reported. Every row names the reference file that
-owns it. A `dangerous_patterns.py` hit also carries a stable rule identifier. A
-file that fails to parse is reported as unparsed rather than skipped in
-silence.
-
-Their output is a starting point for investigation, not a final report. Map
-each real issue to a category file, verify it, and report it per the
-methodology.
+owns it. A `dangerous_patterns.py` hit also carries a stable rule identifier.
+A file that fails to parse is reported as unparsed rather than skipped in
+silence. Their output is a starting point, not a final report. Map each real
+issue to a reference, verify it, and report it per the methodology.
 
 ## What proof is, and the commands that produce it
 
@@ -295,10 +269,10 @@ and the script runs. A claim without those three is not a result.
   the scanner itself before you trust a quiet result.
 
 Read `docs/architecture/GROUND-TRUTH.md` and
-`docs/architecture/DESIGN-RECORD.md` in the target project before any judgment
-that turns on scale, configuration, or topology. Treat an absent or stale
-entry as unknown, and judge against the least forgiving case. Here that case
-is a reachable path and an exposed surface.
+`docs/architecture/DESIGN-RECORD.md` in the target project before any
+judgment that turns on scale, configuration, or topology. Treat an absent or
+stale entry as unknown, and judge against the least forgiving case. Here that
+case is a reachable path and an exposed surface.
 
 Never lower a severity to shorten a report. Never mark a not-examined surface
 as examined. Never close a finding without the test that holds it closed.
@@ -306,11 +280,11 @@ as examined. Never close a finding without the test that holds it closed.
 ## Stop conditions
 
 Two stops already stand, and they stay. Review-time treats the codebase as
-read-only. `references/00-methodology-and-severity.md`, "When a secure default
-conflicts with the request" holds the firmer stop on three write-time changes.
-Those are disabled TLS verification, `pickle` on a broker or a cache other
-software reaches, and a production credential written into the repository.
-Three more apply to this skill's own actions.
+read-only. `references/00-methodology-and-severity.md`, "When a secure
+default conflicts with the request" holds the firmer stop on three write-time
+changes. Those are disabled TLS verification, `pickle` on a broker or a cache
+other software reaches, and a production credential written into the
+repository. Three more apply to this skill's own actions.
 
 - **A live credential exposure found during a sweep.** Stop the sweep at once
   and escalate with the five fields below. Do not continue the review while a
@@ -320,8 +294,8 @@ Three more apply to this skill's own actions.
   for a person. `references/agent-operator-security.md`, "The confirmation
   gate on a recommended action" owns the rule.
 - **A read that would open credential material.** Refuse it, and ask for the
-  value instead. `references/agent-operator-security.md`, "What the agent must
-  never read" owns the file set.
+  value instead. `references/agent-operator-security.md`, "What the agent
+  must never read" owns the file set.
 
 The handoff carries five fields:
 
@@ -340,8 +314,8 @@ The handoff carries five fields:
 
 - **Critical** — trivially exploitable; RCE, full auth bypass, mass data
   exposure, or financial/payment manipulation.
-- **High** — directly exploitable under realistic conditions; account takeover,
-  privilege escalation, significant data exposure.
+- **High** — directly exploitable under realistic conditions; account
+  takeover, privilege escalation, significant data exposure.
 - **Medium** — exploitable given specific conditions, or a meaningful
   defense-in-depth gap.
 - **Low** — hardening / defense-in-depth with limited direct impact.
@@ -352,9 +326,9 @@ failure that leaves personal data alive past a promised deletion is rated on
 that promise as well as on attacker value.
 
 Report findings you are ≥80% confident are real and reachable.
-`references/00-methodology-and-severity.md` holds the full rubric, the baseline
-severity table beneath it, the ASVS 5.0 chapter mapping and when to cite one,
-and the report template.
+`references/00-methodology-and-severity.md` holds the full rubric, the
+baseline severity table, the ASVS 5.0 chapter mapping, and the report
+template.
 
 ## Freshness
 
@@ -366,6 +340,6 @@ Applications 2026 and the Top 10 for Agentic Applications 2026.
 that date governs every package version claim in it.
 
 Review again at the next Django feature release, and no later than
-9 Feb 2027. Re-run the A03 dependency gate against the project's actual Python
-and Django versions on every use. That gate dates faster than the rest of the
-skill.
+9 Feb 2027. Re-run the A03 dependency gate against the project's actual
+Python and Django versions on every use. That gate dates faster than the rest
+of the skill.
