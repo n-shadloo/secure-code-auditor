@@ -72,6 +72,13 @@ text a model generated or retrieved. Validation upstream narrows what a source
 can contain. It does not make the source trusted, because the sink is where the
 interpreter assigns meaning.
 
+A source is anything that crosses the process boundary. Four of them sit
+outside the request. The first is the body of a response the application
+fetched from another system. A webhook, an identity provider, and a partner API
+all send one, and a signature on it proves only the sender. The second is the
+content of a file the application parses. The third is an environment or
+settings value, and the fourth is the output of another program.
+
 **Sinks.** Enumerate every interpreter the request can reach. The inventory
 below is that list. One location for it is the point. A reference that defers
 here relies on a complete list rather than restates a partial copy.
@@ -109,13 +116,14 @@ inventory.
 | HTML | `mark_safe()`, `SafeString`, `\|safe`, `\|safeseq`, `{% autoescape off %}`, misused `format_html`, a string handed to `HttpResponse` | autoescaped template output, or `format_html("{}", value)` | "Template injection and server-side output" |
 | Markdown | a renderer that permits raw HTML, and its rendered result handed on as trusted markup | a renderer with raw HTML off, and `nh3` over the result where rich text is the feature | "Template injection and server-side output" |
 | Template compiler | `Template(...)` or `Engine.from_string(...)` on a string the user supplied | a template file in the repository, with user data in the context | "Template injection and server-side output" |
+| Template loader | a template name a request chooses, in `render()`, `get_template()`, `render_to_string()`, or `{% include %}` with a variable | a name resolved through a server-side mapping | "Template injection and server-side output" |
 | Directory server | an LDAP filter string built by interpolation | `escape_filter_chars` on every assertion value | "Directory and LDAP injection" |
 | Response and mail headers | `response[name] = value`, `EmailMessage` header fields, `send_mail` arguments, and a value a bare `DomainNameValidator` call cleared below 6.0.7 or 5.2.16 | reject CR and LF before construction, and take the cleaning from a form or serializer field rather than from the validator | "Header and email injection" |
 | A spreadsheet reader, off the server | a cell an export writes whose value begins with `=`, `+`, `-`, `@`, a tab, or a carriage return | the value rejected where it is written, or a cell given an explicit text type — quoting is not it | "Export channels and formula injection" |
 | Log line | any value interpolated into a log message | structured fields, or control characters escaped in a formatter | `a09-logging-and-alerting.md`, "Log injection and integrity" |
 | Filesystem path | `open()`, `os.path.join(base, value)`, `pathlib` joins, and storage names taken from the client | a server-chosen identifier resolved against a fixed base, by an API that rejects an escape rather than normalizing it | `a01-broken-access-control.md`, "Path traversal"; the name and key an upload brings are in `file-uploads.md`, "Filenames and storage keys" |
 | Outbound HTTP | `requests`, `urllib`, `httpx`, `aiohttp` on a user-influenced URL | an allowlisted destination checked after DNS resolution, not a validated string | `a01-broken-access-control.md`, "SSRF" |
-| Object deserializer | `pickle.loads`, `yaml.load`, `jsonpickle`, `marshal`, the cache, session, and fixture paths Django runs without being asked, and the task message a worker turns back into arguments | a format that cannot construct objects | `a08-integrity-and-deserialization.md`, "Insecure deserialization" and "Celery and task queues" |
+| Object deserializer | `pickle.loads`, `yaml.load`, `jsonpickle`, `marshal`, the model artifact `torch.load`, `joblib.load`, or `numpy.load` with `allow_pickle=True` unpickles, the cache, session, and fixture paths Django runs without being asked, and the task message a worker turns back into arguments | a format that cannot construct objects | `a08-integrity-and-deserialization.md`, "Insecure deserialization" and "Celery and task queues" |
 | XML parser | DTDs, external entities, and entity expansion in submitted documents | a maintained parser with those features off, behind input limits | "XML / deserialization pointers" |
 
 Two grep passes make this tractable on a real codebase. Search for the sink
@@ -123,6 +131,13 @@ names above. Then search near each hit for what carries input to them:
 `request.`, `.data`, `validated_data`, `kwargs[`, `**`, `f"`, `.format(`, and
 `%`. A sink with no source that reaches it is not a finding. A source that
 reaches a sink through string construction almost always is.
+
+The word "near" fails where a project wraps its sinks. Put `subprocess.run`
+inside `utils/shell.py`, and every call site reads as `run_tool(...)`. The
+first pass then finds the wrapper with no request near it. The second pass
+finds the call sites with no sink name near them. Therefore search for the name
+of each first-party wrapper as a sink name. An import alias and a `getattr`
+dispatch hide a sink in the same way.
 
 Walk the second-order path once in full, because the grep passes above find it
 as two unrelated hits. A single stored field carries it, and that field is the
@@ -153,11 +168,10 @@ def render_nightly(report):
 ```
 
 ```python
-# Correct: the stored field is treated as the source it is, at both ends. It is
-# constrained where it is written, so the column cannot hold shell syntax in
-# the first place, and it still arrives at the sink as one argument rather than
-# as text a shell re-parses -- because the writer and the reader change on
-# different days.
+# Correct: the stored field is treated as the source it is, at both ends. The
+# validator constrains what the serializer writes, and the argument list holds
+# whatever the column already contains -- because the writer and the reader
+# change on different days, and the reader cannot see which writer ran.
 import subprocess
 
 from django.core.validators import RegexValidator
@@ -188,11 +202,27 @@ def render_nightly(report):
 ```
 
 Read the fix as two independent controls, rather than as one control applied
-twice. The validator makes the column's contents describable. The argument
+twice. The validator reaches the paths that call `full_clean()`, which are a
+form, the admin, and a serializer that DRF builds from the model. The argument
 list holds when a later migration, a management command, an admin edit, or a
 data import writes the same column without the serializer. Neither one is
 sufficient. A stored field is as tainted as its worst writer, and the worst
 writer is rarely the one in front of you.
+
+**A model validator is not a control on the column.** `Model.save()` does not
+call it. Neither does `bulk_create()`, `QuerySet.update()`, `get_or_create()`,
+a data migration, or raw SQL. Checked against Django 6.0.7 on 27 August 2026.
+Therefore never close a sink finding because the model field carries a
+`validators` argument. A `CheckConstraint` on the model is the control the
+database applies to every writer, and the sink-side control has to hold in any
+case.
+
+The worst writer can also sit outside this repository. Another service, a
+data-import job, or an operator with a database client writes the same table.
+No grep in this working tree finds any of them. Ask whether another writer
+shares the database, rather than assume this repository holds them all.
+`01-audit-workflow.md`, "Phase 0 — scope, mode, and what the repository cannot
+tell you" holds that rule.
 
 One property of the source itself breaks the trace before it reaches any sink.
 **A parameter can arrive more than once, and which value a reader sees depends
@@ -258,8 +288,11 @@ parameter twice.
       and model-generated text, before any sink is judged.
 - [ ] Each source is followed to every sink it reaches, and the construction
       that joins it to developer-written text is named in the finding.
+- [ ] A first-party wrapper around a sink is searched under its own name, so
+      that the sink and its callers are not judged as two clean halves.
 - [ ] Stored-then-used paths are traced across requests, not only within the
-      handler under review.
+      handler under review. A writer outside this repository was asked about,
+      rather than assumed absent.
 
 #### Django & DRF
 
@@ -269,6 +302,9 @@ parameter twice.
       than judged locally against a partial rule.
 - [ ] DRF `validated_data` is treated as a source: serializer validation
       constrains shape, and does not make a value safe at a sink.
+- [ ] No sink finding is closed because the model field carries a `validators`
+      argument. That validator does not reach `save()`, `bulk_create()`,
+      `QuerySet.update()`, a data migration, or raw SQL.
 - [ ] A parameter a security decision reads is read once from the `QueryDict`
       and reused by name. Thus nobody can validate one occurrence of a
       duplicated parameter and act on another.
@@ -405,13 +441,21 @@ durable fix is to never route a client-controlled identifier into them.
 double asterisk is the signature of the class above, so the call reads as the
 wrong example on sight. Client-controlled *keys* are what make this class
 dangerous, and a serializer with a declared field set supplies the keys
-itself. `validated_data` can carry only the names the serializer declared,
-whatever the request body contained.
+itself. `validated_data` can carry only the top-level names the serializer
+declared, whatever the request body contained.
 
 The deciding question is therefore where the keys come from, not where the
 values come from. A serializer with `fields = "__all__"`, a bare
 `request.data`, and a dictionary assembled from query parameters all fail it.
-A declared field set passes.
+A declared field set passes, and it closes the top-level names only.
+
+**A declared name can still hold client-authored keys.** `DictField`,
+`JSONField`, and `HStoreField` accept whatever keys the body carried, inside a
+field the serializer declared. Checked against DRF 3.17.1 on 27 August 2026.
+Therefore the carve-out applies only where every value that reaches the
+expansion is a scalar. A `filter(**validated_data["filters"])` over a declared
+`DictField` is the wrong example again, with one more level between the client
+and the call.
 
 **Write-time.** When you generate a filter, an update, or an aggregate from
 `**`-expansion, declare the serializer's `fields` explicitly in the same edit
@@ -475,9 +519,18 @@ Django leaves assignment deliberately unchanged. A `dict` assigned to a
 `RasterField` still opens a new raster, and a `str` or `Path` assigned to one
 still fetches the referenced raster. Thus an upgrade closes the lookup path
 and leaves every assignment from untrusted input exactly as dangerous as it
-was. Validate raster input yourself. The `GeometryField` form field rejects
-rasters rather than validates them. GDAL's own guidance on restricting the
-available drivers is the defense-in-depth layer under all of it.
+was. The `GeometryField` form field rejects rasters rather than validates them.
+
+The assignment therefore needs a control the project writes. The signal is a
+serializer field, a form field, or an admin form that binds a request value to
+a `RasterField`. Reject `str`, `Path`, and `dict` in that field. Accept only a
+source the server names. Then build the `GDALRaster` from that name, rather
+than from the request.
+
+Raw `bytes` are not a safe class either. They reach the same GDAL driver, and a
+staff account reaches that driver through the changelist. GDAL's own guidance
+on restricting the available drivers is the defense-in-depth layer under all of
+it.
 
 ```python
 # Wrong: the band index is spliced into the lookup path, where PostGIS raster
@@ -574,14 +627,31 @@ subprocess.run(
 )
 ```
 
+An argument list closes the shell. It does not close a program that is itself
+an interpreter. `sh -c`, `bash -c`, and `python -c` read one argument and run
+it as a program. `ssh host command` runs its argument on the far side. `find
+-exec`, `xargs`, `psql -c`, and `mysql -e` each do it for their own language.
+A call of that shape passes `shell=False`, an argument list, and `--` together,
+and it is still complete command injection.
+
+Therefore ask what the program does with each argument, rather than whether a
+shell is present. The signal is an argument position that the program parses as
+code. `-c`, `-e`, `--eval`, and a command that follows a host name are the
+common spellings. Never put an untrusted value in one of them. Where a feature
+needs a caller-named program, take the name from a server-side mapping, and
+pass the untrusted value to it as data.
+
 Bound the call as well as its arguments. Pass `timeout=`, so that a hostile
 input cannot hold a worker. Name the binary by absolute path, rather than
-inherit whatever `PATH` resolves to in the deployed environment.
+inherit whatever `PATH` resolves to in the deployed environment. The
+environment is a second argument channel, and the child reads names out of it
+that no argument list shows. Pass an explicit `env=`. Never build the
+environment from keys a request supplied.
 
 **Write-time.** When you generate a call into another program, write the
-argument list, `shell=False`, the `timeout`, the absolute path, and the `--`
-separator together. Each of them is a line a team adds after an incident
-rather than during a refactor.
+argument list, `shell=False`, the `timeout`, the absolute path, the explicit
+`env=`, and the `--` separator together. Each of them is a line a team adds
+after an incident rather than during a refactor.
 
 Apply the same discipline where there is no request in front of the code. A
 management command's parsed arguments and a data migration's inputs reach
@@ -626,6 +696,12 @@ later edit that changes what is passed, and not how it is passed.
 - Autoescaping does not cover an unquoted HTML attribute, a `javascript:` URL,
   or data injected into `<script>`. Emit JSON to a template with
   `json_script`, rather than interpolate it.
+- **A template name is an input position too.** A request that chooses the name
+  reaches every template the configured loaders can find, and it renders that
+  template with the context of the view it landed in. Django's loaders reject a
+  traversal outside their own directories, so the reach is the search path
+  rather than the filesystem. Resolve the name through a server-side mapping,
+  rather than build a path from the value.
 
 When a product genuinely requires user-authored rich HTML, use an explicit
 allowlist sanitizer, and still apply output-context encoding. `nh3==0.3.6`
@@ -640,10 +716,15 @@ preset that its constructor selects sets `html` to `True`, and `gfm-like` and
 `gfm-like2` do the same. Construct it as `MarkdownIt("js-default")`, or pass
 `{"html": False}` beside the preset the project needs.
 `mistune.create_markdown()` escapes raw HTML by default, but the module-level
-`mistune.html` renderer carries `escape=False`.
+`mistune.html` renderer carries `escape=False`. Python-Markdown has no such
+switch at all. `markdown.markdown()` passes raw HTML through, and the
+`safe_mode` argument that once limited it went away at 3.0. Checked against
+Python-Markdown 3.10.3 on 27 August 2026.
 
 Escaping is not sanitization. Where rich text is the feature, render with raw
-HTML off, and put the sanitizer above over the result. Each claim here comes
+HTML off, and put the sanitizer above over the result. Where the renderer has
+no such switch, the sanitizer over the output is the only control, and it
+becomes load-bearing rather than defense in depth. Each claim here comes
 from the project's own source, read on 20 Aug 2026.
 
 ### Commonly mistaken for a finding
@@ -652,8 +733,16 @@ from the project's own source, read on 20 Aug 2026.
 `|safe` applied to what `format_html` returned.** Both are escape-hatch
 identifiers on the list above, and both are frequently correct. A string built
 from literals the source file contains carries nothing a request authored.
-`format_html` has already escaped each of its arguments, so a mark of its
-result as safe asserts something that is by then true.
+`format_html` escapes each of its arguments through `conditional_escape`, so a
+mark of its result as safe asserts what the call already did.
+
+**`format_html` escapes an argument, unless the argument is already safe.**
+`conditional_escape` returns any value that carries `__html__` unchanged, and a
+`SafeString` carries it. Checked against Django 6.0.7 on 27 August 2026.
+Therefore a `mark_safe()` further up the call chain travels through
+`format_html` intact. The carve-out above then dismisses the `|safe` at the end
+of that chain. It holds only where no argument reached the call as a
+`SafeString`.
 
 The deciding question is whether any value in the marked string reached it
 from outside the source file. That includes a request, a model field, a
@@ -725,6 +814,10 @@ filterstr = "(uid=%s)" % ldap.filter.escape_filter_chars(username)
   around mail code does not. In both paths an unhandled rejection is a 500.
   Therefore validate before you construct, rather than rely on the exception
   as the control.
+- An HTML mail body is server-rendered output, and no autoescape reaches a body
+  built by interpolation. `send_mail(html_message=...)` and
+  `attach_alternative()` take the string as it is. Render the body from a
+  template, or build it with `format_html`.
 - A user-derived redirect target still needs the open-redirect check from A01.
   A rejection of newlines says nothing about where the `Location` points.
 - For reset, magic-link, invite and share, mailbox-flooding, and preview-fetch
@@ -732,9 +825,10 @@ filterstr = "(uid=%s)" % ldap.filter.escape_filter_chars(username)
 - **A validator that returns without a raise is not a header-safety check.**
   `DomainNameValidator` accepted values that contain newlines below 6.0.7 and
   5.2.16. That is CVE-2026-53878, fixed 7 July 2026. Ordinary Django usage was
-  never exposed. A `CharField` strips newlines before the validator runs, and
-  `HttpResponse` rejects them on the way out. Both ends held even while the
-  validator did not.
+  never exposed. A `CharField` strips the leading and trailing whitespace that
+  carried the newline, and `HttpResponse` rejects a newline on the way out.
+  Both ends held even while the validator did not. That strip reaches the edges
+  of the value only, and a CR or an LF inside it survives into `cleaned_data`.
 
   The exposure was code that called the validator directly on a raw request
   value. That code then treated the result as clean enough to build a header
@@ -746,10 +840,11 @@ filterstr = "(uid=%s)" % ldap.filter.escape_filter_chars(username)
 **Write-time.** When you generate validation for a hostname, domain, or
 address a request supplies, put it behind a form or serializer field. Do not
 call the validator on the raw value. The field's own cleaning removes the
-control characters a validator is not specified to reject, and a bare call
-skips that cleaning. Where a direct call genuinely is the right shape, reject
-CR and LF explicitly in the same function. Do not infer their absence from a
-validator that returned.
+leading and trailing whitespace a validator is not specified to reject, and a
+bare call skips that cleaning. A strip does not reach a CR or an LF inside the
+value. Therefore reject CR and LF explicitly wherever the value reaches a
+header or an address, and not only where the call is direct. Do not infer their
+absence from a validator that returned.
 
 ## Export channels and formula injection
 
@@ -818,7 +913,10 @@ misses most of it. Walk each of these:
 - a management command that writes a report to disk or to a bucket;
 - a renderer that produces CSV or TSV. DRF ships none in core, so this is the
   project's own renderer class or a third-party package. Content negotiation
-  is what makes it selectable by a query parameter or an `Accept` header;
+  is what makes it selectable by a query parameter or an `Accept` header. Where
+  that renderer sits in `DEFAULT_RENDERER_CLASSES`, every endpoint is an export
+  location, and no walk of export views finds them. Neutralize the cell in the
+  renderer itself in that case, rather than at each place that builds a row;
 - a Celery task that builds a file for later download
   (`a08-integrity-and-deserialization.md`, "Celery and task queues");
 - a subject-access export, which by construction carries free text from every
@@ -950,32 +1048,50 @@ covers that, and you should cross-check there.
 - [ ] Document-store queries validate the *shape* of input, so a client cannot
       substitute an operator object where a scalar was expected.
 - [ ] No client-controlled column names/aliases/keys into
-      `order_by/annotate/aggregate/values/filter(**...)`.
+      `order_by/annotate/aggregate/values/filter(**...)`. A declared
+      `DictField`, `JSONField`, or `HStoreField` carries client-authored keys
+      inside a declared name, and does not pass the carve-out.
 - [ ] A raster band index that reaches a PostGIS lookup is an `int` from a
       server-side set. No spatial lookup takes a `str`, `Path`, or `dict` from
-      a request rather than a value wrapped in `GDALRaster`. Spatial fields on
+      a request. A `GDALRaster` wrap over a request value is the same finding,
+      because the wrap states trust rather than creates it. A field that assigns
+      a request value to a `RasterField` rejects `str`, `Path`, and `dict`,
+      because the fix left assignment unchanged. Spatial fields on
       admin-registered models are judged as staff-reachable.
 - [ ] No `shell=True`, `os.system`, `eval`, or `exec` acts on request data.
       Argument lists pass `shell=False`, a `timeout`, and `--` ahead of any
       value a program could otherwise read as an option.
+- [ ] No untrusted value sits in an argument position the program runs as
+      code, such as after `-c` or `-e`, or after a host name. An argument list
+      does not make that call safe. The environment passed with `env=` is
+      judged as a second argument channel.
 - [ ] Management commands and data migrations hold to the same parameter and
       argument discipline as request handlers. They reach the same
       interpreters with more privilege and no request to blame.
 - [ ] Autoescaping is intact. `mark_safe`, `|safe`, and Jinja2 autoescape are
-      verified. No template is built from user input.
-- [ ] Any Markdown renderer over untrusted text has raw HTML off. Rich-text
-      output is sanitized after the render, rather than trusted from it.
+      verified. No template is built from user input, and no template name is
+      chosen by a request outside a server-side mapping.
+- [ ] No argument reaches `format_html` already marked safe, because
+      `conditional_escape` passes such an argument through unescaped.
+- [ ] Any Markdown renderer over untrusted text has raw HTML off. Where the
+      renderer carries no such switch, the sanitizer over its output is
+      present. Rich-text output is sanitized after the render, rather than
+      trusted from it.
 - [ ] LDAP filters escape every assertion value with `escape_filter_chars`.
       DNs use `escape_dn_chars`. `python-ldap` is 3.4.5 or later.
 - [ ] A value bound for a response or mail header is rejected for CR and LF
       before the header is constructed. The framework rejection afterwards is
-      not the only check. No bare validator call stands in for that rejection.
+      not the only check. No bare validator call stands in for that rejection,
+      and neither does a field strip, which reaches the edges of the value only.
+      An HTML mail body is judged as server-rendered output.
 - [ ] Every text cell an export writes is neutralized against a leading `=`,
       `+`, `-`, `@`, tab, or carriage return. The control is a rejection where
       the value is written, or an explicit cell type, and quoting does not
       count. Admin actions, report commands, CSV renderers, file-building
       tasks, and subject-access exports were all walked, rather than only the
-      endpoint that returns one.
+      endpoint that returns one. A CSV or TSV renderer in
+      `DEFAULT_RENDERER_CLASSES` makes every endpoint an export location, and
+      the neutralization then belongs in the renderer.
 - [ ] An export response sets its content type, `X-Content-Type-Options`, and
       a `Content-Disposition` filename the server chose.
 - [ ] Unneeded XML is disabled. Required XML uses a maintained parser with
