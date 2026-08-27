@@ -150,6 +150,15 @@ drive-qualified paths, `..` traversal, NUL and control characters, alternate
 path separators, links, devices, and other special entries. A sanitized display
 name is still not a safe storage path.
 
+A display name is also rendered text, and "control characters" does not reach
+the characters that change how it reads. A bidirectional override (U+202E) and
+the zero-width characters are formatting characters, so a control-character
+filter keeps them. An override before the extension reverses the tail of the
+name, and an executable presents to the reader as a document. Normalize the
+display name to NFKC, then remove the bidirectional and zero-width formatting
+characters. Keep the server's own extension separate from it, because that
+extension follows the detected type rather than the name.
+
 A key has to be **unguessable and inert**. `uuid4().hex` carries 122 bits of
 randomness, a 128-bit value with six bits fixed for version and variant. That
 settles the guessing question for any bucket that does not let the world list
@@ -250,6 +259,21 @@ and let the stored copy be a record rather than an instruction. Where a display
 name has to survive into a disposition, encode it as `filename*` rather than
 interpolate it. Treat every `*-meta-*` value as untrusted text wherever the
 code renders it.
+
+Those rules assume a response of your own to set the headers on. Two paths in
+this file have none. A delegated download URL sends the bytes from the store,
+and the promotion copy writes the served object with no reader present. On both
+of them the stored value is the value the reader receives, so the verdict
+belongs in the object rather than in a response.
+
+Set the content type, the disposition, and the cache directive on the promotion
+copy. Take each one from the server's own record, and discard what the upload
+stored. Where the provider offers the response-header overrides named above,
+sign them into a delegated read. The verdict then reaches that reader too. An
+uploader-set
+`Cache-Control` is the quiet one of the three. A shared cache in front of a
+private object stores it under that directive, and serves it to the next
+reader.
 
 **Write-time.** When you write the code that serves an upload back, pass the
 content type from the server's own record. That record holds what the file was
@@ -364,10 +388,24 @@ STORAGES = {
 }
 ```
 
+A second alias is a name, and a name isolates nothing on its own. Django
+passes each alias's `OPTIONS` to its backend as keyword arguments, and that is
+the only per-alias input the backend gets. A backend class that reads
+module-level settings therefore resolves the same bucket, the same custom
+domain, and the same signing policy under both aliases. Give the private alias
+its own values, in `OPTIONS` or as attributes on its own class. Name the
+bucket, the signing policy, and the custom domain among them. Otherwise the
+split above is reviewable rather than real, and the permanent unsigned URL
+arrives through the alias rather than through the settings file.
+
 `FILE_UPLOAD_PERMISSIONS` (`0o644` since Django 3.0) and
 `FILE_UPLOAD_DIRECTORY_PERMISSIONS` (`None`, which leaves it to the process
 umask) govern `FileSystemStorage` only. An object store ignores both, so a
-clean local-storage review says nothing about the bucket.
+clean local-storage review says nothing about the bucket. Where a private alias
+does use `FileSystemStorage`, `0o644` makes every stored file readable to every
+account on the host. The umask alone decides the directory. Set
+`file_permissions_mode` and `directory_permissions_mode` in that alias's
+`OPTIONS`, because the per-alias value wins over the global setting.
 
 Where `django-storages` is already installed, four of its S3 defaults decide
 whether a private object is private. Read them off the backend's own source
@@ -524,10 +562,23 @@ The prefix that is served must not be writable by the upload credential.
 Otherwise the client writes straight into it and steps six through eight
 decide nothing.
 
+The quarantine prefix must not be readable outside the verification tier
+either. The uploader knows that key, because the URL they were issued named it.
+An anonymous read on the bucket, or a CDN origin that covers it, therefore
+hands them a link to their own unscanned bytes on your domain. Unguessability
+answers nothing here. Keep the quarantine prefix off every public origin, and
+give the read to the verification tier alone.
+
 That state machine needs a terminal `REJECTED` state, and a sweeper for objects
 that are uploaded and never confirmed. Without one, abandoned quarantine
 objects accumulate as unreviewed content and unbilled-for storage. Where a scan
 is part of the verdict, it must be asynchronous and must fail closed.
+
+The store bounds one object, and nothing in it bounds how many. Issuance is
+therefore the only count ceiling on this path. Cap the outstanding `PENDING`
+rows per principal and per tenant, and refuse a new URL at the cap. Give the
+sweeper a lifetime longer than the slowest legitimate upload and confirmation.
+A shorter one deletes objects that are still in flight.
 
 Four failure modes let unscanned content reach a reader. The first is a scanner
 timeout treated as clean. The second is a copy to the served prefix before the
@@ -547,12 +598,22 @@ identical content uploaded twice reuses the existing verdict. A rename cannot
 launder a rejected object into a fresh scan, and two different objects can
 never share one.
 
+That last property belongs to the hash, and not every hash has it. Compute
+SHA-256 over the stored bytes yourself. Never key the cache on the S3 ETag. The
+ETag is an MD5 only for a single-part upload, MD5 is not collision-resistant,
+and a multipart ETag is a different value entirely. A chosen-prefix collision
+otherwise carries one file's clean verdict onto another, and that other file
+never reaches the scanner.
+
 A verdict is also only as good as the signatures that produced it. Record the
 engine and the signature version beside it, and treat a version advance as an
 invalidation. Otherwise content admitted before a signature existed stays
 admitted, and that window is exactly the one a novel sample occupies. A lazy
-re-scan on next access is usually enough. The requirement is that a stale
-"clean" cannot become permanent.
+re-scan on next access is enough only where every read passes the application.
+It is not, where the reader holds a delegated URL or reaches a CDN, because the
+next access never arrives. Move those objects back to the quarantine state on a
+version advance instead. The requirement is that a stale "clean" cannot become
+permanent.
 
 Where a detection gap is not tolerable at all, content disarm and
 reconstruction is the other shape of the control. CDR does not decide whether a
@@ -618,9 +679,10 @@ def presign_upload_unbounded(*, tenant_id):
 
 
 # Correct: S3 evaluates every condition below before it stores anything.
-# starts-with pins the key to this tenant's quarantine prefix even though the
-# client submits the key field itself, and content-length-range is what makes
-# the size limit real rather than expected.
+# boto3 adds the key condition itself, and a literal key makes it an exact
+# match, which is what binds this URL to one object. content-length-range is
+# what makes the size limit real rather than expected, and the trailing slash
+# is what keeps the prefix off a sibling tenant.
 def presign_upload(*, tenant_id):
     return boto3.client("s3").generate_presigned_post(
         "uploads",
@@ -635,13 +697,27 @@ def presign_upload(*, tenant_id):
     )
 ```
 
-Two mechanics of that call are easy to misread. A condition and its field are
+Three mechanics of that call are easy to misread. A condition and its field are
 separate arguments, and neither implies the other, so a `Content-Type`
 condition with no matching `Fields` entry rejects every upload. S3 also
 requires every form field the client sends to appear in the conditions. The
 exceptions are the signature, the file, the policy itself, and any `x-ignore-`
 prefixed field. A field the client can add freely is a field you did not
 constrain.
+
+The third is that `boto3` writes a key condition of its own, and the `Key`
+argument decides which one. A literal key produces an exact `{"key": ...}`
+condition, and that condition is what binds the URL to one object. A key that
+ends in `${filename}` produces a `starts-with` on the part before it instead.
+Checked against `boto3` 1.43.81 on 27 Aug 2026.
+
+That difference is the whole object-count bound on this path, because a
+presigned POST is replayable for its whole lifetime. An exact key sends every
+replay to the same object. A `${filename}` key sends each one to a new object,
+so a single short-lived URL becomes an unmetered write (CWE-770). Prefer the
+literal key. The prefix in any `starts-with` condition must also end with the
+delimiter. A condition on `quarantine/1` matches `quarantine/12/`, so that
+trailing slash is the whole of the boundary.
 
 After the upload, `head_object` returns the size and content type the store
 recorded, and verification runs against those. Read them there, never from the
@@ -821,8 +897,15 @@ For ZIP, tar, and similar archives:
   nesting depth, and processing time;
 - reject absolute/traversing names, duplicate/conflicting destinations,
   symlinks, devices, and special files;
-- resolve every destination beneath a fresh extraction root; and
+- resolve every destination beneath a fresh extraction root;
+- run every extracted entry through the format allowlist and the content
+  validation above; and
 - extract and process in a low-privilege, resource-constrained worker.
+
+An archive is a second upload channel, and each entry is an upload. An
+allowlist that admits `.zip` and rejects `.svg` still admits an `.svg` inside a
+`.zip`, unless every entry passes the gate again. Reject the whole archive when
+one entry fails.
 
 The Python `zipfile` module does not make an untrusted archive safe merely
 because it normalizes some names. Validate the policy explicitly and do not use
@@ -916,10 +999,10 @@ from django.views.decorators.cache import never_cache
 
 @never_cache
 @login_required
-def download_document(request, document_id):
+def download_document(request, public_id):
     document = get_object_or_404(
         Document.objects.visible_to(request.user),
-        pk=document_id,
+        public_id=public_id,
         status=Document.Status.APPROVED,
     )
     stream = document.file.open("rb")
@@ -936,6 +1019,12 @@ header from the filename when the caller gives no type, so a stored display
 name would choose the response's media type. The validated type is the one that
 belongs in the header, and `as_attachment=True` supplies the `attachment`
 disposition.
+
+The route takes `public_id` rather than `pk` for the reason in the principle
+above. The queryset is what authorizes, and a sequential primary key in the URL
+does not weaken it. The identifier decides the size of the next authorization
+bug: an enumerable one turns a single regression in `visible_to` into the whole
+table.
 
 ### Proxy or signed URL
 
@@ -1004,11 +1093,16 @@ versioned bucket.
 ### Stack-neutral
 
 - [ ] Accepted formats are allowlisted and checked by extension, declared type,
-      detected signature, and a complete format-aware parse.
+      detected signature, and a complete format-aware parse. Every archive
+      entry passes that same gate.
 - [ ] Client filenames never determine paths or storage keys; archive entries
       cannot escape a fresh extraction root.
 - [ ] Untrusted content is quarantined, non-executable, and served from an
       isolated origin or as a download with fixed response headers.
+- [ ] The quarantine prefix is readable only by the verification tier. The
+      promotion copy takes content type, disposition, and cache directive from
+      the server's record, and a delegated read signs the same values where
+      the provider offers the override.
 - [ ] SVG and other active formats are rejected or purpose-built sanitized,
       reserialized, and origin-isolated.
 - [ ] Request, file, decoded-content, archive, processing, concurrency, and
@@ -1021,6 +1115,9 @@ versioned bucket.
 - [ ] An object becomes reachable only after server-side verification. That
       verification re-derives size and type from the store, rather than from
       the client or the callback that announced the upload.
+- [ ] A cached verdict is keyed on a SHA-256 of the stored bytes, never on the
+      ETag. A signature-version advance reaches objects whose reads bypass the
+      application.
 - [ ] The upload state machine has a terminal rejected state and a sweeper for
       objects that were uploaded and never confirmed.
 - [ ] On S3, a bucket that takes multipart uploads carries an
@@ -1057,11 +1154,15 @@ versioned bucket.
 - [ ] File-processing workers are least-privileged and resource-bounded, and
       promotion from quarantine is explicit.
 - [ ] A distinct `STORAGES` alias separates private user content from public
-      assets, and each sensitive `FileField` names it.
+      assets, and each sensitive `FileField` names it. That alias overrides
+      bucket, signing, and custom domain in its own `OPTIONS` or class, because
+      the alias name alone shares the module-level settings.
 - [ ] `AWS_DEFAULT_ACL`, `AWS_QUERYSTRING_AUTH`, `AWS_S3_CUSTOM_DOMAIN`, and
       `AWS_S3_FILE_OVERWRITE` are read together: a custom domain with no
       CloudFront signer serves private media unsigned whatever the rest say.
 - [ ] Delegated uploads use a presigned POST with `content-length-range`
-      wherever a size limit has to be enforced rather than expected.
+      wherever a size limit has to be enforced rather than expected. The `Key`
+      is a literal, because a `${filename}` key downgrades boto3's own key
+      condition to a prefix match.
 - [ ] Django carries the CVE-2026-5766 fix (6.0.5 / 5.2.14 or later) and the
       request-body ceiling is set at the web server regardless.
