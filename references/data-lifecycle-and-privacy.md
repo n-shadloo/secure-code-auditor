@@ -135,6 +135,7 @@ queries. It does not protect the paths below, and the split is not intuitive:
 |---|---|---|
 | `comment.author` — forward FK or one-to-one | `_base_manager` | No |
 | `user.profile` — reverse one-to-one | `_base_manager` | No |
+| `prefetch_related("author")` — forward FK or reverse one-to-one | `_base_manager` | No |
 | `question.choice_set` — reverse FK, including `prefetch_related` | class of `_default_manager` | Yes |
 | `post.tags` — many-to-many, either direction | class of `_default_manager` | Yes |
 | `select_related("author")` | none — it is a SQL join | No |
@@ -159,8 +160,9 @@ class Comment(models.Model):
 # traverses User._base_manager and returns the tombstone in full, including
 # the email and name the deletion was supposed to remove.
 
-# Correct: re-apply the predicate where the object is used, and keep the
-# unfiltered manager available under a name that says what it is.
+# Correct for the flag option only: re-apply the predicate where the object
+# is used, and keep the unfiltered manager under a name that says what it is.
+# Every call site is a place to forget, so read the verdict below first.
 class User(AbstractUser):
     objects = ActiveUserManager()   # excludes deleted rows
     all_objects = models.Manager()  # every row, for admin and restore paths
@@ -187,13 +189,20 @@ admin becomes a place where staff routinely read deleted personal data. Choose
 deliberately, and make the state visible:
 
 ```python
-# Correct: staff see tombstones as tombstones, not as ordinary rows.
+# Correct: staff see tombstones as tombstones, and no change form
+# resurrects one.
 class UserAdmin(admin.ModelAdmin):
     list_display = ("email", "deleted_at")
+    readonly_fields = ("deleted_at",)
 
     def get_queryset(self, request):
         return self.model.all_objects.all()
 ```
+
+A writable `deleted_at` turns the change form into an undelete. That path runs
+no service function, so the children, the credentials, and the audit record are
+all skipped. Keep the field read-only. Put restore behind a permission-guarded
+admin action that calls the same service function the deletion calls.
 
 On the DRF side, an auto-generated `ModelSerializer` relation uses
 `Model.objects` for its writable queryset, so a client cannot select a deleted
@@ -224,6 +233,17 @@ class Meta:
     ]
 ```
 
+The partial constraint moves that failure; it does not remove it. The tombstone
+releases the address at the moment of the flag. Anyone can then register it,
+and every system keyed on that address resolves to the new account. Those
+systems are SSO claims, support tools, mailing lists, and password reset
+elsewhere. A restore of the tombstone then fails with `IntegrityError` against
+the live row.
+
+So hold the identifier for the length of the tombstone grace period. Release it
+as an explicit step of the purge. Record that release as a security event.
+State what a restore does when the identifier is already re-issued.
+
 Cascades do not run for a soft delete, because no row was deleted. `on_delete`
 never fires, children keep a live foreign key to a tombstoned parent, and
 `parent.children` returns them. Decide explicitly whether you delete,
@@ -238,8 +258,9 @@ appear in totals and exports.
 **Verdict.** Three options follow, in priority order. Where undo is a real
 requirement, hard-delete the row and move it to a dedicated archive table. The
 retained copy is then one explicit object with its own access control, instead
-of a predicate every future query must remember. Where undo is not a
-requirement, hard-delete outright.
+of a predicate every future query must remember. Give that table a retention
+period and a leg in the fan-out, or it is the tombstone problem under another
+name. Where undo is not a requirement, hard-delete outright.
 
 Use a flag only where neither option is feasible. Then use it only with a
 filtered default manager, an unfiltered base manager, and partial unique
@@ -260,9 +281,14 @@ usually attach to one of them:
   it skips an override that sets a flag or deletes a file.
 - The fast-delete path issues a single DELETE and loads no instances. Django
   only takes it when the model has no delete-signal receivers, no cascading
-  relations, and no parents. It therefore does not silently skip a signal that
-  exists, because a registered receiver disables it. It does mean that a model
-  whose cleanup lives only in an overridden `delete()` gets no cleanup at all.
+  relations, and no parents. That receiver test reads the registry of the
+  running process, so the answer differs from process to process. A receiver
+  connected from `urls.py`, a view module, or a conditional import is absent in
+  a Celery worker, a management command, and a shell. Those processes take the
+  fast path and run no cleanup, and they raise nothing. Connect every delete
+  receiver in `AppConfig.ready()`, which runs in each process that calls
+  `django.setup()`. Fast delete also means that a model whose cleanup lives
+  only in an overridden `delete()` gets no cleanup at all.
 - `_raw_delete()`, `cursor.execute()`, `TRUNCATE`, and database-level
   `ON DELETE CASCADE` bypass model methods and signals entirely. Django 6.1
   makes that last path reachable from the model definition rather than only
@@ -290,7 +316,17 @@ always a location nobody listed. Enumerate for each personal-data model:
 
 **The primary store and its shadows**
 
-- the row itself, and any soft-delete tombstone of it;
+- the row itself, any soft-delete tombstone of it, and any archive table it
+  was moved to;
+- the credentials that still authenticate as the subject: sessions, DRF tokens,
+  API keys, OAuth grants, and password-reset tokens. A tombstone and an
+  anonymized row both keep them, so a "deleted" principal keeps reading and
+  writing as ordinary authenticated traffic. DRF's `TokenAuthentication`
+  resolves the account with `select_related` and tests only `is_active`, so
+  `deleted_at` never reaches that decision.
+  `authorization-architecture.md`, "Identity lifecycle and provisioning
+  desynchronization" owns the revocation fan-out. Reuse that fan-out here
+  rather than build a second one;
 - history, versioning, or audit tables, which hold every prior value of every
   field;
 - files behind `FileField` and `ImageField` in local storage or a bucket;
@@ -330,7 +366,7 @@ Treat an erasure request as a durable object with per-target state, not as a
 function call. Record the request. Attempt each target independently and
 idempotently (idempotency design: `a10-exceptional-conditions.md`). Each
 attempt writes its outcome. The request is complete only when every target
-reports success.
+reports success, and a later pass re-reads each one and finds nothing.
 
 Anything that you cannot delete in place takes the cryptographic route instead.
 Those stores are backups, write-once storage, and append-only streams. Encrypt
@@ -341,6 +377,21 @@ That mechanism depends entirely on key isolation, because a shared key ring
 means one key destruction breaks every subject. It also depends on an auditable
 destruction. `data-layer-and-database.md`, "Field-level encryption and
 searchable lookups" owns the key management it requires.
+
+Crypto-shredding is a decision made at the first write, not at the erasure. A
+key destruction cannot reach a payload that entered a stream, an index, or a
+backup as plaintext. So decide per store, before anything writes to it, that
+the subject's fields go in encrypted. Record every store that already holds
+plaintext under an older scheme as unshreddable. Give each of those a migration
+date or a purge date instead.
+
+A key inside a restorable backup is not destroyed, because a restore of the key
+store makes the ciphertext readable again. Keep per-subject keys out of every
+dataset a restore rewrites. Read the key's state at its source before the
+target reports `DONE`. A key destruction is also irreversible, and a wrong
+subject cannot be repaired afterwards. Hold that one step behind a stated
+reversal window that the ledger records. Run every other target inside that
+window.
 
 For one erased subject, a reviewer must answer three questions from stored
 state. Those questions are which targets were attempted, when each completed,
@@ -399,35 +450,105 @@ def request_erasure(*, subject, actor, request_id):
 
 
 def erase_primary_row(erasure):
-    user = User.all_objects.get(erasure_key=erasure.subject_id)
-    for field in ("avatar", "id_document"):
-        stored = getattr(user, field)
-        if stored:
-            stored.delete(save=False)  # the row alone leaves the bytes behind
-    user.delete()
+    user = User.all_objects.filter(erasure_key=erasure.subject_id).first()
+    if user is None:
+        return  # a retry of a finished target succeeds rather than raises
+    # The parent delete destroys the foreign key that finds the children, so
+    # resolve them first. One branch per Privacy.on_erasure.
+    resolve_inbound_relations(user)
+    # Every FileField on the model, so a field added later needs no edit here.
+    stored = [
+        (getattr(user, f.name).storage, getattr(user, f.name).name)
+        for f in user._meta.local_fields
+        if isinstance(f, models.FileField) and getattr(user, f.name)
+    ]
+    # A queryset delete never calls an overridden Model.delete(). On a
+    # soft-delete model, user.delete() writes a tombstone that keeps every
+    # value the erasure had to remove.
+    User.all_objects.filter(pk=user.pk).delete()
+    # The bytes go after the row is committed as gone. A rollback after a file
+    # delete leaves a live row that points at destroyed bytes.
+    transaction.on_commit(partial(delete_stored_files, stored))
 ```
+
+Two properties of that function are load-bearing, and each one fails silently:
+
+- **Never let an erasure depend on `Model.delete()`.** A soft-delete model
+  overrides that method, so the call writes a flag and the row keeps every
+  value. The ledger then reports an erasure that destroyed nothing, and the
+  tombstone stays readable through every unfiltered path in the table above.
+  `QuerySet.delete()` does not call the override, so it is the path that ends
+  the row.
+- **Resolve every inbound relation before the parent row goes.** The
+  `referenced_by` list in the data map below is that set. A `PROTECT` child
+  raises `ProtectedError`, and the target lands in `FAILED`. A `SET_NULL`
+  child, or the database-level `DB_SET_NULL`, keeps its own personal fields and
+  loses the only key that finds it. That row is then outside every later
+  erasure, and outside `referenced_by` as well.
 
 Each target function must be safe to run twice, because retries are how a
 distributed fan-out finishes. A delete of an already-deleted search document
 must succeed rather than raise. So must an invalidation of an absent cache key,
 and a call to a processor's deletion endpoint for an unknown id. Where the
 target is the database, mark the target row `DONE` in the same transaction as
-the work. Where it is not, mark it immediately after the call.
+the work.
+
+Where the target is not the database, an accepted call is not a completed
+deletion. A processor's deletion endpoint usually queues the work, so a 200
+means accepted. Mark `DONE` on a verified absence instead. That absence is a
+read of the processor's status, or a signed callback that carries the
+processor's own deletion reference. Store that reference in the ledger. Treat
+an expired processor deadline as `FAILED` rather than as silence.
+
+Completion needs three things that a per-target flag does not give:
+
+- **A driver that survives a crash.** `transaction.on_commit` runs the callback
+  in the process that committed. A crash between that commit and the callback
+  loses the fan-out, and the request stays `PENDING` with nobody to move it.
+  Dispatch through a durable queue. Run a reconciliation job that re-drives
+  every non-terminal target.
+- **An alert for a request that stopped moving.** Retention below alerts on
+  silence, and erasure needs the same artifact. Alert on the age of the oldest
+  `PENDING` target, and on any `FAILED` one.
+- **A final pass that re-reads rather than trusts the flags.** Nothing freezes
+  the subject's writes while the fan-out runs. A profile edit, a late event, or
+  a webhook replay writes fresh data into a store that already reported `DONE`.
+  So re-run every target as a verification pass. Read the primary row last.
+  Set `completed_at` only when that pass finds nothing.
+
+An empty or short `ERASURE_TARGETS` list satisfies the completion rule with no
+work at all. Derive the list from the location inventory above. Fail the
+request at creation when a listed location has no target.
 
 Keep the subject reference opaque and separate from the user row (`subject_id`
-above). The ledger itself then does not become the last surviving copy of an
-email address. The ledger records that erasure happened, not who it happened to
-in identifiable terms.
+above). Generate `erasure_key` as a random value. Store it only on the user
+row. A key derived from an email address or a phone number fails check 1 of the
+reversibility test below. An attacker recomputes such a key over an enumerable
+domain. `ErasureTarget.detail` is free text that collects processor responses
+and database errors, and those strings carry addresses and identifiers. So
+sanitize what each target writes there.
+
+The ledger records that erasure happened, not who it happened to in
+identifiable terms. It outlives every subject in it, so give it a retention
+period and an access model of its own.
 
 A restore is a resurrection path. A backup taken before an erasure still holds
 the subject, so a restore undoes the erasure silently. The opaque subject
 reference above makes the repair possible, because it outlives the erased rows
 and still names what to remove.
 
+That repair fails when the ledger lives only in the database being restored. A
+point-in-time recovery to any instant before `requested_at` restores a dataset
+that holds no `ErasureRequest` row. The replay then enumerates nothing, reports
+success, and the subject is back with no record that it ever left. So write
+each completed erasure to a second store that no restore rewrites. Replay from
+that store. Keep only the opaque reference and the target names in it.
+
 Make the restore procedure replay every completed erasure against the restored
 data before that data serves traffic. Give point-in-time recovery the same
-replay step. Test it the concrete way: erase a fixture subject, restore
-yesterday's backup, and prove the subject stays gone.
+replay step. Test both directions the concrete way: erase a fixture subject,
+then restore a backup taken before the request and one taken after it. Prove
+the subject stays gone in each case.
 `data-layer-and-database.md`, "Copies of production data" owns the backup and
 point-in-time-recovery mechanism itself.
 
@@ -447,13 +568,15 @@ identity document, and every attachment in `MEDIA_ROOT` or the bucket. Those
 paths are often guessable, and the server delivers them without an
 authorization check.
 
-The guarantee comes from an explicit `FieldFile.delete(save=False)` inside the
-erasure fan-out, where the ledger records its success. For files that no field
-references, a storage-level delete does the same. Signal-based cleanup packages
-are a convenience for ordinary deletes, not an erasure guarantee. They bind to
-model signals, so raw SQL, `_raw_delete()`, `TRUNCATE`, and database-level
-cascades bypass them entirely. File deletion must also reconcile with
-transaction rollback, so that a rolled-back delete does not destroy a live
+The guarantee comes from an explicit file delete inside the erasure fan-out,
+where the ledger records its success. `FieldFile.delete(save=False)` is that
+call while the row is still live. Where the row goes first, hold the storage
+and the name, and call the storage delete instead. A file that no field
+references leaves the storage delete as the only call. Signal-based cleanup
+packages are a convenience for ordinary deletes, not an erasure guarantee. They
+bind to model signals, so raw SQL, `_raw_delete()`, `TRUNCATE`, and
+database-level cascades bypass them entirely. File deletion must also reconcile
+with transaction rollback, so that a rolled-back delete does not destroy a live
 file.
 
 Two object-store behaviors also make a delete less complete than its return
@@ -497,17 +620,31 @@ post-anonymization row and everything that still references it:
 user.email = hashlib.sha256(user.email.encode()).hexdigest() + "@example.invalid"
 user.save(update_fields=["email"])
 
-# Correct: no derivable link back to the original identity, and the
-# references that would re-identify the row are cleared in the same
-# transaction as the values.
+# Correct: no derivable link back to the original identity, the row stops
+# being a principal, and the free text that restates the identity is gone.
 with transaction.atomic():
     user.email = f"erased-{uuid4().hex}@example.invalid"
     user.full_name = ""
     user.phone = ""
     user.date_of_birth = None
-    user.save(update_fields=["email", "full_name", "phone", "date_of_birth"])
-    user.comments.update(author_display_name="", body_search_vector=None)
+    user.set_unusable_password()
+    user.is_active = False
+    user.save()  # no update_fields, so a history receiver sees every change
+    for comment in user.comments.all():
+        comment.author_display_name = ""
+        comment.body = ""  # check 5: a body restates the name the columns lost
+        comment.body_search_vector = None
+        comment.save()  # update() would skip save() and every save signal
 ```
+
+An anonymized row that keeps a usable password and `is_active = True` is still
+a live credential holder. Revoke its sessions, tokens, and keys in the same
+service function, through the fan-out the inventory above names.
+
+`QuerySet.update()` fires no save signal, so a history receiver never runs and
+the anonymization leaves no trace it can audit. It also does not reach the rows
+that receiver already wrote. Those rows hold every prior value, so the history
+table needs a leg in the fan-out of its own.
 
 A stable key may have to survive for a legitimate reason, such as a
 reconciliation of financial records. That is a decision to retain personal data
@@ -536,21 +673,50 @@ A reviewer can confirm retention only when four artifacts exist:
 ```python
 class SupportTicket(models.Model):
     RETENTION = timedelta(days=730)  # policy lives with the data
+    objects = ActiveTicketManager()  # excludes tombstones
+    all_objects = models.Manager()   # the purge has to reach them
     ...
 
 
 class Command(BaseCommand):
     def handle(self, *args, **options):
         cutoff = timezone.now() - SupportTicket.RETENTION
-        deleted, _ = SupportTicket.objects.filter(closed_at__lt=cutoff).delete()
+        # closed_at__lt never matches NULL, so a ticket nobody closed would be
+        # kept forever. The policy names its fallback for the open case.
+        stale = Q(closed_at__lt=cutoff) | Q(
+            closed_at__isnull=True, created_at__lt=cutoff
+        )
+        deleted, _ = SupportTicket.all_objects.filter(stale).delete()
+        # The run record proves that a job ran. This check proves that the rows
+        # are gone, which is the claim the policy actually makes.
+        survivors = SupportTicket.all_objects.filter(stale).count()
+        if survivors:
+            raise CommandError(f"{survivors} rows past the cutoff survived")
         # The run record is the artifact a reviewer checks; without it the
         # policy is unfalsifiable.
         RetentionRun.objects.create(
             model_label="support.SupportTicket",
+            cutoff=cutoff,
             deleted_count=deleted,
             finished_at=timezone.now(),
         )
 ```
+
+Three defects hide inside a purge predicate, and each leaves rows in place
+while the run record reports success:
+
+- **A comparison never matches NULL.** `closed_at__lt=cutoff` excludes every
+  row whose `closed_at` is NULL, so a record nobody closed is retained forever.
+  State the fallback the policy uses for the open case.
+- **The default manager hides the rows the purge exists for.** On a soft-delete
+  model, `Model.objects` excludes the tombstones. The purge that must finally
+  hard-delete them therefore reads past them. Purge from the unfiltered
+  manager.
+- **A subject-writable timestamp chooses the deletion date.** Anyone who can
+  set `closed_at` ages a record into the purge. Somebody under investigation
+  closes their own dispute and waits out the period, and the deletion looks
+  like routine policy. Take the retention timestamp from a field no subject
+  writes. Record an operator's edit of one as a security event.
 
 The anti-pattern to flag is a purge command that appears in no scheduler
 configuration, timer unit, or crontab. Such a policy exists only as an
@@ -581,7 +747,10 @@ below:
   than treat the URL as the credential. Keep it out of `Referer` headers,
   access logs, and plaintext email.
 - **The archive is itself a personal-data copy.** Private location, enforced
-  expiry, and an entry in the inventory and the erasure fan-out. The delivery
+  expiry, and an entry in the inventory and the erasure fan-out. A signed URL's
+  expiry ends new fetches and leaves the object in place, so it is not the
+  lifetime. Enforce the lifetime on the bytes, with a scheduled delete that
+  writes a run record. Invalidate the edge copy in the same step. The delivery
   mechanism is the private-download primitive in `file-uploads.md`, "Private
   downloads".
 - **Attribute operator-initiated exports.** Log the acting principal separately
@@ -647,8 +816,9 @@ dependency. The packaged options in this area are unmaintained, as
 The command that emits it is **project-side code the audited application
 carries**, not tooling a reviewer supplies. It has to run against the
 application's own app registry with its own settings loaded. Walk
-`apps.get_models()`, read the marker, and emit both halves. Those halves are
-what is classified and what is not, and a review acts on the second half.
+`apps.get_models()`, read the marker, and emit three lists. Those lists are
+what holds personal data, what declares none, and what nobody classified. A
+review acts on the third.
 
 ```python
 # Correct: the inventory is derived from the models themselves, so a model
@@ -663,13 +833,17 @@ class Command(BaseCommand):
     help = "Emit the personal-data map from the model layer."
 
     def handle(self, *args, **options):
-        data_map, unclassified = [], []
+        data_map, unclassified, declared_none = [], [], []
         for model in apps.get_models():
             privacy = getattr(model, "Privacy", None)
             personal = tuple(getattr(privacy, "personal_fields", ()))
             if not personal:
+                # Every model lands in exactly one list, so no declaration
+                # makes a model disappear from the map.
                 if privacy is None:
                     unclassified.append(model._meta.label)
+                else:
+                    declared_none.append(model._meta.label)
                 continue
             exported = tuple(getattr(privacy, "export_fields", ()))
             declared = set(personal) | set(exported)
@@ -691,15 +865,21 @@ class Command(BaseCommand):
             })
 
         self.stdout.write(json.dumps(
-            {"models": data_map, "unclassified_models": sorted(unclassified)},
+            {
+                "models": data_map,
+                "declared_no_personal_data": sorted(declared_none),
+                "unclassified_models": sorted(unclassified),
+            },
             indent=2, sort_keys=True,
         ))
 ```
 
-Three things about the shape are load-bearing. The command reports a model with
-no `Privacy` class at all as unclassified, and does not report one that
-declares an empty `personal_fields`. The difference between "nobody looked" and
-"somebody looked and found none" is the whole value of the artifact.
+Three things about the shape are load-bearing. Every model lands in exactly one
+of the three lists: a model with no `Privacy` class is unclassified, and one
+that declares an empty `personal_fields` is a stated finding of none. The
+difference between "nobody looked" and "somebody looked and found none" is the
+whole value of the artifact. A model that lands in no list is a place to hide
+one, so an empty declaration has to be named rather than skipped.
 `related_objects` gives the inbound foreign keys. Those are the paths the
 erasure fan-out has to follow, and the paths a reviewer would otherwise have to
 find by hand. `undeclared_fields` makes the write-time rule below checkable. A
@@ -707,8 +887,8 @@ field added to a classified model but absent from its declaration is the
 ordinary way personal data becomes invisible.
 
 Run it in CI and diff the output, on the same terms as any other inventory. The
-useful signal is a model or field that appears in the unclassified half between
-one release and the next.
+useful signal is a model or field that moves into the unclassified list, or
+into the declared-none list, between one release and the next.
 
 **Write-time.** When you generate a model field that holds personal data, add
 it to that model's `Privacy` declaration in the same edit. Add it to
@@ -735,12 +915,19 @@ pipeline that satisfies it follows:
 - **Preserve referential integrity deterministically.** Mask join keys with a
   per-run secret, so foreign keys still match. Generate fake display values, so
   the environment is usable without real identities.
+- **A masked extract is pseudonymized, not anonymized.** The deterministic mask
+  is a keyed hash over an enumerable domain, so it fails check 1 above.
+  Cardinality, timestamps, and the relation graph all survive it, so checks 3
+  and 4 apply as well. Run the five checks against the extract before it loads.
+  Protect and rotate the per-run secret as a production key, because it inverts
+  every join key it made.
 - **Subset rather than copy.** A referentially consistent slice of subjects and
   their related rows is smaller, faster, and a much smaller loss if it leaks.
 - **Prefer synthetic data** where realistic-but-fake values suffice; it carries
   no re-identification risk precisely because it is not derived from anyone.
 - **Treat the extract as an inventory entry** with a location, a lifetime, and
-  an owner, like any other copy.
+  an owner, like any other copy. Give it an expiry, or replay completed
+  erasures against it after each refresh.
 
 ## Review checklist
 
@@ -751,9 +938,17 @@ pipeline that satisfies it follows:
       row, history tables, files, caches, indexes, the warehouse, third-party
       processors, and backups.
 - [ ] Deletion is a fan-out with per-target completion state that a reviewer can
-      read, not a single call whose partial failure is invisible.
+      read, not a single call whose partial failure is invisible. A durable
+      driver re-drives a stalled target, an alert fires on its age, and a
+      verification pass closes the request instead of the last flag.
+- [ ] The target list is derived from the location inventory, so an absent
+      target fails the request rather than completing it silently.
+- [ ] Completed erasures are recorded outside every dataset a restore rewrites,
+      and the replay reads them from there.
 - [ ] Stores that cannot delete in place are handled by destroying a
-      per-subject key, not by asserting selective deletion from a backup.
+      per-subject key, not by asserting selective deletion from a backup. That
+      choice was made before the first write to each store, and no per-subject
+      key sits in a restorable backup.
 - [ ] Logical deletion is used for undo, never reported as erasure, and every
       tombstone has a scheduled purge or anonymization.
 - [ ] Any anonymization survives the reversibility test. There is no
@@ -761,14 +956,17 @@ pipeline that satisfies it follows:
       quasi-identifier that singles out a person. No timestamp fingerprints,
       and no identity is left in free text.
 - [ ] Retention exists as policy, scheduled job, per-run record, and an alert
-      for a job that stops running.
+      for a job that stops running. The job proves the absence itself, because
+      a run record proves only that something ran. No subject can edit the
+      timestamp that dates a record into the purge.
 - [ ] Export endpoints authorize the request and the artifact separately, and
       throttle the job. They expire the artifact, and log operator-initiated
       exports against the acting principal.
 - [ ] The audit store retains the event without retaining the identity, and
       history tables are in the retention and erasure paths.
 - [ ] Lower environments are masked or subsetted at extraction and are counted
-      as copies.
+      as copies. Masked extracts pass the reversibility test, and the masking
+      secret is held as a production key.
 
 ### Django & DRF
 
@@ -780,20 +978,31 @@ pipeline that satisfies it follows:
       Tests exercise nested DRF serializers against a deleted related object.
 - [ ] Unique constraints on soft-delete models are partial on the live
       condition, so tombstones neither block re-registration nor retain
-      identifiers indefinitely.
+      identifiers indefinitely. The released identifier is held for the grace
+      period, and a restore states what it does when that identifier is
+      re-issued.
 - [ ] `ModelAdmin.get_queryset()` states its choice explicitly and surfaces the
       deleted state rather than hiding or silently exposing tombstones.
-- [ ] Erasure of a `FileField` calls `FieldFile.delete(save=False)` or a
-      storage delete inside the fan-out. The review does not treat signal-based
-      cleanup as the guarantee.
+      `deleted_at` is read-only there, and restore is an audited action that
+      calls the deletion's own service function.
+- [ ] Erasure of the primary row never calls an overridden `Model.delete()`,
+      and it resolves every inbound relation before the row goes. A `PROTECT`
+      child raises, and a `SET_NULL` child orphans out of the fan-out's reach.
+- [ ] Erasure of a `FileField` drives its field list from the model rather than
+      from a hard-coded tuple, and destroys the bytes after the row is
+      committed as gone. The review does not treat signal-based cleanup as the
+      guarantee.
 - [ ] Cleanup does not depend only on an overridden `Model.delete()` or on
       delete signals. `QuerySet.delete()`, `_raw_delete()`, `TRUNCATE`, and
       database-level cascades each behave differently. A `ForeignKey` declared
       with Django 6.1's `DB_CASCADE`, `DB_SET_NULL`, or `DB_SET_DEFAULT` sends
-      no delete signal for the rows it removes.
+      no delete signal for the rows it removes. Delete receivers are connected
+      in `AppConfig.ready()`, so a worker or a management command cannot take
+      the fast-delete path that a web process declines.
 - [ ] Retention commands are wired into an actual schedule, and they write a
-      run record. The review checks any bulk `delete()` in them against the
-      cleanup the model needs.
+      run record. Their predicate states what happens to a NULL timestamp, and
+      reads the unfiltered manager on a soft-delete model. The review checks
+      any bulk `delete()` in them against the cleanup the model needs.
 - [ ] Personal fields are marked at the model layer so the inventory can be
       generated from the app registry rather than maintained by hand.
 - [ ] The restore procedure replays completed erasures against the restored
