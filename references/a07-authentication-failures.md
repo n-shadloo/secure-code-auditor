@@ -132,12 +132,24 @@ through `_unicode_ci_compare()`, which is NFKC plus `casefold()`. It mails
 above. A project on a case-sensitive collation therefore has a reset flow that
 finds an account the login flow will not.
 
+Override `get_users()` onto the one normalization function, and filter the
+exact column. Leave it alone, and recovery keeps a comparison the login path
+does not have. That divergence lands in the flow that gives out account
+access, and it mails a link for every row it matches.
+
 `UnicodeUsernameValidator`, the default on `AbstractUser.username`, is
 `r"^[\w.@+-]+\Z"` with `flags = 0`. Thus `\w` matches any Unicode word
 character, and a Cyrillic `аdmin` passes. `ASCIIUsernameValidator` is the same
 expression under `re.ASCII`, and it is the right choice wherever a username is
 displayed as identity. Neither one addresses confusability inside a
 mixed-script value, and a display name has no validator at all.
+
+Reject an identifier that mixes scripts at registration, unless the product
+serves a population that needs the mix. The display name is the harder half,
+because it carries no uniqueness rule, no validator, and no normalization.
+Never derive an authority claim from a name a user chose. Render a staff,
+system, or support actor from the row's own role in the template. A Cyrillic
+`Аdmin` in the database then cannot render as one in the product.
 
 **Uniqueness has to sit on the value the comparison reads.** `unique=True`
 constrains the stored bytes. Thus where the application normalizes before it
@@ -156,43 +168,66 @@ class User(AbstractBaseUser):
 ```
 
 ```python
-# Correct: one normalization function on every write path, and a constraint
-# over the same transformation. Lower() and casefold() are different
-# functions -- use the one the database can express on both sides.
+# Correct: the stored value is the normalized value, so the database compares
+# the same bytes the login lookup compares. save() carries the transformation,
+# because clean() reaches a form and reaches no serializer. The read side
+# normalizes through the same function, or the owner of alice@example.com
+# cannot log in as Alice@Example.COM.
 import unicodedata
 
 from django.contrib.auth.base_user import AbstractBaseUser, BaseUserManager
+from django.core.exceptions import ValidationError
+from django.core.validators import validate_email
 from django.db import models
-from django.db.models.functions import Lower
 
 
 def normalize_identity(value):
+    if not value:
+        raise ValidationError("This field is required.")
     value = unicodedata.normalize("NFKC", value)
-    return BaseUserManager.normalize_email(value).lower()
+    value = BaseUserManager.normalize_email(value).lower()
+    # Validate what gets stored rather than what arrived. normalize_email
+    # passes "admin" and "a@b@c.com" through unchanged, and the EmailField
+    # check runs on a form and not on save().
+    validate_email(value)
+    return value
 
 
 class UserManager(BaseUserManager):
     def create_user(self, email, password=None, **extra):
-        user = self.model(email=normalize_identity(email), **extra)
+        # save() normalizes, so this path inherits the guarantee.
+        user = self.model(email=email, **extra)
         user.set_password(password)
         user.save(using=self._db)
         return user
 
+    def _lookup_value(self, username):
+        try:
+            return normalize_identity(username)
+        except ValidationError:
+            # A malformed identifier is a failed login and not a 500. The
+            # miss also keeps ModelBackend on its dummy-hash branch.
+            raise self.model.DoesNotExist
+
+    def get_by_natural_key(self, username):
+        return self.get(email=self._lookup_value(username))
+
+    async def aget_by_natural_key(self, username):
+        return await self.aget(email=self._lookup_value(username))
+
 
 class User(AbstractBaseUser):
+    # unique=True over the stored value is the whole constraint, because the
+    # stored value is already normalized. A Lower() or a casefold() expression
+    # here is a second comparison function, and thus a second identity model.
     email = models.EmailField(unique=True)
     is_active = models.BooleanField(default=True)
     USERNAME_FIELD = "email"
     objects = UserManager()
 
-    def clean(self):
-        super().clean()
+    def save(self, *args, **kwargs):
         self.email = normalize_identity(self.email)
-
-    class Meta:
-        constraints = [
-            models.UniqueConstraint(Lower("email"), name="uniq_email_ci"),
-        ]
+        super().save(*args, **kwargs)
 ```
 
 This manager is an identity example. The password-policy rule above still
@@ -233,11 +268,16 @@ model in the first migration, even where the default would serve. Settle
 `USERNAME_FIELD` and the normalization function in that same edit. Both are
 cheap now, and you cannot add either one once foreign keys exist.
 
-Route every write of the identifier through one normalization function. That
-covers the manager, `clean()`, and any serializer or social adapter that
-creates a user. Add the database constraint over the same transformation in
-the same change. The constraint is what makes the rule true for the write path
-somebody adds later. When the model does not inherit `AbstractUser`, declare
+Route every write of the identifier through one normalization function, and
+put the call in `save()`. `clean()` reaches a form and the admin, and it
+reaches no serializer, no social adapter, and no bare `.save()`. Store the
+normalized value, and put `unique=True` on that stored column. Never express
+the transformation a second time as a database function. `Lower()` in SQL and
+`str.lower()` in Python are two functions over Unicode, and thus two identity
+models again. Normalize the submitted identifier on the read side through the
+same function. Override `get_by_natural_key()` **and** `aget_by_natural_key()`,
+because `ModelBackend.aauthenticate()` calls the second one and inherits
+nothing from the first. When the model does not inherit `AbstractUser`, declare
 `is_active` explicitly. Inherited from `AbstractBaseUser` it is a constant
 `True`, and every deactivation feature built on it appears to work.
 
@@ -313,6 +353,27 @@ expiry. The last two are the correct default rather than gaps, because the
 requirement is to *not* impose them. A project that added a character-class
 rule or an expiry job is the finding.
 
+**The no-truncation clause is a claim about the hasher, and this file is where
+the length policy is set.** `BCryptPasswordHasher` sets `digest = None`, so
+bcrypt compares the first 72 bytes and discards the rest. Django's own
+docstring says so. Two passwords that share a 72-byte prefix then both
+authenticate, while the validators and the breach check read the whole string.
+The policy and the compared secret have come apart. `BCryptSHA256PasswordHasher`
+hashes with SHA-256 first, so it carries no such limit, and neither does
+`argon2` nor `pbkdf2_sha256`. Read off the Django 6.0.7 source on 27 Aug 2026.
+A maximum length above 72 on the plain bcrypt hasher is a finding.
+`a04-cryptographic-failures.md` owns which family to select.
+
+**"A change SHALL be forced on evidence of compromise" needs a mechanism.**
+The clause above is a requirement rather than a policy statement. Put a flag on
+the user row, and read it on the authenticated request path. When it is set,
+every request routes to the change flow and reaches nothing else. Clear the
+flag in the same transaction that writes the new password. Call
+`set_unusable_password()` where the evidence covers the credential itself. The
+session and token invalidation is the one a change already performs. A flag
+that only a login template reads is not the control, because an API client
+renders no template and its token stands.
+
 The one requirement no built-in meets is **breached-corpus screening**, and no
 package currently clears the gate to provide it.
 `pwned-passwords-django==5.2.0` (6 Apr 2025, re-checked 9 Aug 2026) declares
@@ -347,38 +408,57 @@ import urllib.error
 import urllib.request
 
 from django.conf import settings
-from django.core.exceptions import ValidationError
+from django.core.exceptions import ImproperlyConfigured, ValidationError
 from django.utils.translation import gettext as _
 
 logger = logging.getLogger(__name__)
 
 
 class BreachedPasswordValidator:
+    def __init__(self):
+        self.endpoint = settings.PWNED_RANGE_ENDPOINT
+        # Assert the scheme once, at load. A typo that reads "http://" sends
+        # the prefix in cleartext to whoever is on the path.
+        if not self.endpoint.startswith("https://"):
+            raise ImproperlyConfigured("PWNED_RANGE_ENDPOINT must be https.")
+
     def validate(self, password, user=None):
         digest = hashlib.sha1(password.encode("utf-8")).hexdigest().upper()
         prefix, suffix = digest[:5], digest[5:]
         lookup = urllib.request.Request(
-            f"{settings.PWNED_RANGE_ENDPOINT}{prefix}",
+            f"{self.endpoint}{prefix}",
             headers={"Add-Padding": "true"},
         )
         try:
             with urllib.request.urlopen(lookup, timeout=2) as response:
+                # urlopen follows a redirect, and it permits an https-to-http
+                # one. Confirm where the body actually came from.
+                if not response.url.startswith(self.endpoint):
+                    raise ValueError("redirected off the configured endpoint")
                 # Cap the read: a third party controls this response body,
                 # and an unbounded read hands it a memory exhaustion.
                 body = response.read(2_000_000).decode("utf-8")
-        except (urllib.error.URLError, TimeoutError):
-            # Fail open, deliberately and visibly. Failing closed denies every
-            # password change during someone else's outage; whichever way the
-            # product decides, it gets logged rather than silently skipped.
+            breached = self._is_breached(body, suffix)
+        except (urllib.error.URLError, TimeoutError, ValueError):
+            # One exit for every failure. ValueError belongs here: it catches
+            # the malformed line, and UnicodeDecodeError subclasses it. Without
+            # it a hostile or truncated body turns every password change into a
+            # 500, which is the opposite of the posture this branch selected.
             logger.warning("breach screening unavailable", exc_info=True)
             return
+        if breached:
+            raise ValidationError(
+                _("This password has appeared in a known data breach."),
+                code="password_breached",
+            )
+
+    @staticmethod
+    def _is_breached(body, suffix):
         for line in body.splitlines():
             candidate, _sep, count = line.partition(":")
-            if candidate == suffix and int(count) > 0:
-                raise ValidationError(
-                    _("This password has appeared in a known data breach."),
-                    code="password_breached",
-                )
+            if candidate == suffix:
+                return int(count) > 0
+        return False
 
     def get_help_text(self):
         return _("Your password must not appear in a known data breach.")
@@ -411,6 +491,14 @@ prefix. The responses are not the same size.
 The fail-open branch is a decision and not a default. A closed failure is the
 stronger posture, and the right one for a high-assurance product. It also
 denies every password change during an outage nobody in the project controls.
+
+Alert on that branch, whichever way the product decided. A log line that
+nobody reads cannot be told apart from a working control. The branch is also
+reachable on purpose. An attacker who blocks the egress path turns the
+screening off for every account, and sees no failure. An attacker who gets
+this application's own address throttled at the third party does the same.
+This is the one SHALL-level check that no built-in provides, so its silent
+absence is the finding.
 SHA-1 appears here as a lookup key for the range API and nowhere else. Storage
 remains whatever `PASSWORD_HASHERS` selects.
 
@@ -445,6 +533,15 @@ it at 64 or above, and never truncate before the hash.
   `a02-security-misconfiguration.md` holds the full `SESSION_*` and `CSRF_*`
   matrix, and the setting behind each flag. A cookie-authenticated state
   change still needs CSRF protection. `SameSite` is defense in depth.
+- **A DRF login endpoint carries no CSRF protection until you add it.** Two
+  defaults meet here. `APIView.as_view()` returns `csrf_exempt(view)`, so
+  `CsrfViewMiddleware` never runs on it. `SessionAuthentication.authenticate()`
+  returns `None` for a request that carries no authenticated user, so
+  `enforce_csrf()` never runs either. Checked against the DRF 3.16.1 source on
+  27 Aug 2026. A hand-written view that calls `login()` therefore accepts a
+  cross-site POST. The attacker logs the victim into an account the attacker
+  owns, and then reads what the victim types into it. Apply `csrf_protect` to
+  the login view, or gate the flow on a one-time token the login page issues.
 - Bound the idle lifetime and the absolute lifetime for a sensitive
   application. Do not place a secret or an authorization decision in
   client-readable session data.
@@ -454,6 +551,11 @@ it at 64 or above, and never truncate before the hash.
 - Re-authenticate and require the current factor before a change to a
   password, an email, MFA, a recovery method, payout details, or other
   security-sensitive state.
+- Make the result of that ceremony a bounded artifact rather than a flag on
+  the session. A flag lasts as long as the session does, so one hijack after
+  one ceremony gives an attacker durable privilege over every sensitive
+  operation. Hold the artifact server side. Bind it to the user, to the one
+  operation, and to a short expiry, and consume it once.
 
 ## Session engines, rotation, and revocation
 
@@ -560,7 +662,10 @@ class ChangePasswordView(APIView):
 ```
 
 The endpoint also verifies the current password, and it carries the login-flow
-limits from "Brute force and enumeration".
+limits from "Brute force and enumeration". Notify the account through an
+independent channel on every change, and not on a reset alone. Without that
+notice a hijacked session changes the password in silence, and the owner
+learns of it at the next failed login.
 
 Treat log-out-everywhere as a stated requirement, rather than as a side effect
 of this behavior. A password change already delivers it. A product that needs
@@ -590,8 +695,18 @@ session the server never stored.
 - Validate the signature, the allowed algorithm, the issuer, the audience, the
   expiry, and the not-before claim. Never derive the accepted algorithm from
   an attacker-controlled header.
-- Keep access tokens short-lived. Protect refresh tokens with rotation, reuse
-  detection, or a denylist, where the threat model needs revocation.
+- Keep access tokens short-lived. The lifetime **is** the revocation delay for
+  a self-contained token, so set it against what the offboarding requirement
+  allows rather than against what is convenient. Protect refresh tokens with
+  rotation, reuse detection, or a denylist, where the threat model needs
+  revocation.
+- **Never authenticate a human principal with
+  `JWTStatelessUserAuthentication`.** It builds the principal from the claims
+  and issues no query. A disable, a suspension, a permission change, and a
+  tenancy move therefore all fail to reach the holder. Use `JWTAuthentication`
+  for a person, and leave `CHECK_USER_IS_ACTIVE` at its default of `True`. The
+  stateless class suits a machine caller whose token is short enough that the
+  expiry stands in for the read.
 - Put only stable identifiers and minimal authorization context in the claims.
   A token is a snapshot. A change to a permission, a tenancy, a suspension, or
   a key rotation can make a long-lived claim stale.
@@ -632,15 +747,40 @@ session the server never stored.
   token, or an API key in a URL. Redact authorization headers, cookies,
   callback parameters, and credentials from logs, tracing, errors, analytics,
   and support exports.
+- The authorization response is the one exception, because the code flow this
+  file requires returns `code` and `state` in the callback query string. Three
+  conditions keep it an exception. The code is single-use and short-lived. The
+  callback response carries `Referrer-Policy: no-referrer`. The log pipeline
+  redacts `code` and `state` from the request line at every hop. Without them
+  the edge logs hold live codes, and a third-party resource on the callback
+  page carries one out through `Referer`.
 
 ## Brute force and enumeration
 
 Use layered limits across the account, the normalized identifier, the network
 or device signal, and the high-value flow. Keep responses and timing uniform
 enough that the login, signup, reset, invite, and MFA endpoints do not reveal
-account existence. Monitor distributed attempts, and alert on lockout and
-credential-stuffing patterns. A hard permanent account lock lets an attacker
-deny service to a victim. Use bounded backoff, recovery, and risk signals.
+account existence. Uniform bytes are half of that. A branch that returns
+before the password hash runs answers faster, and the latency is the oracle.
+Monitor distributed attempts, and alert on lockout and credential-stuffing
+patterns. A hard permanent account lock lets an attacker deny service to a
+victim. Use bounded backoff, recovery, and risk signals.
+
+`ModelBackend` already carries the login half of that. On a miss it calls
+`UserModel().set_password(password)`, so an absent account costs the same hash
+as a present one. Read off the Django 6.0.7 source on 27 Aug 2026. A custom
+backend, or a DRF login view that looks the user up itself, returns early on
+`DoesNotExist` and drops that branch. The oracle comes back, and no test
+fails. Run the hasher on the miss in every backend you write. Equalize the
+reset path the same way, where the mail send is the work that differs.
+
+**Aggregate the network signal to a prefix.** A single address is not a
+network identity. One ordinary IPv6 allocation gives a client a /64. An
+attacker therefore uses a fresh source address for each attempt, and a
+per-address limit counts one attempt against each. Key the network layer on
+the routed prefix rather than on the address. Keep a global velocity limit
+above it that no rotation of a per-key value escapes. Treat rapid rotation
+inside one prefix as an attack signal rather than as traffic.
 
 `django-axes==8.3.1` passes the maintained-package gate for Django 6.0 login
 monitoring and lockout. Its correctness depends on the trusted-proxy and
@@ -655,9 +795,15 @@ attempt that carries no valid cookie. The owner on a known device continues to
 log in, and an unknown device gets the hard limit.
 
 Sign the cookie with `django.core.signing` under its own salt
-(`a04-cryptographic-failures.md`, "Signing and salt discipline"). Carry the
-account identifier and a version inside it. Increase the version on a
-credential change, so that an old cookie stops working.
+(`a04-cryptographic-failures.md`, "Signing and salt discipline"). A signed
+payload is readable, so carry an opaque device identifier and a version inside
+it, and never the account address. Hold the link to the account in a
+server-side device row, which is also the record that makes a revocation
+possible. Set `Secure`, `HttpOnly`, and `SameSite` on the cookie, and give it
+an expiry. Increase the version on a credential change, so that an old cookie
+stops working. Revoke the device row on a lockout event too. This cookie
+waives a limit, so whoever steals one holds the lenient guessing rate against
+the account it names until something ends it.
 
 **Write-time.** When you generate a login, signup, reset, invite, or MFA
 endpoint, return the same public response on the account-exists and
@@ -666,12 +812,25 @@ after the first credential-stuffing run. Both the oracle and the missing limit
 are properties of the first version, and neither one appears as a failing
 test.
 
-Use `django-axes` at its defaults, and settle the trusted-proxy and client-IP
-configuration in that edit. A lockout keyed on a spoofable address locks out
-whichever principal the attacker names. Two adjacent defaults belong to the
-same moment. The credential the flow issues is single-use and expiring. The
-session identifier is rotated on login and on any privilege change, so a
-session captured before the change does not survive it.
+Never leave `django-axes` at its defaults, because they contradict the
+principle above. Read off the django-axes 8.3.1 source on 27 Aug 2026:
+`AXES_FAILURE_LIMIT` is 3, `AXES_LOCKOUT_PARAMETERS` is `["ip_address"]`, and
+`AXES_COOLOFF_TIME` is `None`. A `None` cool-off is a permanent lock, and the
+library names its own message `AXES_PERMALOCK_MESSAGE`. Only an `axes_reset`
+management command ends it. Three failures from one address therefore lock
+that address out until an operator intervenes. A shared address then locks out
+every user behind it, and an attacker who changes address is never limited.
+
+Set a bounded `AXES_COOLOFF_TIME` in the same edit that installs the package.
+Name the normalized identifier in `AXES_LOCKOUT_PARAMETERS`, beside the
+network signal, so that the limit follows the account an attacker targets.
+Review `AXES_RESET_ON_SUCCESS`, which is `False`. Settle the trusted-proxy and
+client-IP configuration in that edit as well. A lockout keyed on a spoofable
+address locks out whichever principal the attacker names. Two adjacent
+defaults belong to the same moment. The credential the flow issues is
+single-use and expiring. The session identifier is rotated on login and on
+any privilege change, so a session captured before the change does not
+survive it.
 
 ## Password reset
 
@@ -686,18 +845,37 @@ session captured before the change does not survive it.
 - Confirm the new password twice. Apply the password validators. Rotate the
   sessions as the policy requires. Notify the account through an independent
   channel, and do not include the new credential.
+- **A completed reset never satisfies the second factor.** A reset proves
+  control of the recovery channel, and it proves nothing about an enrolled
+  factor. Challenge the factor before the flow issues a session or a token.
+  Otherwise whoever holds the mailbox holds the account, and every MFA control
+  in this file is reachable around rather than through. Where the factors are
+  genuinely lost, route the user to a separate recovery flow. Give that flow
+  its own delay, its own notice to the old channel, and a human review.
+- Bound the token lifetime rather than inherit it. `PASSWORD_RESET_TIMEOUT`
+  defaults to `60 * 60 * 24 * 3`, which is three days. Read off the Django
+  6.0.7 `global_settings` on 27 Aug 2026. A link stays actionable for that
+  whole window inside a forwarded mailbox or a proxy log. Set the value to
+  what the flow needs.
 
 ## Email change and purpose-bound tokens
 
 The email address is the account's recovery root, so a change of address is a
 privileged operation.
 
-- Re-authenticate before the change. Require the current password or a fresh
-  session, and require the second factor where the account has one.
+- Re-authenticate before the change. Require the current password, and require
+  the second factor where the account has one. A live session is not a
+  substitute for either one. A hijacked session is exactly what an attacker
+  holds, and it reads as fresh under any natural implementation. The address
+  is the recovery root, so a possession-only branch here hands over the whole
+  account through the reset flow afterward.
 - Send a confirmation link to the new address. The change happens on
   confirmation, never on request.
 - Notify the old address. Give that notice a revert path, and keep the path
-  valid after the change completes.
+  valid after the change completes. The completion must not end it, and a
+  short expiry must. Give the path one use and its own re-authentication.
+  Leave it unbounded, and any later control of the old mailbox repoints the
+  recovery root and takes the account.
 - Never carry the new address inside a client-held signed token. Hold the
   address on the server, keyed by the token.
 
@@ -719,12 +897,34 @@ each purpose. Give the subclass its own `key_salt`. Override
 `_make_hash_value()` to append the purpose string and the normalized target
 address. A single-use random token row with an expiry is the alternative.
 
+The subclass takes two properties with it, and neither one is per purpose.
+`check_token()` reads `settings.PASSWORD_RESET_TIMEOUT` directly, so every
+purpose shares the one lifetime and no purpose can shorten it. Single use is
+also inherited rather than implemented: the token dies because the hashed user
+state changes on completion. A purpose that changes none of that state
+therefore replays for the whole shared window. Prefer the stored token row for
+such a purpose. Consume that row atomically (`a10-exceptional-conditions.md`,
+"Races, TOCTOU, and adversarial sequencing").
+
 ## MFA
 
 - Prefer a phishing-resistant factor where the application supports one.
   Otherwise TOTP is stronger than SMS. Recovery codes are credentials.
   Generate them with a CSPRNG, display each one once, store only hashes,
   rate-limit the checks, and rotate them after use.
+- Give each recovery code at least 128 bits of entropy, or hash it with the
+  password hasher. "Store only hashes" is not the whole rule. A short code
+  under a fast digest is exhaustible from one database copy. The rate limit on
+  the endpoint does not reach a search that never calls the endpoint.
+- **Encrypt the TOTP shared secret at rest.** A seed is a standing credential
+  rather than a verifier, so a hash cannot stand in for it.
+  `django-otp==1.7.0` stores `TOTPDevice.key` as a hex `CharField`, which every
+  database copy, backup, and snapshot discloses. Read off the shipped 1.7.0
+  source on 27 Aug 2026. One read then generates a valid code for every
+  enrolled user, for as long as the enrollment lasts, and the account owner
+  sees nothing. `data-layer-and-database.md`, "Field-level encryption and
+  searchable lookups", holds the mechanism and its cost. Add the seed column
+  to the export and redaction rules in the same change.
 - Protect factor enrollment, replacement, and removal with re-authentication.
   Also require an already-trusted factor, or a carefully reviewed recovery
   flow.
@@ -753,7 +953,9 @@ access token is not proof of OIDC identity. For every login transaction:
 3. for OIDC, generate and validate a one-time `nonce`;
 4. pre-register the redirect URIs and require an exact match. Permit no
    wildcard, no suffix check, no user-controlled callback, no open redirect,
-   and no untrusted Host-derived URI;
+   and no untrusted Host-derived URI. A post-logout redirect target is a
+   redirect URI, and it takes the same exact match. An unchecked one is an
+   open redirect on the authentication domain itself;
 5. exchange the code only with the intended token endpoint over verified TLS;
 6. validate the ID-token signature with an allowed algorithm and a trusted
    key. Then validate the exact issuer, the audience or client ID, the expiry
@@ -1006,14 +1208,19 @@ controls where signed webhooks are in scope.
       is a single factor. They impose no composition rule and no periodic
       expiry. They screen the candidate against a breach corpus, rather than
       against the 20,000-entry common-password list alone.
-- [ ] The user model normalizes its identifier once, on every write path. The
-      database enforces uniqueness over the value the login comparison reads,
-      rather than over whatever the user typed.
+- [ ] The user model normalizes its identifier once, on every write path, and
+      through the same function on the read path. The database enforces
+      uniqueness over the value the login comparison reads, rather than over
+      whatever the user typed. No second case function sits in SQL. Recovery
+      resolves the same principal set that login does.
 - [ ] `is_active` is a declared field rather than the inherited constant.
       Every credential path re-reads it, or expires quickly enough to stand in
       for that read.
 - [ ] The session cookies, CSRF, rotation, idle and absolute lifetime, logout,
-      and sensitive re-authentication match the deployment architecture.
+      and sensitive re-authentication match the deployment architecture. Every
+      session-authenticated login endpoint enforces CSRF itself, because DRF
+      enforces none before the user is authenticated. Re-authentication mints
+      a bounded artifact rather than a session flag.
 - [ ] `SESSION_ENGINE` keeps a server-side record wherever revocation, forced
       logout, or an operator kill switch is a requirement. No authenticated
       application runs on `signed_cookies`.
@@ -1032,7 +1239,9 @@ controls where signed webhooks are in scope.
       explicitly justified.
 - [ ] Login, reset, signup, invite, MFA, and linking resist enumeration,
       replay, brute force, distributed automation, and attacker-induced
-      permanent lockout.
+      permanent lockout. The lockout has a bounded cool-off and a key that a
+      change of source address does not escape. Every custom backend runs the
+      password hash on a lookup miss.
 - [ ] OAuth and OIDC use code plus PKCE, exact redirects, and a bound one-time
       state and nonce. They use full ID-token validation, stable
       `(issuer, sub)` identity, and safe linking.
@@ -1045,11 +1254,14 @@ controls where signed webhooks are in scope.
       expiring, rotatable, revocable, header-only, safely logged, and followed
       by authorization.
 - [ ] MFA enrollment, removal, and recovery are protected. Recovery codes are
-      hashed and single-use. Every factor lifecycle event is audited without a
-      secret.
-- [ ] An email change re-authenticates, completes on confirmation at the new
-      address, and notifies the old one. Any purpose other than password reset
-      uses its own token generator, rather than `default_token_generator`.
+      hashed and single-use. TOTP seeds are encrypted at rest. No completed
+      password reset satisfies the second factor. Every factor lifecycle event
+      is audited without a secret.
+- [ ] An email change re-authenticates on a knowledge factor, and never on
+      session possession alone. It completes on confirmation at the new
+      address, and notifies the old one. The revert path is single-use and
+      expiring. Any purpose other than password reset uses its own token
+      generator, rather than `default_token_generator`.
 - [ ] No header carries an identity into `RemoteUserMiddleware` unless the
       proxy overwrites it and strips every inbound copy. `create_unknown_user`
       is `False`, unless the design provisions users.
