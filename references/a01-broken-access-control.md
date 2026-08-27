@@ -111,7 +111,7 @@ class DocumentViewSet(ModelViewSet):
 ```
 
 If you must expose a shared queryset, add an object permission. The generic
-path then calls that permission:
+detail, update, and destroy path then calls that permission:
 
 ```python
 class IsOwner(BasePermission):
@@ -249,13 +249,15 @@ class CommentCreateView(APIView):
 ```python
 # Correct: the type comes from a server-side allow list, the target is loaded
 # through that model's own scoped queryset, and the object check runs against
-# the row rather than against the name it arrived under. An unknown type is a
-# 404 so the response does not enumerate which types exist.
+# the row rather than against the name it arrived under. CanCommentOn
+# implements has_object_permission, so check_object_permissions can deny --
+# with IsAuthenticated alone that call authorizes nothing. An unknown type is
+# a 404 so the response does not enumerate which types exist.
 COMMENTABLE = {"article": Article, "ticket": Ticket}
 
 
 class CommentCreateView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, CanCommentOn]
 
     def post(self, request):
         model = COMMENTABLE.get(request.data.get("target_type"))
@@ -424,6 +426,14 @@ does not start the project. This section adds the duplicate-detection pass to
 that inventory. Group the rows by resolved path, and read every group with
 more than one member.
 
+The table has one precondition, and a project can remove it. A source
+inventory starts at `ROOT_URLCONF`. Django reads `request.urlconf` first where
+a middleware sets that attribute, and resolves the request against that module
+instead. `set_urlconf` moves the same table for the thread or the task, and
+`reverse()` follows it. Grep for both names before you trust the artifact.
+Where either is present, the artifact describes one branch, and every other
+branch needs its own inventory and its own duplicate pass.
+
 **Write-time.** When you generate a route, use `path()` and a converter rather
 than `re_path()`. The anchor and the character class are then properties of
 the form, and not items the author must remember.
@@ -446,9 +456,13 @@ a module included at one path from two places. The third is a legacy alias
 kept beside its replacement. The unreachable route changes nothing about who
 gets in.
 
-The deciding question is the permission class, the decorator, and the
-enclosing middleware of each candidate. Where all three agree, the finding is
-duplicated routing to remove, and not a broken control.
+The deciding question is what guards each candidate. Compare the permission
+class, the decorator, the enclosing middleware, the queryset scope, and the
+serializer. Where all five agree, the finding is duplicated routing to remove,
+and not a broken control. Where one of the five differs, the duplicate is the
+finding. Two candidates that share a permission class can still differ in the
+queryset. One sets `queryset = Model.objects.all()` while the other scopes
+`get_queryset`, and this file puts the isolation there.
 
 ## Multi-tenancy and data isolation
 
@@ -466,6 +480,14 @@ verified server-side and the claim was bound at issuance. Subdomains, path
 segments, and client-supplied headers are attacker-controllable and must be
 validated against the authenticated user's tenant memberships before use, never
 trusted alone.
+
+Trust here answers one question only. It says that the client did not author
+the value, and not that the value is still true. A session and a token both
+hold a tenant that somebody bound at an earlier moment, and a membership can
+end after that moment. Re-read the membership from the database on the
+request. Where you cache that read, give the cache a short maximum age that
+you state at the site. A removed collaborator otherwise keeps the tenant for
+the life of the session or the token.
 
 The core failure mode is **tenant resolution and object authorization running
 as separate code paths**. The code fetches the object by id, and resolves the
@@ -726,7 +748,15 @@ Any server-side fetch of a client-influenced URL (webhooks, link previews,
 image/PDF fetchers, "import from URL") is SSRF-prone; Django has no built-in
 guard for developer-initiated requests.
 
-- Allowlist destination hosts/schemes; reject everything else.
+- Allowlist destination hosts/schemes; reject everything else. State how a
+  host matches. The naive tests accept a host the list does not hold: a suffix
+  test accepts `partner.example.evil.test`, and a substring test accepts
+  `evil-partner.example`. Compare the parsed host to an entry for equality.
+  Convert the host to lower case and to its IDNA form before that comparison.
+  Pin the scheme and the port on each entry. Reject a URL that carries a
+  userinfo part, because `https://partner.example@evil.test/` has the host
+  `evil.test`. Parse with the library the HTTP client uses, so that the matcher
+  and the connection read one host.
 - Block link-local and metadata addresses (`169.254.169.254`,
   `metadata.google.internal`), loopback, and private ranges — after DNS
   resolution, and re-check on redirects. Connect to the address that you
@@ -1150,7 +1180,8 @@ and break-glass elevation are in `privileged-access-and-impersonation.md`.
       treated as a match for more than its shape.
 - [ ] Tenant resolution and object lookup are one scoped query, and not two
       independent steps. No ambient thread-local or `contextvars` tenant is in
-      use.
+      use. A session-stored or claim-stored tenant is re-checked against
+      current membership.
 - [ ] Any database-enforced isolation is a backstop behind scoped querysets.
       Its context cannot leak between pooled connections.
 - [ ] Admin/staff actions use a role check, not bare `IsAuthenticated`.
