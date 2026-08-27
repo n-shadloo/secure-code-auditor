@@ -153,6 +153,14 @@ This is the subtle one. Behind Nginx/Cloudflare:
   value. Without `django.contrib.sites`, a password-reset link is one of them.
   `ALLOWED_HOSTS` still validates the forwarded host. The trust rule is the
   same as `SECURE_PROXY_SSL_HEADER` above.
+- A CDN in front of the origin adds a hop, and it does not hide the origin. An
+  attacker finds the origin address in a certificate-transparency log, in an
+  old DNS record, or on a subdomain that points straight at it. A request sent
+  to the origin then carries whatever forwarded headers the caller wrote, and
+  it skips every rule the CDN applies. Restrict the origin to the CDN's
+  published address ranges, and count the CDN as one of the hops below. Where
+  the CDN sets its own single-value client-IP header, that header is
+  trustworthy only after the origin refuses every other source.
 
 Example Nginx snippet:
 
@@ -161,8 +169,38 @@ server_tokens off;
 proxy_set_header Host $host;
 proxy_set_header X-Forwarded-Proto $scheme;
 proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+proxy_set_header X-Forwarded-Host $host;
+proxy_set_header X-Real-IP $remote_addr;
+# An empty value removes the header, so this line deletes an inbound copy.
+proxy_set_header Forwarded "";
+proxy_set_header Client-Cert "";
+# Empty while the client presents no certificate, so one line serves both a
+# deployment with mutual TLS and a deployment that must never accept the value.
+proxy_set_header X-Forwarded-Client-Cert $ssl_client_escaped_cert;
 client_max_body_size 10m;   # cap uploads at the edge
 ```
+
+Every line after `Host` overwrites an inbound copy the client can send. The
+rules above demand each one, and a snippet that sets only `Host`,
+`X-Forwarded-Proto`, and `X-Forwarded-For` passes the rest through untouched.
+`X-Forwarded-Host` reaches `get_host()` under `USE_X_FORWARDED_HOST`, and a
+poisoned password-reset link follows. A forged client certificate is an
+authentication bypass. The client IP still comes from the hop count below,
+never from `X-Real-IP`.
+
+**Warning: one `proxy_set_header` inside a `location` block removes every
+inherited one.** Nginx does not merge these directives across levels. It uses
+the set declared at the innermost level that declares any. A `location` that
+adds one unrelated header therefore forwards the client's own
+`X-Forwarded-For`, `X-Forwarded-Proto`, and `X-Forwarded-Host` unchanged. Nginx
+reports no error, and the response looks correct. `add_header` obeys the same
+rule, so a `location` that adds one header drops every inherited security
+header.
+
+Put the `proxy_set_header` lines above in one file, and include that file in
+every `location` that declares a `proxy_set_header` or an `add_header` of its
+own. The audit signal is a `proxy_set_header` or an `add_header` inside a
+`location`. For each one, confirm that the same block restores the full set.
 
 ### Reading the client IP
 
@@ -191,10 +229,28 @@ client_ip = leftmost.strip()
 # one, because that is the address the proxy itself observed. The hop count is
 # deployment configuration rather than a default -- it changes the moment a CDN
 # or a second load balancer is put in front, and a stale value silently
-# reintroduces the bug above.
+# reintroduces the bug above. A count alone cannot detect that, so the
+# addresses are checked as well.
+from ipaddress import ip_address, ip_network
+
+from django.conf import settings
 from django.core.exceptions import SuspiciousOperation
 
 TRUSTED_PROXY_HOPS = 1
+# The networks your own proxies answer from, including the CDN egress ranges
+# where a CDN fronts the origin. Deployment configuration, exactly like the hop
+# count above, and an empty list is not a safe default.
+TRUSTED_PROXY_NETWORKS = [
+    ip_network(cidr) for cidr in settings.TRUSTED_PROXY_CIDRS
+]
+
+
+def is_own_proxy(value):
+    try:
+        address = ip_address(value)
+    except ValueError:
+        return False
+    return any(address in network for network in TRUSTED_PROXY_NETWORKS)
 
 
 def client_ip(request):
@@ -204,6 +260,13 @@ def client_ip(request):
         # be handled by the indexing below, because negating zero still selects
         # the leftmost and attacker-supplied entry.
         return request.META["REMOTE_ADDR"]
+    peer = request.META.get("REMOTE_ADDR", "")
+    if peer and not is_own_proxy(peer):
+        # The connection did not arrive from a proxy you operate, so no
+        # forwarded header on it is evidence of anything. A unix socket reports
+        # no peer address at all; there the socket permissions carry this
+        # guarantee instead, and "Gunicorn hardening" states them.
+        raise SuspiciousOperation("forwarded header from an untrusted peer")
     forwarded = request.META.get("HTTP_X_FORWARDED_FOR", "")
     hops = [value.strip() for value in forwarded.split(",") if value.strip()]
     if len(hops) < TRUSTED_PROXY_HOPS:
@@ -211,15 +274,33 @@ def client_ip(request):
         # traverse the expected chain. Fail closed rather than fall back to a
         # value the caller controls.
         raise SuspiciousOperation("unexpected forwarded-header depth")
-    return hops[-TRUSTED_PROXY_HOPS]
+    # Your own chain appended everything to the right of the answer. A hop
+    # count larger than the real chain selects an entry the caller wrote, and
+    # the depth check above still passes, because the caller pads the header to
+    # any length. This check is the one that sees it.
+    selected, *appended_by_your_chain = hops[-TRUSTED_PROXY_HOPS:]
+    if not all(is_own_proxy(hop) for hop in appended_by_your_chain):
+        raise SuspiciousOperation("forwarded-header chain is not yours")
+    return selected
 ```
+
+The depth check alone is one-directional. Too few entries fail loudly, and too
+many fail silently to an address the caller chose. Only the address check
+closes the second direction, and it also refuses a request that reached the
+application without the proxy.
+
+Warning: this function fails closed, so keep it off a path an internal probe
+reaches. A liveness or readiness probe sent straight to the application port
+carries no forwarded header, and its peer is not a proxy. Both checks reject
+it. Route the probe through the proxy, or exempt the probe path. Otherwise the
+probe fails and the platform restarts a healthy process.
 
 A wrong client IP is not one finding. It voids rate limiting, login lockout, IP
 allowlists, and the attribution in every audit record at once. Each of those
 failures looks exactly like the control at work. DRF's throttle classes have
 their own setting for this; see `api-drf-specific.md`, "Throttling as quota,
-not security (API4)". Do not use a client-IP package. The logic is the few
-lines above, and the maintained-package gate rejects the usual candidate in
+not security (API4)". Do not use a client-IP package. The logic is the code
+above, and the maintained-package gate rejects the usual candidate in
 `security-hardening-libraries.md`.
 
 A related trap is a duplicated `proxy_set_header X-Forwarded-Proto`, typically
@@ -300,10 +381,14 @@ floors above are ordinary A03 findings, and they are rated there.
 actually holds, keep the chain to one edge parser in front of the application
 server. Do not introduce a third component that re-parses the request body. Two
 parsers that disagree create the vulnerability, and not one parser that is
-wrong on its own. In the same edit, pin the application server at or above its
-floor: `gunicorn>=23.0.0`, and the floor for whichever async worker the command
-line selects. One file selects the worker for throughput, and nobody revisits
-the requirements file where its version is actually decided.
+wrong on its own. A desync reaches a second client only where the proxy reuses
+one upstream connection for both. Nginx opens a new upstream connection for
+each request until an `upstream` block declares `keepalive`. Where you add that
+directive, add `proxy_set_header Connection "";` in the same edit. In the same
+edit, pin the application server at or above its floor: `gunicorn>=23.0.0`, and
+the floor for whichever async worker the command line selects. One file
+selects the worker for throughput, and nobody revisits the requirements file
+where its version is actually decided.
 
 ## Security headers at the edge
 
@@ -333,7 +418,22 @@ A header set in two places is a real failure, not untidiness. For CSP, the
 browser takes the *intersection* of the two policies. For a duplicated
 `X-Frame-Options`, it may ignore both. Pick one owner per header, and assert
 the response headers in a test, so that the test catches a second owner when
-someone adds one. CWE-693 (Protection Mechanism Failure). Severity: medium.
+someone adds one.
+
+Two nginx rules decide whether an edge-owned header arrives at all. The
+inheritance rule under "Reverse proxy and forwarded headers" is the first, and
+it governs `add_header` exactly as it governs `proxy_set_header`. The second is
+the `always` keyword. Write it on every `add_header` that carries a security
+header. Without it nginx adds the header to a 2xx or a 3xx response only, and
+an attacker picks when to receive a 4xx.
+
+The split of ownership has a matching gap. Django sets a header on a response
+Django generated. A `/static/` or a `/media/` path that nginx serves never
+reaches Django, so it carries no Django-set header at all. Public user content
+sits on those paths. Give every serving location the edge header set, and
+assert the headers on a static path and on a 404 as well as on a 200.
+
+CWE-693 (Protection Mechanism Failure). Severity: medium.
 
 ## Operational and development endpoints
 
@@ -375,8 +475,8 @@ Review technique, from outside and from the repository:
 
 - Request the well-known paths against the deployed host, and record what
   answers rather than what should. Those paths are `/admin/`, `/__debug__/`,
-  `/silk/`, `/metrics`, `/health`, `/api/schema`, `/swagger/`, `/redoc/`,
-  `/.env`, and `/.git/config`.
+  `/silk/`, `/flower/`, `/metrics`, `/health`, `/api/schema`, `/swagger/`,
+  `/redoc/`, `/.env`, and `/.git/config`.
 - Trigger a deliberate 500 and confirm no traceback renders.
 - Grep `INSTALLED_APPS`, `MIDDLEWARE`, and the URLconf for `debug_toolbar`,
   `silk`, and `django_extensions`. Confirm that `DEBUG` guards each one, and
@@ -387,10 +487,14 @@ Review technique, from outside and from the repository:
 
 Metrics deserve their own line. `django-prometheus` and its equivalents publish
 per-endpoint request counts and latencies, which disclose the URL inventory and
-the traffic shape. Bind them to an internal interface, or require
-authentication. An unguessable path is not a control. `api-drf-specific.md`,
-"Schema and browsable-API exposure" owns schema and browsable-API exposure, and
-A02 owns the `DEBUG` error page itself.
+the traffic shape. The endpoint is a Django view on the same listener that
+serves the site, so no bind address separates it, and advice to move it to an
+internal interface is not a change anyone can make in the application. Two
+mechanisms do exist. Require authentication on the view, or deny the path at
+the edge for every source outside the monitoring network. An unguessable path
+is not a control. `api-drf-specific.md`, "Schema and browsable-API exposure"
+owns schema and browsable-API exposure, and A02 owns the `DEBUG` error page
+itself.
 
 CWE-215 (Insertion of Sensitive Information Into Debugging Code), CWE-489
 (Active Debug Code), and CWE-287 (Improper Authentication) for an operational
@@ -401,6 +505,14 @@ console or Debug Toolbar, medium for metrics and health disclosure.
 
 - Run as a dedicated non-root user. Bind to a local socket or loopback, not to
   a public interface. Let Nginx face the internet.
+- Warning: a local socket is not private by default. Gunicorn creates the
+  socket under the mask that `--umask` sets, and that option defaults to `0`.
+  The socket mode is then `srwxrwxrwx`, and every local account can connect to
+  it. Such a caller reaches the application without the proxy, so it supplies
+  its own forwarded headers and meets no edge limit. Set `--umask 007`. Own the
+  socket directory with the application's group, and put the proxy's user in
+  that group. The same reasoning applies to a sidecar or a second container
+  that shares the network namespace.
 - Set a sensible `--timeout`, worker count, and
   `--max-requests`/`--max-requests-jitter` to recycle workers. Do not run
   Gunicorn with `--reload` or Django's `runserver` in production.
@@ -419,6 +531,22 @@ console or Debug Toolbar, medium for metrics and health disclosure.
   `forwarded_allow_ips` therefore makes `request.is_secure()`
   client-controlled, whatever `SECURE_PROXY_SSL_HEADER` says. That setting is
   not the only thing that decides the answer.
+- `--proxy-protocol` makes Gunicorn read a PROXY header and set `REMOTE_ADDR`
+  from it. `--proxy-allow-from` decides which peer may send that header, and it
+  defaults to `127.0.0.1,::1`. A permissive value lets any caller name the
+  address that every IP-keyed control then reports. The client-IP code above
+  never inspects that layer, so neither the hop count nor the depth check sees
+  it. Enable the option only where the load balancer requires it, and name the
+  load balancer's address in `--proxy-allow-from`.
+- The ASGI servers carry the same switch under other names, and a project that
+  moves to Channels or to uvicorn keeps the habit it learned on Gunicorn.
+  uvicorn honors the forwarded headers under `--proxy-headers`, and
+  `--forwarded-allow-ips` names the peers it trusts. The value `*` makes
+  uvicorn take the **leftmost** `X-Forwarded-For` entry, which is the caller's
+  own value rather than an observed one. Daphne has `--proxy-headers` and no
+  allow-list at all. It always takes the leftmost entry, and it trusts any peer
+  that connects. On Daphne the network guarantee is therefore the only control,
+  and the socket or the port must be unreachable except through the proxy.
 - The request-size limits are an edge control the application cannot apply for
   itself. `--limit-request-line` (default 4094), `--limit-request-fields`
   (default 100), and `--limit-request-field-size` (default 8190) bound the
@@ -447,6 +575,13 @@ RestrictSUIDSGID=true
 ```
 
 Grant write access only to the paths the app genuinely needs.
+
+Warning: `Environment=` and `EnvironmentFile=` do not protect a secret. systemd
+publishes a unit's environment to unprivileged clients over D-Bus, and its own
+documentation states that environment variables do not suit secrets. Any local
+account therefore reads the database password with `systemctl show`. Deliver a
+secret with `LoadCredential=` or `LoadCredentialEncrypted=` instead. Those
+directives expose the value to the service alone.
 
 ## Container images
 
@@ -511,10 +646,16 @@ RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 FROM python:3.13-slim
 RUN useradd --system --uid 10001 appuser
 COPY --from=build /install /usr/local
-COPY --chown=appuser:appuser . /app
 WORKDIR /app
+# Named paths only. `COPY . /app` sweeps whatever the build context holds, and
+# `.dockerignore` stops only the entries somebody remembered to list.
+COPY --chown=appuser:appuser manage.py ./
+COPY --chown=appuser:appuser app/ ./app/
 USER 10001
 ENV PYTHONDONTWRITEBYTECODE=1
+# `0.0.0.0` binds inside the container's network namespace, and that is the
+# boundary. A published port removes it, and the application then answers
+# without the proxy. Publish the proxy's port, never this one.
 CMD ["gunicorn", "app.wsgi", "--bind", "0.0.0.0:8000"]
 ```
 
@@ -713,13 +854,29 @@ decorated URL.
 - Redis and RabbitMQ brokers must be authenticated and firewalled, and never
   internet-reachable. A public broker with a pickle serializer is Critical RCE
   (A08). Do not put secrets in task arguments or results (A09).
+- Encrypt the broker link, and replace the packaged default account. The broker
+  URL in the settings module is the signal a review reads: `redis://` and
+  `amqp://` are plaintext, and `rediss://` and `amqps://` are not. A plaintext
+  link puts the broker password and every task argument on the wire. A broker
+  that still answers to its packaged default account is unauthenticated in the
+  way that matters, although a password exists. Separate the broker by
+  environment, as the cache rule above requires for a cache.
 - Treat a reachable, unauthenticated Redis as Critical on its own, not merely
-  as a broker-hygiene issue. CVE-2025-49844 is a use-after-free in the embedded
-  Lua interpreter. It lets a caller who can run a script escape the sandbox and
-  execute code. CVE-2022-0543 was an equivalent sandbox escape that Debian and
-  Ubuntu packaging introduced. Patch, require authentication, and keep the
-  instance off any routable network. `data-layer-and-database.md` owns
-  application-side use of Redis and other key-value stores.
+  as a broker-hygiene issue. The rating does not rest on a CVE, and a team that
+  reads it that way under-reacts on a patched instance. `dir` and `dbfilename`
+  are writable at run time through `CONFIG SET`, so a caller who reaches an
+  unauthenticated instance chooses the path and the content of the next
+  persistence file. Replication hands the same caller the contents of the
+  instance. Both are features, and a fully patched Redis keeps both. The CVEs
+  raise the ceiling rather than set it. CVE-2025-49844 is a use-after-free in
+  the embedded Lua interpreter. It lets a caller who can run a script escape
+  the sandbox and execute code. CVE-2022-0543 was an equivalent sandbox escape
+  that Debian and Ubuntu packaging introduced. Patch, require an ACL user with
+  a password, keep `protected-mode` on, and keep the instance off any routable
+  network. Deny the `admin` and `dangerous` ACL categories to the application's
+  own user, because a cache client and a broker client need neither.
+  `data-layer-and-database.md` owns application-side use of Redis and other
+  key-value stores.
 
 ## Review checklist
 
@@ -728,18 +885,28 @@ decorated URL.
       override a current OpenSSL's hybrid default with a classical-only list
       inherited from an older hardening template.
 - [ ] Forwarded headers trusted only from the proxy; client IP for lockout is
-      correct; `SECURE_PROXY_SSL_HEADER` not client-spoofable. Any forwarded
-      client-certificate identity is stripped inbound, and the application port
-      cannot be reached without a traversal of the proxy.
+      correct; `SECURE_PROXY_SSL_HEADER` not client-spoofable. The proxy
+      overwrites every trust-bearing header it does not set, including
+      `X-Forwarded-Host` and any forwarded client-certificate identity. The
+      application port cannot be reached without a traversal of the proxy, and
+      a CDN-fronted origin accepts the CDN's ranges only.
+- [ ] No `location` block declares a `proxy_set_header` or an `add_header`
+      without restoring the full inherited set. Nginx drops the rest silently.
 - [ ] The code reads the client IP a known number of hops from the right of
-      `X-Forwarded-For`, never the leftmost entry. The hop count matches the
-      deployed topology.
-- [ ] Security headers defined once; server/version banners hidden.
+      `X-Forwarded-For`, never the leftmost entry. It confirms that the peer
+      and the hops to the right of the answer are proxies the project operates,
+      because the depth check cannot detect a hop count set too high.
+- [ ] Security headers defined once; server/version banners hidden. Each
+      edge `add_header` carries `always`, and the proxy-served static and media
+      locations get the header set that Django cannot reach.
 - [ ] No development tooling is reachable or importable in production, and a
       deliberate 500 renders no traceback. Metrics and detailed health
       endpoints are authenticated or internal-only.
 - [ ] Gunicorn non-root on a local socket; systemd unit hardened;
-      `forwarded_allow_ips` names the proxy rather than `*`.
+      `forwarded_allow_ips` names the proxy rather than `*`. The socket is not
+      world-connectable (`--umask 007`). PROXY-protocol acceptance names the
+      load balancer. An ASGI deployment restricts `--forwarded-allow-ips`, and
+      a Daphne deployment relies on the network guarantee alone.
 - [ ] The application server is pinned at or above `23.0.0` for Gunicorn.
       Whichever async worker the command line selects is pinned at its own
       floor. The review sends the smuggling exposure itself outward as a
@@ -751,6 +918,9 @@ decorated URL.
 - [ ] Uploads use inert/origin-isolated serving; hard edge limits and
       application file/count/processing/quotas are enforced.
 - [ ] DB over TLS with certificate verification, and firewalled; secrets from
-      env, not in image/VCS.
+      env, not in image/VCS. A systemd unit carries no secret in
+      `Environment=` or `EnvironmentFile=`.
 - [ ] No shared-cache caching of authenticated responses; cache and broker
-      services are authenticated, private, and environment-separated.
+      services are authenticated, private, and environment-separated. The
+      broker URL names a TLS scheme, and no service keeps its packaged default
+      account.
