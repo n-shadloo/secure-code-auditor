@@ -91,7 +91,13 @@ validation and the protected-resource metadata the current MCP authorization
 revision made mandatory, tool scope versus user permissions, model output and
 retrieved content as untrusted input, per-agent cost limits, tool-call audit,
 and the entry-token mapping onto the OWASP LLM Top 10 2026 and Agentic Top 10
-with the entries a backend skill declares non-goals), the
+with the entries a backend skill declares non-goals), the operating agent's
+own access while it does the work (the credential files it must never open,
+the name-by-location rule for every finding and commit message it writes, the
+kind, scope, and life of its own repository credential, CI token, and deploy
+key, instructions arriving through repository content, a ticket, or tool
+output as data rather than authority, and the confirmation gate on a rotation
+or a revocation a finding recommends), the
 database as a boundary of its own (migration versus runtime roles, row-level
 security and tenant context on pooled connections, verified database TLS,
 field-level encryption and blind indexes, NoSQL injection, transaction

@@ -65,7 +65,13 @@ versus user permissions, model output and retrieved content as untrusted
 input, and the mapping onto the OWASP LLM Top 10 2026 and Agentic Top 10 —
 cited at entry-token level with the LLM edition pinned, because the 2026
 edition renumbered against 2025 and an unpinned token now names a different
-entry), the database as a security boundary (migration versus runtime roles,
+entry), the operating agent's own access while it does the work (the
+credential files it must never open, the name-by-location rule for every
+finding and commit message it writes, the kind, scope, and life of its own
+repository credential, CI token, and deploy key, instructions arriving through
+repository content, a ticket, or tool output as data rather than authority,
+and the confirmation gate on a rotation or a revocation a finding recommends),
+the database as a security boundary (migration versus runtime roles,
 row-level security and tenant context on pooled connections, verified database
 TLS, field-level encryption, NoSQL injection, transaction isolation and the
 retry a raised level requires, and connection exhaustion), the data lifecycle
