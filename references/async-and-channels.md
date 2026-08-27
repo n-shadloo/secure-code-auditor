@@ -93,6 +93,14 @@ perform object and action authorization in the consumer.
   work. It also performs database-connection cleanup around the call.
 - Do not pass a cursor, connection, unevaluated queryset, model manager bound to
   mutable request state, or other thread-affine object across the boundary.
+- A `thread_sensitive=True` call runs on an executor that has one thread, and
+  `database_sync_to_async` sets that flag by default. Django 5.2.15 opens a
+  `ThreadSensitiveContext` for each HTTP request, so each request holds its own
+  executor. A call that reaches the boundary with no such context active uses
+  one process-wide thread instead (asgiref 3.11.1). Keep network I/O, a
+  subprocess, and any unbounded wait out of a thread-sensitive function. One
+  stalled call blocks every other call on the same executor, and the
+  authorization queries are among them.
 - Set `CONN_MAX_AGE = 0` for async-mode database access. Where you need
   pooling, use database or backend pooling designed for the deployment.
   Django's own native pooling requires the same setting, and it raises
@@ -145,7 +153,7 @@ always reset the token:
 ```python
 from contextvars import ContextVar
 
-current_tenant_id = ContextVar("current_tenant_id", default=None)
+current_tenant_id = ContextVar("current_tenant_id")
 
 
 async def run_for_tenant(tenant_id, operation):
@@ -155,6 +163,11 @@ async def run_for_tenant(tenant_id, operation):
     finally:
         current_tenant_id.reset(token)
 ```
+
+A default of `None` reaches the scoping code as a value. A manager written as
+`if tenant_id:` then drops the filter and returns every tenant's rows. Declare
+the variable with no default, as above. A read outside a set context then
+raises `LookupError`, and the work fails instead of widening.
 
 A child task can copy context variables. Do not spawn request-derived
 background work and assume that the context stays valid after the response.
@@ -194,18 +207,31 @@ application = ProtocolTypeRouter(
 
 `AuthMiddlewareStack` populates `scope["user"]` from Django's session. It does
 not prove that the user may access the room, tenant, or object named in the
-URL. `AllowedHostsOriginValidator` protects deployments that maintain
-`ALLOWED_HOSTS`. Use `OriginValidator` with an explicit origin allowlist when
-the accepted browser origins differ. Do not disable origin checks because the
-handshake endpoint is otherwise authenticated.
+URL. Keep the origin validator outermost in the `websocket` stack. A layer that
+wraps it runs before the origin check rejects a cross-site handshake.
+
+`AllowedHostsOriginValidator` reads `settings.ALLOWED_HOSTS`. The Host-header
+policy therefore becomes the browser-origin policy. Read that setting before
+you rely on the validator. In Channels 4.3.2, one entry of `*` makes every
+origin valid, and it also admits a handshake that sends no `Origin` header. An
+entry that starts with a period admits every subdomain of that domain. Where
+`ALLOWED_HOSTS` holds `*` or a leading-period entry, wrap the route in
+`OriginValidator` with an explicit origin list.
+
+An allowlist is only as strong as its weakest entry. An attacker who controls
+one allowed origin passes the check. A page on that origin then opens the
+socket with the victim's session cookie. Do not disable origin checks because
+the handshake endpoint is otherwise authenticated.
 
 For custom bearer-token middleware, validate signature, algorithm, issuer,
 audience, expiry, and revocation before you construct a principal. Avoid tokens
 in query strings, because URLs reach logs, history, and monitoring systems. If
 a client cannot set a header, exchange a normal authenticated HTTP request for
 a short-lived, single-purpose connection ticket. Do not reuse a long-lived API
-token in the URL. The server must delete the ticket at the first redemption,
-because a URL in a log stays replayable.
+token in the URL. The server must claim the ticket in one atomic operation at
+the first redemption, because a URL in a log stays replayable. A read of the
+ticket and then a separate delete lets two sockets redeem one ticket. Treat a
+redemption that claims nothing as a replay, and close that socket.
 
 ## Per-connection authorization
 
@@ -232,7 +258,7 @@ class ProjectConsumer(AsyncJsonWebsocketConsumer):
 
     async def receive_json(self, content):
         user = self.scope["user"]
-        if content.get("action") != "refresh":
+        if not isinstance(content, dict) or content.get("action") != "refresh":
             await self.close()
             return
         if not await self.can_access(user.pk, self.project_id):
@@ -258,11 +284,20 @@ class ProjectConsumer(AsyncJsonWebsocketConsumer):
         return {"id": project.pk, "status": project.status}
 ```
 
-Validate message schemas and allowlist actions. Never map an arbitrary client
-method name to a consumer method. A channel-layer group name is routing
-metadata, not an authorization boundary. Check authorization before you add a
-connection to a sensitive group. Exclude secrets from broadcast payloads, and
-handle revocation for connections that already joined.
+Validate message schemas and allowlist actions. A JSON document is not always
+an object, so test the type before you read a key. A consumer that calls
+`.get()` on `[]` or on a bare string raises instead. Never map an arbitrary
+client method name to a consumer method.
+
+A channel-layer group name is routing metadata, not an authorization boundary.
+Check authorization before you add a connection to a sensitive group. Build the
+group name on the server from the object that the check authorized, and give
+each feature its own prefix. Where the check reads a primary key and the name
+carries a URL slug, the two identify different objects, and the connection
+joins a group that nobody authorized. Two features that both interpolate a raw
+URL parameter also collide on one name, and each one then receives the other's
+broadcast. Exclude secrets from broadcast payloads, and handle revocation for
+connections that already joined.
 
 **Write-time.** When you generate a consumer, authenticate and authorize in
 `connect()`, and `close()` before `accept()` rather than after it. An accepted
@@ -286,6 +321,29 @@ logout, deactivation, tenant removal, credential revocation, or an
 application-defined maximum lifetime. Do not trust the user object from connect
 time indefinitely.
 
+`get_user(scope)` alone does not deliver that rule. It re-reads the user row,
+so it reports a deactivated user and a changed password. It reads the session
+data from `scope["session"]`, which loads once and then holds a cached copy. A
+logout and an administrative session purge delete the session record, and the
+socket sees neither one. Re-read the session store by key inside the same
+refresh, or read a revocation record there.
+
+```python
+from importlib import import_module
+
+from channels.db import database_sync_to_async
+from django.conf import settings
+
+
+@database_sync_to_async
+def session_is_live(scope):
+    engine = import_module(settings.SESSION_ENGINE)
+    return engine.SessionStore().exists(scope["session"].session_key)
+```
+
+A session engine that keeps no server-side record cannot answer this question.
+`a07-authentication-failures.md` owns that engine choice.
+
 Async consumers should call `aclose_old_connections()` periodically before ORM
 bursts on long-lived, low-traffic connections. Cancel per-connection tasks in
 `disconnect()`, set timeouts around external I/O, and cap:
@@ -300,6 +358,11 @@ bursts on long-lived, low-traffic connections. Cancel per-connection tasks in
 Use bounded queues and reject or shed load when full. Do not create one
 untracked task per message or allow a slow client to retain unbounded outbound
 data.
+
+Cancellation stops the coroutine that waits. It does not stop the function that
+already runs on the executor thread. A privileged write therefore commits after
+`disconnect()` returns and after the cleanup runs. Make each privileged handler
+idempotent, and do not let the cleanup code assume that the work stopped.
 
 Those caps are this file's instance of a general rule: every caller-controlled
 value that multiplies work carries a server-enforced ceiling.
@@ -321,10 +384,14 @@ the document limits. The socket underneath belongs here.
   the same origin allowlist as any other socket route.
 - **Connection authentication.** Subscription protocols typically carry
   credentials in an initialization message that the client sends after the
-  socket opens. Validate that message before you acknowledge the connection,
-  and close on failure. Do not acknowledge first and check when the first
-  operation arrives. The ticket rule above applies, so put no long-lived token
-  in the query string.
+  socket opens. The acknowledgment here is the one the subprotocol defines. It
+  is not the transport `accept()` that has to precede any client message.
+  Validate the initialization message before you acknowledge the connection,
+  and close on failure. Between `accept()` and that acknowledgment, handle the
+  initialization message only, and close the socket on any other message.
+  Otherwise a handler that dispatches by action name runs before the server
+  authenticates the client. The ticket rule above applies, so put no long-lived
+  token in the query string.
 - **Authorize the subscribe, not only the connect.** The operation names a root
   field and its arguments: a channel, a document, a tenant. That is an
   object-level decision at registration. An authenticated connection is not a
@@ -361,13 +428,16 @@ disclosure path and a fan-out cost that no limit counts.
       never stored in process-global or thread-only context.
 - [ ] Bounded adapters keep blocking work off the event loop. No transaction
       and no authorization-sensitive operation splits across an unsafe await.
+      No network call and no unbounded wait sits inside a thread-sensitive
+      function, and cancellation is not read as a stop.
 - [ ] Every long-lived connection validates origin, authenticates once, and
       re-authorizes each object/action against current state.
 - [ ] The design and the tests cover revocation, logout, disconnect cleanup,
       backpressure, and the connection, message, fan-out, idle, and lifetime
       limits.
 - [ ] Connection tokens are short-lived and purpose-bound and do not leak in
-      URLs or logs.
+      URLs or logs. One atomic claim redeems each one, and a claim of nothing
+      closes the socket as a replay.
 - [ ] The server authorizes a subscription when the client registers it, and
       again before each published event. Revocation closes it. It counts
       against per-principal subscription, fan-out, and lifetime limits.
@@ -381,9 +451,13 @@ disclosure path and a fan-out cost that no limit counts.
       async DB access. A size-capped pool does the connection reuse. The review
       does not assume that standard DRF views are native async.
 - [ ] `AllowedHostsOriginValidator` or an explicit `OriginValidator` wraps
-      browser WebSockets, and nobody mistakes `AuthMiddlewareStack` for object
-      authorization.
+      browser WebSockets and is the outermost layer. `ALLOWED_HOSTS` holds no
+      `*` and no leading-period entry where the first one carries the policy.
+      Nobody mistakes `AuthMiddlewareStack` for object authorization.
 - [ ] Consumer URL parameters, messages, group joins, and broadcasts use
-      requester-scoped queries and explicit action schemas.
+      requester-scoped queries and explicit action schemas. The server derives
+      each group name from the object that the check authorized.
 - [ ] Long-lived consumers refresh auth state where needed, close old DB
-      connections, cancel tasks, and enforce bounded resource use.
+      connections, cancel tasks, and enforce bounded resource use. The refresh
+      re-reads the session store or a revocation record, because
+      `get_user(scope)` reads a cached session copy.
