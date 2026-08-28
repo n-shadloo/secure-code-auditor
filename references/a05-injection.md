@@ -727,6 +727,83 @@ no such switch, the sanitizer over the output is the only control, and it
 becomes load-bearing rather than defense in depth. Each claim here comes
 from the project's own source, read on 20 Aug 2026.
 
+### Configuration a third-party template renders
+
+The escaping decision does not have to live in the project. A third-party
+admin theme -- `django-unfold`, `django-jazzmin`, `django-grappelli`, and
+their peers -- reads project-supplied configuration out of a settings dict and
+renders it in **its own** templates, and those templates apply `|safe` to
+strings the project is expected to author: sidebar entry titles, navigation
+labels, dashboard card headings, section headers, and tab names. The project
+writes a plain string into a dict. Nothing in the project's own source shows a
+`|safe` or a `mark_safe`, because the filter is in `site-packages`.
+
+That makes a sink whose call site sits in a dependency and whose source is a
+settings module. Any part of such a string built from a model field, a tenant
+name, a user-submitted label, or anything else that crossed a trust boundary
+is markup injected unescaped into a page rendered for staff.
+
+```python
+# Wrong: the title is interpolated into config the theme renders with |safe,
+# so whatever a tenant typed into its own name is markup on every admin page.
+# Neither this file nor any file in the project contains an escape hatch.
+UNFOLD = {
+    "SIDEBAR": {
+        "navigation": [
+            {"title": f"{tenant.name} orders", "items": [...]},
+        ],
+    },
+}
+```
+
+```python
+# Correct: the dynamic half is escaped where it is written, because the
+# template that renders it will not escape it. A static literal needs nothing.
+from django.utils.html import format_html
+
+UNFOLD = {
+    "SIDEBAR": {
+        "navigation": [
+            {"title": format_html("{} orders", tenant.name), "items": [...]},
+        ],
+    },
+}
+```
+
+- **The rule.** A value passed into a third-party template's configuration is
+  either a static literal the source file contains, or it is wrapped in
+  `escape()` or built with `format_html()`. Never an f-string or a `%` format
+  over a model field, a tenant name, a user-submitted label, or a setting
+  another system writes. `escape()` where the value is the whole string,
+  `format_html()` where a constant fragment surrounds it.
+- **Why it evades a normal review.** The greps this file recommends run over
+  the project, and this sink is not in the project. A reviewer reads a settings
+  dict of plain strings, finds no `mark_safe` and no `|safe`, and moves on --
+  and the reviewer is right about the code they read. The trust decision was
+  made by a template they never opened.
+- **How to audit it.** Grep the *installed* theme's templates rather than the
+  project's, then work back to settings:
+
+```bash
+# 1. Which of the theme's templates trust their input.
+THEME=$(python -c 'import unfold, os; print(os.path.dirname(unfold.__file__))')
+grep -rn -e '|safe' -e 'mark_safe' "$THEME"
+```
+
+  Then read each hit to see **which config key** it renders, and trace that key
+  back to where settings assigns it. Repeat per theme and per upgrade: the set
+  of keys, and the filters over them, are the dependency's to change and change
+  with no entry in the project's diff. The same procedure applies to any
+  package that renders project configuration -- dashboard, menu, and
+  navigation add-ons are the usual second case.
+- **"Admin-only" is not a mitigation.** A staff session is the higher-value
+  target, not a lower one. The injected markup executes with an authenticated
+  admin session behind it, which is a valid CSRF token, every model that user
+  can reach, and on many projects the page that creates users. Judge it as
+  stored XSS with a privileged victim, and rate it accordingly
+  (`00-methodology-and-severity.md`). What an operator session is worth is
+  `privileged-access-and-impersonation.md`.
+
 ### Commonly mistaken for a finding
 
 **`mark_safe` over a string assembled only from constants, and `mark_safe` or
@@ -1073,6 +1150,13 @@ covers that, and you should cross-check there.
       chosen by a request outside a server-side mapping.
 - [ ] No argument reaches `format_html` already marked safe, because
       `conditional_escape` passes such an argument through unescaped.
+- [ ] Every string the project passes into a third-party template's
+      configuration -- an admin theme's sidebar titles, nav labels, and
+      dashboard card headings are the common case -- is a static literal or is
+      `escape()`d or `format_html()`ed at the assignment. The installed
+      package's own templates were grepped for `|safe` and `mark_safe` to
+      establish which keys need it, because the project's source shows neither.
+      Staff-only reach is not treated as a mitigation.
 - [ ] Any Markdown renderer over untrusted text has raw HTML off. Where the
       renderer carries no such switch, the sanitizer over its output is
       present. Rich-text output is sanitized after the render, rather than
