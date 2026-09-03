@@ -57,7 +57,7 @@ body:
     attributes:
       label: Skill version
       description: The value of metadata.version in SKILL.md.
-      placeholder: 1.52.0
+      placeholder: 1.53.0
     validations:
       required: true
   - type: dropdown
