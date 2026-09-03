@@ -548,9 +548,15 @@ console or Debug Toolbar, medium for metrics and health disclosure.
   that connects. On Daphne the network guarantee is therefore the only control,
   and the socket or the port must be unreachable except through the proxy.
 - The request-size limits are an edge control the application cannot apply for
-  itself. `--limit-request-line` (default 4094), `--limit-request-fields`
-  (default 100), and `--limit-request-field-size` (default 8190) bound the
-  request line and headers before any Django code runs.
+  itself. On Gunicorn 26.2.0, `--limit-request-line` (default 4094),
+  `--limit-request-fields` (default 100), and `--limit-request-field-size`
+  (default 8190) bound the request line and headers before any Django code
+  runs. Those three are Gunicorn options, and uvicorn has none of them.
+  uvicorn 0.52.4 bounds a header with `--h11-max-incomplete-event-size`
+  (default 16384, from h11 0.16.0), and only the `h11` implementation reads
+  it. The `httptools` implementation has no equivalent, and `--http auto`
+  selects it wherever httptools is installed. Under uvicorn with `httptools`
+  the reverse proxy is the only header bound.
 
 This file owns the finding on whether a setting or a runtime posture is unsafe.
 Deploy sequencing, process supervision, and rollback behavior are outside its

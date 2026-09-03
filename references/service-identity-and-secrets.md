@@ -626,7 +626,7 @@ signed data for the length of the deploy.
 
 Django consults `SECRET_KEY_FALLBACKS` **only to validate** previously signed
 data. It always signs new data with the current `SECRET_KEY`. The table below
-gives which subsystems that covers, verified against Django 6.0 and 5.2
+gives which subsystems that covers, verified against Django 6.1, 6.0, and 5.2
 source:
 
 | Subsystem | Derived from `SECRET_KEY` | Honors `SECRET_KEY_FALLBACKS` |
@@ -674,6 +674,13 @@ First ship the new key in `SECRET_KEY_FALLBACKS` on every instance, with the
 old key still signing. Then promote the new key to `SECRET_KEY`, and move the
 old key into the fallbacks. That order keeps every instance able to validate
 both keys at every moment.
+
+The fleet is every process family that verifies a Django-signed value, and not
+only the web instances. A worker, a scheduled job, a second service, and any
+other runtime on the same `SECRET_KEY` each count. The fallbacks reach every
+fleet before the primary key changes in any fleet. The window closes only
+after the last fleet carries the new key. A compromise rotation has the same
+unit. A fleet left on the old key still accepts what the leaked key signs.
 
 Review notes:
 

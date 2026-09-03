@@ -762,6 +762,16 @@ guard for developer-initiated requests.
   resolution, and re-check on redirects. Connect to the address that you
   checked. Never let the HTTP client resolve the host a second time. DNS
   rebinding moves the target between the check and the connection.
+  The standard library classifies those ranges, so no list is written by hand.
+  `not ip.is_global or ip.is_multicast` refuses loopback, every private range,
+  the link-local range that holds `169.254.169.254`, the shared address space,
+  and each IPv4-mapped IPv6 form of them. `is_global` returns `True` for a
+  multicast address, so the predicate reads both properties. Python 3.12.4 is
+  the floor, because it added the 6to4 range. On 3.12.3 the 6to4 form of the
+  metadata address is still global. The same fix is in 3.9.20, 3.10.15, and
+  3.11.10. The predicate refuses only what CPython classifies. `64:ff9b::/96`
+  stays global, and behind a NAT64 gateway `64:ff9b::a00:1` reaches `10.0.0.1`,
+  so the allowlist above still leads.
 - The cloud metadata endpoint is the highest-value entry on that list, because
   what it returns is a live credential for the workload. Deny it in the
   application *and* require the hardened, token-based metadata service of the
