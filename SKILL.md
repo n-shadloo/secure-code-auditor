@@ -32,6 +32,20 @@ Browser and frontend concerns stay out, except where the server controls the
 output. Other agents (Codex, Cursor, Gemini CLI) reuse this content through
 `AGENTS.md`, with Claude as the primary integration.
 
+## Self-improvement
+
+This skill improves itself after a task. `SELF-IMPROVEMENT.md` gives the rules.
+
+1. Before the main task: if the directory
+   `~/.skill-improvements/secure-code-auditor/` exists, do section 3 of
+   `SELF-IMPROVEMENT.md`.
+2. During the main task: change no file of this skill, unless the main task is a
+   change to this skill. When this skill gives wrong, old, unclear, or
+   incomplete information, add one item to your task list:
+   "Skill review: secure-code-auditor".
+3. After the main task: if you found a defect in this skill, load
+   `SELF-IMPROVEMENT.md` and obey it.
+
 ## How the reference material is organized
 
 Everything sits on the **OWASP Top 10:2025 spine**. Each reference has two
