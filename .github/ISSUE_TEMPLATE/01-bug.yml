@@ -18,11 +18,11 @@ body:
     validations:
       required: true
   - type: input
-    id: version
+    id: copy
     attributes:
-      label: Skill version
-      description: The value of metadata.version in SKILL.md.
-      placeholder: 1.53.0
+      label: Copy of the skill
+      description: The short commit hash of your copy (git rev-parse --short HEAD), or the date of your copy.
+      placeholder: 0e29023
     validations:
       required: true
   - type: textarea

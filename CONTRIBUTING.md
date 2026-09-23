@@ -46,8 +46,9 @@ lives.
 
 ## What a good report contains
 
-Name the file and the section in every report. Give the skill version from
-`metadata.version` in `SKILL.md`. Name the agent that surfaced the item.
+Name the file and the section in every report. Give the short commit hash of
+your copy (`git rev-parse --short HEAD`), or the date of your copy. Name the
+agent that surfaced the item.
 
 - **A bug.** Give the command you ran, the input, the output you got, and the
   output you expected. For a scanner, a small code sample that reproduces the
@@ -65,8 +66,7 @@ Name the file and the section in every report. Give the skill version from
 
 I triage the issue. I research the claim against a primary source, because a
 correction here needs the same evidence as the original text. I implement the
-change. The release note for the version that carries the change credits the
-reporter.
+change.
 
 ## Conduct and security
 

@@ -20,7 +20,6 @@ license: MIT
 allowed-tools: Read, Grep, Glob, Bash
 metadata:
   author: n-shadloo
-  version: 1.53.0
 ---
 
 # secure-code-auditor

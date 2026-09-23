@@ -7,9 +7,7 @@ that works in this repository loads `SKILL.md` first. Then it reads only the
 
 The primary integration is **Claude** (Anthropic Agent Skills). This file and
 its siblings let other agents use the same content. They are pointers, not
-copies. Where anything here disagrees with `SKILL.md`, `SKILL.md` wins. The
-current version is recorded in the `SKILL.md` frontmatter
-(`metadata.version`).
+copies. Where anything here disagrees with `SKILL.md`, `SKILL.md` wins.
 
 ## What this skill does
 

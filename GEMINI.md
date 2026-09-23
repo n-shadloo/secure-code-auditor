@@ -34,4 +34,3 @@ Treat their output as leads to verify, not as confirmed findings.
 
 The primary integration is Claude. This file exists so that Gemini CLI uses
 the same single source of truth. See `AGENTS.md` for the fuller description.
-The version is recorded in the `SKILL.md` frontmatter (`metadata.version`).
