@@ -583,11 +583,15 @@ RestrictSUIDSGID=true
 Grant write access only to the paths the app genuinely needs.
 
 Warning: `Environment=` and `EnvironmentFile=` do not protect a secret. systemd
-publishes a unit's environment to unprivileged clients over D-Bus, and its own
-documentation states that environment variables do not suit secrets. Any local
-account therefore reads the database password with `systemctl show`. Deliver a
-secret with `LoadCredential=` or `LoadCredentialEncrypted=` instead. Those
-directives expose the value to the service alone.
+publishes each `Environment=` value to unprivileged clients over D-Bus, and its
+own documentation states that environment variables do not suit secrets. Any
+local account therefore reads a database password set with `Environment=`
+through `systemctl show`. For `EnvironmentFile=`, the D-Bus API of systemd 257
+publishes only the path of the file (checked on 29 Sep 2026). Its values still
+pass to every child process, and root and the service account read them in
+`/proc/<pid>/environ`. Deliver a secret with `LoadCredential=` or
+`LoadCredentialEncrypted=` instead. Those directives expose the value to the
+service alone.
 
 ## Container images
 
