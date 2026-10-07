@@ -5,10 +5,10 @@ Load `SKILL.md` first. Then open only the `references/*.md` file(s) for the
 concern in front of you. Do not duplicate the content here — read the source
 files.
 
-During a task, change no file of this skill unless the task is a change to this
-skill. After the task, if this skill gave wrong or incomplete information, load
-`SELF-IMPROVEMENT.md` and obey it. Before the task, if
-`~/.skill-improvements/secure-code-auditor/` exists, do section 3 of that file.
+If this skill's text or script caused a mistake, or you had to find a step
+yourself, record it at once. Before you claim the task is done, end the report
+with `Skill defects:`. Section 0 of `SELF-IMPROVEMENT.md` gives the rules. If
+`~/.skill-improvements/secure-code-auditor/` exists, do section 3 first.
 
 The router in `SKILL.md` is grouped: the OWASP Top 10:2025 spine, then
 cross-cutting surfaces, then package decisions. Pick the group, then the row.
