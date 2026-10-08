@@ -40,7 +40,7 @@ lives.
   contested topic.
 - `references/` holds the content. Each file owns its own topics.
 - `scripts/` holds three read-only scanners and their reference.
-- `AGENTS.md`, `GEMINI.md`, and `.cursor/rules/secure-code-auditor.mdc` are thin
+- `AGENTS.md` and `GEMINI.md` are thin
   pointers rather than content copies. Report a content problem against
   `SKILL.md` or the reference file that owns it.
 

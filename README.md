@@ -404,9 +404,6 @@ git clone https://github.com/n-shadloo/secure-code-auditor.git \
   .cursor/skills/secure-code-auditor
 ```
 
-The included `.cursor/rules/secure-code-auditor.mdc` file is optional
-reinforcement that points back to the canonical `SKILL.md`.
-
 ### Gemini CLI
 
 Gemini CLI doesn't read Agent Skills directly; it reads `GEMINI.md`.
@@ -513,9 +510,6 @@ secure-code-auditor/
 ├── SELF-IMPROVEMENT.md                 # self-improvement rules
 ├── AGENTS.md                           # always-on project context
 ├── GEMINI.md                           # Gemini CLI context
-├── .cursor/
-│   └── rules/
-│       └── secure-code-auditor.mdc     # Cursor reinforcement rule
 ├── references/
 │   ├── 00-methodology-and-severity.md  # methodology and findings format
 │   ├── 01-audit-workflow.md            # how a codebase is swept

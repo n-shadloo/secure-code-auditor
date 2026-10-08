@@ -54,10 +54,9 @@ Before the final report, before you open a pull request, and before each claim t
   - The twenty-five reference files in `references/` that the router of `SKILL.md` names, on the OWASP Top 10:2025 spine.
   - `scripts/entrypoint_inventory.py`, `scripts/settings_scan.py`, and `scripts/dangerous_patterns.py`: read-only triage scanners. `scripts/README.md` holds their contract.
 - Router: `SKILL.md`, heading "How the reference material is organized", with the groups "Start here", "The OWASP Top 10:2025 spine", "Cross-cutting surfaces", and "Package decisions". Each group is a table with the columns `Concern` and `Reference file`. A spine row starts with its category in bold, for example `**A01**`.
-- Mirrors: the three mirrors are thin pointers. No script renders a mirror.
+- Mirrors: the two mirrors are thin pointers. No script renders a mirror.
   - `AGENTS.md`: what the skill does, the two modes, and how to use the content, with pointers to `SKILL.md` and the reference files.
   - `GEMINI.md`: the same pointers as prose with no second-level heading.
-  - `.cursor/rules/secure-code-auditor.mdc`: its own `description` in the frontmatter, and the same pointers as prose with no heading.
   - A content defect belongs in `SKILL.md` or in the reference file that owns it, not in a mirror.
   - After a change to text that a mirror repeats, make the same change in that mirror in the same commit.
 - Shared files: `LICENSE`, `.gitignore`, and `.github/workflows/docs-integrity.yml` have the same bytes as the same files in other skill repositories of the owner.

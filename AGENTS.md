@@ -79,7 +79,7 @@ mapping, and the conflict rule.
 
 - Claude Code: `SKILL.md` (native Agent Skill).
 - OpenAI Codex CLI: reads this `AGENTS.md`.
-- Cursor: `.cursor/rules/secure-code-auditor.mdc`.
+- Cursor: `SKILL.md` (native Agent Skill).
 - Gemini CLI: `GEMINI.md`.
 
 All of them defer to `SKILL.md` and `references/`.
