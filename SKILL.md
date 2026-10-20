@@ -8,7 +8,7 @@ description: >-
   IDOR, SSRF, path traversal, open redirect, impersonation,
   SQL/command/template injection, LDAP, row-level security, encrypted
   columns, NoSQL, Redis, file uploads, S3, serializers, rate limiting,
-  CSRF/CORS, OpenAPI schema, GraphQL, Django Ninja, gRPC, AI agents, MCP
+  CSRF/CORS, OpenAPI schema, GraphQL, Django Ninja, FastAPI, gRPC, AI agents, MCP
   tools, secrets, payments, webhooks, Celery, Django tasks, race conditions,
   ReDoS, caching, deserialization, async/ASGI, WebSockets, audit logging,
   erasure, retention, personal data, migrations, JWKS, mutual TLS,
@@ -63,7 +63,7 @@ file is authoritative.
 
 | Concern | Reference file |
 |---|---|
-| How a codebase is swept: the phase order and per-phase artifacts, the entry-point inventory (URLconf chains at their resolved prefixes, DRF routers and `@action` methods, Django Ninja, GraphQL, gRPC, Channels, Celery and beat, management commands, signals, admin, webhooks, MCP tools, middleware), principals and trust boundaries, source-to-sink pairing, hypothesis order, the budget rule for a large tree, the six-item verification gate, the cross-cutting benign-pattern catalog, the coverage ledger, attack chains, the security regression harness and scanner gating, the WSTG section mapping | `references/01-audit-workflow.md` |
+| How a codebase is swept: the phase order and per-phase artifacts, the entry-point inventory (URLconf chains at their resolved prefixes, DRF routers and `@action` methods, Django Ninja, FastAPI routers beside Django, GraphQL, gRPC, Channels, Celery and beat, management commands, signals, admin, webhooks, MCP tools, middleware), principals and trust boundaries, source-to-sink pairing, hypothesis order, the budget rule for a large tree, the six-item verification gate, the cross-cutting benign-pattern catalog, the coverage ledger, attack chains, the security regression harness and scanner gating, the WSTG section mapping | `references/01-audit-workflow.md` |
 | How a finding is scored and written: the severity rubric and the baseline table under it, the confidence scale, the finding schema and its evidence line, the report structure, the ASVS 5.0 chapter mapping and its non-goals, mode selection, the standing write-time contract with its per-moment index, the conflict rule, the security-decisions note | `references/00-methodology-and-severity.md` |
 
 ### The OWASP Top 10:2025 spine
@@ -91,7 +91,7 @@ you rather than by OWASP number.
 | The privilege model (RBAC/ABAC/ReBAC), what Django's permission layer does, `has_perm` with an object, the DRF object-hook table, admin permission hooks and custom admin views, default-deny and the URLconf audit test, field-level authorization (BOPLA), search indexes and denormalized copies, authorization test suites, permission decay, the joiner, mover, and leaver lifecycle | `references/authorization-architecture.md` |
 | Impersonation and "log in as user", django-hijack, break-glass and just-in-time elevation, the operator audit identity | `references/privileged-access-and-impersonation.md` |
 | Where DRF runs the object check and the routes that skip it, `@action` and function-level authorization (BFLA), serializer over-exposure and mass assignment (`ModelForm` and formsets included), writable relations, pagination, filter, and ordering leakage, throttling mechanics and the owned atomic counter, schema and browsable-API exposure, the endpoint inventory and shadow routes, versioning and deprecation, bulk endpoints, unsafe DRF defaults, DRF and CSRF, payment webhook bodies | `references/api-drf-specific.md` |
-| GraphQL resolver authorization and nested traversal, all-fields types, document depth, alias, token, and cost limits, introspection and error masking, mutations and nested writes, batching, persisted operations, Django Ninja routes with no `auth=`, gRPC servicers, interceptors, and protobuf limits, reflection and channelz | `references/graphql-and-alternative-api-surfaces.md` |
+| GraphQL resolver authorization and nested traversal, all-fields types, document depth, alias, token, and cost limits, introspection and error masking, mutations and nested writes, batching, persisted operations, Django Ninja routes with no `auth=`, FastAPI routes with no dependency and its default validation echo, gRPC servicers, interceptors, and protobuf limits, reflection and channelz | `references/graphql-and-alternative-api-surfaces.md` |
 | Async and ASGI boundaries, sync ORM access, request and tenant context, WebSocket origin checks, per-connection authentication and authorization, long-lived consumer limits, subscriptions on the subscribe and publish paths | `references/async-and-channels.md` |
 | File uploads from the request to the reader: type and content validation, filenames and storage keys, object-storage configuration, per-tenant buckets against shared prefixes, delegated upload URLs across S3, GCS, and Azure, quarantine and promotion, scan verdict caching and CDR, callback trust, SVG, image and archive bombs, size and quota limits, private downloads, CDN caching of private objects | `references/file-uploads.md` |
 | AI agents and MCP tool surfaces: DRF viewsets republished as tools, agent token audience validation, tool scope intersected with user permissions, model output and retrieved content as untrusted input, per-agent cost and concurrency limits, server-enforced confirmation, tool-call audit, the LLM and Agentic Top 10 mapping | `references/agent-and-llm-interfaces.md` |
@@ -144,7 +144,7 @@ so they keep their sentences.
 | The file from the request to the reader: delegated upload URLs, quarantine and promotion, proxied against signed private downloads | `references/file-uploads.md` | A08 keeps the callback's signature and replay rules. A01 keeps import-from-URL SSRF and the cache-mediated leak. `references/data-lifecycle-and-privacy.md` keeps whether the bytes are gone |
 | The database as a boundary: roles, row-level security, verified transport, encrypted columns, isolation, pooling | `references/data-layer-and-database.md` | The serialization-failure retry a raised level requires is here. The constraint-against-lock choice that usually makes raising it unnecessary is A10's |
 | The record over time: deletion completeness, soft delete, retention, anonymization, every copy an erasure has to reach | `references/data-lifecycle-and-privacy.md` | Existence rather than access. `references/authorization-architecture.md` owns who may read a denormalized copy, and A09 what must be logged |
-| The surface where the client composes the request, and every API surface that is not a DRF route | `references/graphql-and-alternative-api-surfaces.md` | Resolver-edge authorization, document cost, and schema exposure, plus Django Ninja and gRPC defaults a DRF engineer assumes are present |
+| The surface where the client composes the request, and every API surface that is not a DRF route | `references/graphql-and-alternative-api-surfaces.md` | Resolver-edge authorization, document cost, and schema exposure, plus Django Ninja, FastAPI, and gRPC defaults a DRF engineer assumes are present |
 | The tool-call threat model and the MCP-specific controls | `references/agent-and-llm-interfaces.md` | What changes when the caller is a program driving the backend on someone's behalf; it restates none of the machinery it reuses |
 | Agent-operator access | `references/agent-operator-security.md` | The auditing agent's own access rather than the audited backend's surface. `references/agent-and-llm-interfaces.md` keeps the serving side, and `references/service-identity-and-secrets.md` the project's own secrets |
 | The container image | `references/deployment-and-runtime.md` | Stops at the artifact the repository produces. Orchestrator enforcement is a cross-team recommendation, and where a secret comes from at run time is `references/service-identity-and-secrets.md`'s |
@@ -240,7 +240,7 @@ surface by a read of the code.
   `python scripts/dangerous_patterns.py --selftest`
 
 The inventory enumerates the declared entry points: routes at their resolved
-prefixes, routers and actions, Ninja, GraphQL, gRPC, Channels, Celery,
+prefixes, routers and actions, Ninja, FastAPI, GraphQL, gRPC, Channels, Celery,
 commands, signals, admin, and middleware. It marks each HTTP-reachable row
 with one of three states. The row declares its authorization, inherits it
 from somewhere not visible there, or has none.
