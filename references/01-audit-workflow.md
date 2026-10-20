@@ -177,6 +177,7 @@ family.
 | DRF routers, viewsets, and views | a `urls.py` that constructs a router; the view modules it names | `DefaultRouter`, `SimpleRouter`, `.register(`, `ViewSet`, `APIView`, `GenericAPIView` | `api-drf-specific.md`, "Where the object check runs, and the routes that skip it" |
 | Viewset actions, including `detail=False` | the viewset body, not the router | `@action(` | `api-drf-specific.md`, "Function-level authorization on actions (API5)" |
 | Django Ninja operations | the module that constructs `NinjaAPI()` or a `Router()` | `NinjaAPI(`, `Router(`, `@api.`, `@router.` | `graphql-and-alternative-api-surfaces.md`, "Django Ninja: nothing is authenticated by default" |
+| FastAPI routes beside Django | the module that constructs `FastAPI()` or an `APIRouter()`, which is often a factory function, and every `include_router()` that mounts one under a prefix | `FastAPI(`, `APIRouter(`, `include_router(`, `add_api_route(`, `add_api_websocket_route(`, `.get(`, `.post(`, `.websocket(` | `graphql-and-alternative-api-surfaces.md`, "FastAPI beside Django: no dependency, no authentication" |
 | GraphQL fields and resolvers | the schema module and every type it composes | `strawberry.type`, `ObjectType`, `Mutation`, `resolve_`, `DjangoObjectType` | `graphql-and-alternative-api-surfaces.md`, "Resolver authorization: a check at the root is not a check" |
 | gRPC methods | the servicer class, and the `service` blocks in the `.proto` behind it | `grpc.server(`, `Servicer_to_server`, `service ` in `*.proto` | `graphql-and-alternative-api-surfaces.md`, "gRPC: nothing from the DRF request cycle applies" |
 | Channels consumers | `ASGI_APPLICATION` and the routing module it reaches | `ProtocolTypeRouter`, `URLRouter`, `Consumer`, `websocket_urlpatterns` | `async-and-channels.md`, "WebSocket authentication and origin validation" |
@@ -984,8 +985,8 @@ had open.
 - [ ] Routers, viewsets, `@action` methods including `detail=False`, and plain
       `APIView` subclasses were each enumerated. None of them was inferred
       from the served schema.
-- [ ] The non-DRF surfaces were looked for by name — Django Ninja, GraphQL,
-      gRPC, Channels — and their absence recorded where they are absent.
+- [ ] The non-DRF surfaces were looked for by name — Django Ninja, FastAPI,
+      GraphQL, gRPC, Channels — and their absence recorded where they are absent.
 - [ ] The families that are not routes were enumerated. Those families are
       Celery tasks and beat entries, management commands, and signal
       receivers. They also are admin registrations and actions, webhook

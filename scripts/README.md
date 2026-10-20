@@ -85,6 +85,7 @@ the reference file that answers that.
 | `drf` | router constructions, `register()` calls with prefix, viewset and basename, and viewset/generic-view/`APIView` classes with their declared `permission_classes`, `authentication_classes`, `throttle_classes`, `queryset` and `serializer_class`, and which of `get_queryset`, `get_object`, `get_serializer_class`, `perform_create` and `check_object_permissions` are overridden | `api-drf-specific.md` |
 | `action` | `@action` methods with `detail`, `methods`, and any `permission_classes` on the decorator | `api-drf-specific.md` |
 | `ninja` | `NinjaAPI(...)` and `Router(...)` constructions with the presence or absence of `auth=`, and operation decorators with their own `auth=` | `graphql-and-alternative-api-surfaces.md` |
+| `fastapi` | `FastAPI(...)` and `APIRouter(...)` constructions in any scope, with their `dependencies=` and literal `prefix=`; route decorators (the HTTP methods, `api_route`, and `websocket`) with the decorator's `dependencies=` and every `Depends(...)` or `Security(...)` on a parameter, including inside `Annotated[...]`; `add_api_route`, `add_api_websocket_route`, and `include_router` calls with their prefix and dependencies. A route's label carries its own router's literal prefix; an `include_router` prefix is reported on the mount's own row. FastAPI cannot tell an authentication dependency from a database session, so the names are printed, and `declared` means a dependency is named here, never that it authenticates | `graphql-and-alternative-api-surfaces.md` |
 | `graphql` | schema constructions, `Query`/`Mutation` type definitions, and resolver methods | `graphql-and-alternative-api-surfaces.md` |
 | `grpc` | classes deriving from a generated `Servicer` base, with their method names | `graphql-and-alternative-api-surfaces.md` |
 | `channels` | `ProtocolTypeRouter` and `URLRouter` entries and consumer classes | `async-and-channels.md` |
@@ -127,7 +128,8 @@ difference between the last two is the whole value of the column:
   from its absence.
 - **`absent`** — this site declares nothing, and the construct has no default
   that would supply one. Such a construct is a Ninja API, router, or operation
-  with no `auth=`. It is also a gRPC servicer, or a plain Django view with no
+  with no `auth=`, or a FastAPI application, router, or route with no
+  dependency on itself, its router, or its mount. It is also a gRPC servicer, or a plain Django view with no
   decorator and no mixin. Middleware or a check inside the body may still
   apply. This column looks for neither, so `absent` is a statement about
   declarations and never a finding.

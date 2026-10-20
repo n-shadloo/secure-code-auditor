@@ -3,7 +3,8 @@
 Covers the backend API surfaces that are not DRF routes. Covers a GraphQL
 schema served from Django, where the client rather than the route decides the
 shape and the cost of a request. Covers a non-DRF HTTP framework such as
-Django Ninja, whose defaults differ from the DRF defaults. Covers a gRPC
+Django Ninja or FastAPI beside Django, whose defaults differ from the DRF
+defaults. Covers a gRPC
 servicer, which answers on a second server that the Django request cycle never
 enters.
 
@@ -28,8 +29,8 @@ over-exposure.
 
 This file also owns **the API surface that is not a DRF route at all**. That
 surface is the defaults of the non-DRF frameworks and transports that a DRF
-engineer assumes are present. It reaches from a Django Ninja route to a gRPC
-servicer on a second server.
+engineer assumes are present. It reaches from a Django Ninja route, through a
+FastAPI router mounted beside Django, to a gRPC servicer on a second server.
 
 `a01-broken-access-control.md` owns the access-control failure itself.
 `authorization-architecture.md` owns the field-level model.
@@ -52,6 +53,7 @@ graphene-django install raises on its own.
 - [Persisted queries and operation allowlists](#persisted-queries-and-operation-allowlists)
 - [CSRF and file uploads on a GraphQL endpoint](#csrf-and-file-uploads-on-a-graphql-endpoint)
 - [Django Ninja: nothing is authenticated by default](#django-ninja-nothing-is-authenticated-by-default)
+- [FastAPI beside Django: no dependency, no authentication](#fastapi-beside-django-no-dependency-no-authentication)
 - [gRPC: nothing from the DRF request cycle applies](#grpc-nothing-from-the-drf-request-cycle-applies)
 - [Out of backend scope](#out-of-backend-scope)
 - [Review checklist](#review-checklist)
@@ -777,6 +779,87 @@ surface. Give every cookie-authenticated operation a cookie authentication
 class, because that class runs the CSRF check. `CsrfViewMiddleware` does not
 run on a Django Ninja view.
 
+## FastAPI beside Django: no dependency, no authentication
+
+FastAPI mounted beside a Django project is a second HTTP surface with defaults
+of its own, and none of Django's or DRF's reaches it. Maps to CWE-306, CWE-209,
+and API2:2023 and API8:2023.
+
+**A route is public unless a dependency says otherwise.** FastAPI has no
+counterpart of `DEFAULT_PERMISSION_CLASSES`. A requirement is a `Depends(...)`
+or a `Security(...)` on the application, on the router, on the
+`include_router(...)` that mounts the router, on the route decorator, or on a
+parameter of the handler. Nothing else applies one. Django's
+`AuthenticationMiddleware`, `CsrfViewMiddleware`, and `REST_FRAMEWORK`
+settings never run on a FastAPI route, whichever of the two applications is the
+root.
+
+Read on FastAPI 0.141.1 on 20 Oct 2026, the dependencies run in this order:
+the router's, then the route decorator's `dependencies=`, then the parameter
+dependencies. A dependency that occurs twice runs one time per request. All of
+them run before the request body is validated. A rate limit that is a
+dependency therefore counts a refused body as well. A rate limit that is
+resolved before the authentication dependency keys on no principal.
+
+```python
+# Wrong: no dependency on the router, the mount, or the route, so this
+# operation is public. A database-session dependency is not a requirement.
+router = APIRouter()
+
+@router.get("/invoices/{invoice_id}")
+def get_invoice(invoice_id: int, db=Depends(get_db)):
+    return db.get(Invoice, invoice_id)
+```
+
+```python
+# Correct: the requirement is set on the router, so every route inherits it,
+# and the handler scopes the read to the caller and declares its response.
+router = APIRouter(dependencies=[Depends(require_user)])
+
+@router.get("/invoices/{invoice_id}", response_model=InvoiceOut)
+def get_invoice(invoice_id: int, user=Depends(require_user)):
+    return get_invoice_for(user, invoice_id)
+```
+
+Four more FastAPI-specific checks:
+
+- **The default validation response echoes the input.** FastAPI answers a
+  validation failure with `422` and Pydantic's error list, and each error
+  carries an `input` member with the value that was sent. Read on FastAPI
+  0.141.1 with Pydantic 2.13.5: a body field sent as a secret string came back
+  in the response. Replace the handler for `RequestValidationError`, and treat
+  an unreplaced handler on a route that receives a credential or personal data
+  as an information-disclosure finding.
+- **The documentation routes are on by default.** `openapi_url`, `docs_url`,
+  and `redoc_url` default to `/openapi.json`, `/docs`, and `/redoc`. Set them
+  to `None` in production unless the schema is meant to be public;
+  `api-drf-specific.md`, "Schema and browsable-API exposure", owns the
+  judgment.
+- **A route with no `response_model` returns what the handler built.** The
+  response model is the field allow-list on this surface, exactly as `response=`
+  is on Django Ninja.
+- **FastAPI has no CSRF layer.** A cookie-authenticated route needs a check of
+  its own. `strict_content_type`, which is on by default, refuses to parse a
+  body with no `Content-Type`, and it is not a CSRF control.
+
+A WebSocket route takes dependencies the same way an HTTP route does. A
+WebSocket route added with `add_api_websocket_route` and authenticated inside
+its handler is a correct design, but the inventory reports it as `absent`. Read
+the handler before you conclude anything.
+
+FastAPI routes must appear in the project's route-audit test as their own
+rows. Enumerate them from the application's own route table, which
+`fastapi.routing.iter_route_contexts` walks with every `include_router` prefix
+applied. A DRF-shaped audit does not see them.
+
+**Write-time.** When you generate a FastAPI route beside Django, put the
+authentication dependency on the router in the edit that creates the router.
+Make a public route a router of its own, with a declared dependency that states
+it is public, so that no route is public by omission. Resolve the requirement
+before any dependency that keys on the principal, such as a rate limit.
+Replace the validation handler so that no error echoes input. Close the
+documentation routes. Declare `response_model` on every route.
+
 ## gRPC: nothing from the DRF request cycle applies
 
 A Django project that serves gRPC runs a second server on a second port. That
@@ -1120,6 +1203,17 @@ backend code for these, and do not report their absence as a backend finding:
       middleware covers it.
 - [ ] Ninja routes appear as their own rows in the URLconf audit test.
 - [ ] `django-ninja-jwt`'s `SIGNING_KEY` is independent of `SECRET_KEY`.
+- [ ] Every FastAPI route beside Django has an authentication dependency on
+      its router, its mount, or itself. A public route is a reviewed
+      exception, and a dependency that only opens a database session is not
+      a requirement.
+- [ ] The FastAPI `RequestValidationError` handler is replaced, so that no
+      validation error echoes the `input` it refused.
+- [ ] FastAPI's `openapi_url`, `docs_url`, and `redoc_url` are `None` in
+      production unless the schema is deliberately public.
+- [ ] FastAPI routes appear as their own rows in the route-audit test,
+      enumerated from the application's route table with every
+      `include_router` prefix applied.
 - [ ] A gRPC servicer that reuses a DRF serializer gets no credit for the DRF
       settings. `DEFAULT_AUTHENTICATION_CLASSES`,
       `DEFAULT_PERMISSION_CLASSES`, and the throttle classes in

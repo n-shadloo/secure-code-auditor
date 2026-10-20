@@ -5,7 +5,8 @@ entrypoint_inventory.py - read-only inventory of where execution enters.
 Parses every .py file in a tree with the ast module and reports every declared
 way execution begins on input the application did not author: URL routes
 resolved through their include() chain to the full prefix, DRF routers,
-viewsets and views, @action methods, Django Ninja operations, GraphQL schemas
+viewsets and views, @action methods, Django Ninja operations, FastAPI
+applications, routers, routes and router mounts, GraphQL schemas
 and resolvers, gRPC servicers, Channels routing and consumers, Celery tasks and
 beat entries, management commands, signal receivers, admin registrations, and -
 when a settings path is supplied - MIDDLEWARE in declared order.
@@ -59,6 +60,8 @@ FAMILIES = {
     "action": ("Viewset @action methods", "api-drf-specific.md"),
     "ninja": ("Django Ninja APIs, routers, and operations",
               "graphql-and-alternative-api-surfaces.md"),
+    "fastapi": ("FastAPI applications, routers, routes, and mounts",
+                "graphql-and-alternative-api-surfaces.md"),
     "graphql": ("GraphQL schemas, types, and resolvers",
                 "graphql-and-alternative-api-surfaces.md"),
     "grpc": ("gRPC servicers", "graphql-and-alternative-api-surfaces.md"),
@@ -106,6 +109,14 @@ VIEW_OVERRIDES = ("get_queryset", "get_object", "get_serializer_class", "perform
                   "check_object_permissions")
 
 NINJA_OPERATIONS = {"get", "post", "put", "patch", "delete", "api_operation"}
+# FastAPI route decorators. `api_route` names its methods in `methods=`, and
+# `websocket` is a WebSocket route that the same dependency rules apply to.
+FASTAPI_OPERATIONS = {"get", "post", "put", "patch", "delete", "options", "head", "trace",
+                      "api_route", "websocket"}
+FASTAPI_CONSTRUCTORS = {"FastAPI", "APIRouter"}
+# A FastAPI dependency is a `Depends(...)` or a `Security(...)`, as a list item
+# of `dependencies=`, a parameter default, or an `Annotated[...]` metadata item.
+FASTAPI_DEPENDENCY_CALLS = {"Depends", "Security"}
 GRAPHQL_TYPE_BASES = {"ObjectType", "DjangoObjectType", "Mutation", "ClientIDMutation",
                       "DjangoObjectTypeOptions", "Subscription"}
 
@@ -190,6 +201,49 @@ def has_keyword(call, name):
     return any(entry.arg == name for entry in call.keywords)
 
 
+def dependency_names(node):
+    """The callables a FastAPI `dependencies=[...]` list names, in order.
+
+    A value that is not a literal list or tuple is printed as written, because it
+    is computed at runtime and a guess would be worse than the expression."""
+    if node is None:
+        return []
+    if not isinstance(node, (ast.List, ast.Tuple)):
+        return [render(node)]
+    names = []
+    for item in node.elts:
+        if isinstance(item, ast.Call) and tail(item.func) in FASTAPI_DEPENDENCY_CALLS:
+            target = item.args[0] if item.args else keyword(item, "dependency")
+            names.append(render(target) if target is not None else "%s()" % tail(item.func))
+        else:
+            names.append(render(item))
+    return names
+
+
+def parameter_dependencies(function):
+    """The dependencies a FastAPI endpoint declares on its own parameters: a
+    `Depends(...)` default, or `Depends(...)` inside `Annotated[...]`."""
+    found = []
+
+    def take(call):
+        target = call.args[0] if call.args else keyword(call, "dependency")
+        found.append(render(target) if target is not None else "%s()" % tail(call.func))
+
+    arguments = function.args
+    for default in list(arguments.defaults) + [d for d in arguments.kw_defaults if d]:
+        if isinstance(default, ast.Call) and tail(default.func) in FASTAPI_DEPENDENCY_CALLS:
+            take(default)
+    for argument in arguments.posonlyargs + arguments.args + arguments.kwonlyargs:
+        annotation = argument.annotation
+        if isinstance(annotation, ast.Subscript) and tail(annotation.value) == "Annotated":
+            items = annotation.slice
+            items = items.elts if isinstance(items, ast.Tuple) else [items]
+            for item in items[1:]:
+                if isinstance(item, ast.Call) and tail(item.func) in FASTAPI_DEPENDENCY_CALLS:
+                    take(item)
+    return found
+
+
 def statements(body):
     """Module-level statements, descending into if/try so a conditional
     urlpatterns block is still enumerated."""
@@ -228,6 +282,8 @@ class ModuleScan:
         self.routes = {}        # name -> [Decl], in source order
         self.routers = {}       # router variable -> [Registration]
         self.ninja = {}         # api/router variable -> auth declared at construction
+        self.fastapi = {}       # app/router variable -> dependencies declared at construction
+        self.fastapi_prefix = {}  # router variable -> its literal `prefix=`, or ""
         self.views = {}         # class or function name -> View
         self.entries = []       # everything not resolved through the URLconf
         self._consumed = set()  # nodes already accounted for as an include target
@@ -250,6 +306,7 @@ class ModuleScan:
                             "%s.%s" % (node.module, alias.name))
 
         self._collect_constructions()
+        self._collect_fastapi_constructions()
         self._collect_registrations()
         for node in statements(self.tree.body):
             if isinstance(node, ast.ClassDef):
@@ -304,6 +361,70 @@ class ModuleScan:
                              {"query": render(keyword(node.value, "query")),
                               "mutation": render(keyword(node.value, "mutation"))})
 
+    def _collect_fastapi_constructions(self):
+        """`FastAPI()` and `APIRouter()` bound to a name, in any scope.
+
+        FastAPI has no project-wide permission default: a route is public unless
+        a dependency on its application, its router, its mount or itself says
+        otherwise, so the dependencies declared at construction are carried to
+        every route decorated on that name. An application is commonly built
+        inside a factory function, which is why this walks every scope rather
+        than the module body alone.
+        """
+        if "fastapi" not in self.imports:
+            return
+        for node in ast.walk(self.tree):
+            if not isinstance(node, ast.Assign) or not isinstance(node.value, ast.Call):
+                continue
+            called = tail(node.value.func)
+            if called not in FASTAPI_CONSTRUCTORS:
+                continue
+            dependencies = dependency_names(keyword(node.value, "dependencies"))
+            for target in node.targets:
+                if not isinstance(target, ast.Name):
+                    continue
+                self.fastapi[target.id] = dependencies
+                prefix = literal(keyword(node.value, "prefix"))
+                self.fastapi_prefix[target.id] = prefix if isinstance(prefix, str) else ""
+                self.add("fastapi", node, "%s = %s()" % (target.id, called),
+                         {"prefix": render(keyword(node.value, "prefix")),
+                          "dependencies": dependencies or None,
+                          "docs_url": render(keyword(node.value, "docs_url"))
+                          if called == "FastAPI" else None,
+                          "openapi_url": render(keyword(node.value, "openapi_url"))
+                          if called == "FastAPI" else None},
+                         DECLARED if dependencies else ABSENT)
+
+    def _fastapi_call(self, node, called, receiver):
+        """`add_api_route`, `add_api_websocket_route` and `include_router` on a
+        FastAPI application or router this module constructed."""
+        inherited = self.fastapi[receiver.id]
+        dependencies = dependency_names(keyword(node, "dependencies"))
+        if called == "include_router":
+            self.add("fastapi", node, "%s.include_router(%s)" % (
+                         receiver.id, render(node.args[0]) if node.args else "?"),
+                     {"prefix": render(keyword(node, "prefix")),
+                      "dependencies": dependencies or None,
+                      "note": "every route of the included router is served at this "
+                              "prefix plus its own path"
+                              + (", and runs these dependencies first"
+                                 if dependencies else "")},
+                     DECLARED if dependencies else None)
+            return
+        path = render(node.args[0]) if node.args else render(keyword(node, "path"))
+        endpoint = render(node.args[1]) if len(node.args) > 1 else render(
+            keyword(node, "endpoint"))
+        label = ("WEBSOCKET %s" % path if called == "add_api_websocket_route"
+                 else "%s %s" % (render(keyword(node, "methods")) or "GET", path))
+        self.add("fastapi", node, label,
+                 {"endpoint": endpoint,
+                  "dependencies": dependencies or None,
+                  "router_dependencies": inherited or None,
+                  "mounted_on": receiver.id,
+                  "note": "the endpoint's own parameter dependencies are read where it "
+                          "is defined, not here"},
+                 DECLARED if dependencies else (INHERITED if inherited else ABSENT))
+
     # -- calls anywhere in the module ----------------------------------------
 
     def _collect_registrations(self):
@@ -311,7 +432,12 @@ class ModuleScan:
             if not isinstance(node, ast.Call):
                 continue
             called = tail(node.func)
-            if called == "register" and isinstance(node.func, ast.Attribute):
+            if called in ("add_api_route", "add_api_websocket_route", "include_router") \
+                    and isinstance(node.func, ast.Attribute) \
+                    and isinstance(node.func.value, ast.Name) \
+                    and node.func.value.id in self.fastapi:
+                self._fastapi_call(node, called, node.func.value)
+            elif called == "register" and isinstance(node.func, ast.Attribute):
                 receiver = node.func.value
                 if isinstance(receiver, ast.Name) and receiver.id in self.routers and node.args:
                     self.routers[receiver.id].append(Registration(
@@ -501,6 +627,10 @@ class ModuleScan:
         for name, call in decorator_names(node):
             receiver = call.func.value if call is not None and isinstance(call.func,
                                                                          ast.Attribute) else None
+            if name in FASTAPI_OPERATIONS and isinstance(receiver, ast.Name) \
+                    and receiver.id in self.fastapi:
+                self._fastapi_route(node, name, call, receiver)
+                return
             if name in NINJA_OPERATIONS and isinstance(receiver, ast.Name) \
                     and receiver.id in self.ninja:
                 declared = has_keyword(call, "auth")
@@ -523,6 +653,36 @@ class ModuleScan:
                 authz = ABSENT
             self.views[node.name] = View(node.name, self.path, node.lineno, "function", authz,
                                          {"decorators": sorted(names)})
+
+    def _fastapi_route(self, node, name, call, receiver):
+        """One decorated FastAPI route. Declared when the decorator or a parameter
+        names a dependency, inherited when only its router does, absent when
+        nothing does — FastAPI supplies no default. The dependency names are
+        printed so the reader can tell an authentication requirement from a
+        database session; this column cannot."""
+        route_dependencies = dependency_names(keyword(call, "dependencies"))
+        parameters = parameter_dependencies(node)
+        inherited = self.fastapi[receiver.id]
+        if name == "websocket":
+            method = "WEBSOCKET"
+        elif name == "api_route":
+            method = render(keyword(call, "methods")) or "GET"
+        else:
+            method = name.upper()
+        path = render(call.args[0]) if call.args else render(keyword(call, "path"))
+        # The router's own literal prefix is part of the path FastAPI serves; an
+        # `include_router` prefix is reported on its own row, because it lives in
+        # another module more often than not.
+        path = self.fastapi_prefix.get(receiver.id, "") + (path or "?")
+        self.add("fastapi", node, "%s %s" % (method, path),
+                 {"operation": node.name,
+                  "dependencies": route_dependencies or None,
+                  "parameter_dependencies": parameters or None,
+                  "router_dependencies": inherited or None,
+                  "response_model": render(keyword(call, "response_model")),
+                  "mounted_on": receiver.id},
+                 DECLARED if route_dependencies or parameters
+                 else (INHERITED if inherited else ABSENT))
 
     def _collect_command(self):
         parts = os.path.normpath(self.path).split(os.sep)
