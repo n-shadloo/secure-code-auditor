@@ -6,6 +6,14 @@ deep specialty is Django and Django REST Framework; underneath that sits a
 general OWASP layer that applies to any backend stack, so the same skill is
 useful whether or not you're on Django.
 
+[![Security: A — Skills Directory](https://www.skillsdirectory.com/api/skills/n-shadloo-secure-code-auditor/badge)](https://www.skillsdirectory.com/skills/n-shadloo-secure-code-auditor)
+[![npx skills](https://img.shields.io/badge/npx_skills-add_n--shadloo%2Fsecure--code--auditor-black?logo=npm)](https://www.skills.sh/n-shadloo/secure-code-auditor/secure-code-auditor)
+![Claude Code](https://img.shields.io/badge/Claude_Code-Skill-D97757?logo=anthropic&logoColor=white)
+![OWASP](https://img.shields.io/badge/OWASP_Top_10-2025-000000?logo=owasp&logoColor=white)
+![Django DRF](https://img.shields.io/badge/Django_%26_DRF-Specialty-092E20?logo=django&logoColor=white)
+[![License: MIT](https://img.shields.io/github/license/n-shadloo/secure-code-auditor)](https://github.com/n-shadloo/secure-code-auditor/blob/main/LICENSE)
+[![GitHub Stars](https://img.shields.io/github/stars/n-shadloo/secure-code-auditor?style=flat&logo=github)](https://github.com/n-shadloo/secure-code-auditor/stargazers)
+
 ## Why this exists
 
 Backend security review is repetitive and easy to do inconsistently. The high-
@@ -575,6 +583,13 @@ collaborators, so open an issue and I implement the change myself. See
 [CONTRIBUTING.md](CONTRIBUTING.md) for what a good report contains,
 [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) for conduct, and
 [SECURITY.md](SECURITY.md) for reporting a vulnerability in the scanners.
+
+## Related Skills
+
+| Skill | Scope | Security Grade |
+| :--- | :--- | :--- |
+| [**git-authoring**](https://github.com/n-shadloo/git-authoring) | Turns git diffs into clean Conventional Commits, atomic hunk staging, PR descriptions, release notes, and safe repository operations. | [![Security: A](https://www.skillsdirectory.com/api/skills/n-shadloo-git-authoring/badge)](https://www.skillsdirectory.com/skills/n-shadloo-git-authoring) |
+| [**frontend-production-engineer**](https://github.com/n-shadloo/frontend-production-engineer) | Production-grade Next.js, React, and TypeScript engineering built to pair cleanly with a Django + DRF backend. | [![Security: A](https://www.skillsdirectory.com/api/skills/n-shadloo-frontend-production-engineer/badge)](https://www.skillsdirectory.com/skills/n-shadloo-frontend-production-engineer) |
 
 ## License
 
